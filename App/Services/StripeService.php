@@ -163,6 +163,56 @@ class StripeService
     }
 
     /**
+     * Reativa assinatura cancelada
+     * 
+     * Remove a flag cancel_at_period_end para reativar uma assinatura que estava
+     * marcada para cancelar no final do período.
+     * 
+     * Nota: Assinaturas já canceladas (status = 'canceled') não podem ser reativadas.
+     * Nesses casos, é necessário criar uma nova assinatura.
+     * 
+     * @param string $subscriptionId ID da assinatura no Stripe
+     * @return \Stripe\Subscription Assinatura reativada
+     * @throws ApiErrorException Se a assinatura não puder ser reativada
+     */
+    public function reactivateSubscription(string $subscriptionId): \Stripe\Subscription
+    {
+        try {
+            // Primeiro, obtém a assinatura atual para verificar o status
+            $currentSubscription = $this->client->subscriptions->retrieve($subscriptionId);
+            
+            // Se já está cancelada, não pode reativar
+            if ($currentSubscription->status === 'canceled') {
+                throw new \RuntimeException("Assinatura já está cancelada e não pode ser reativada. Crie uma nova assinatura.");
+            }
+            
+            // Se não está marcada para cancelar, não precisa reativar
+            if (!$currentSubscription->cancel_at_period_end) {
+                Logger::info("Assinatura não estava marcada para cancelar", ['subscription_id' => $subscriptionId]);
+                return $currentSubscription;
+            }
+            
+            // Remove a flag cancel_at_period_end para reativar
+            $subscription = $this->client->subscriptions->update($subscriptionId, [
+                'cancel_at_period_end' => false
+            ]);
+
+            Logger::info("Assinatura reativada", [
+                'subscription_id' => $subscriptionId,
+                'status' => $subscription->status
+            ]);
+            
+            return $subscription;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao reativar assinatura", [
+                'subscription_id' => $subscriptionId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Cria sessão de portal de cobrança
      * 
      * @param string $customerId ID do customer no Stripe
@@ -226,6 +276,130 @@ class StripeService
     }
 
     /**
+     * Cria Payment Intent para pagamento único
+     * 
+     * @param array $data Dados do payment intent:
+     *   - amount (obrigatório): Valor em centavos (ex: 2999 para R$ 29,99)
+     *   - currency (obrigatório): Moeda (ex: 'brl', 'usd')
+     *   - customer_id (opcional): ID do customer no Stripe
+     *   - payment_method (opcional): ID do método de pagamento
+     *   - payment_method_types (opcional): Tipos de pagamento (padrão: ['card'])
+     *   - description (opcional): Descrição do pagamento
+     *   - metadata (opcional): Metadados
+     *   - confirm (opcional): Se true, confirma o pagamento imediatamente (padrão: false)
+     *   - capture_method (opcional): 'automatic' ou 'manual' (padrão: 'automatic')
+     * @return \Stripe\PaymentIntent
+     */
+    public function createPaymentIntent(array $data): \Stripe\PaymentIntent
+    {
+        try {
+            $params = [
+                'amount' => (int)$data['amount'],
+                'currency' => strtolower($data['currency']),
+                'payment_method_types' => $data['payment_method_types'] ?? ['card']
+            ];
+
+            if (!empty($data['customer_id'])) {
+                $params['customer'] = $data['customer_id'];
+            }
+
+            if (!empty($data['payment_method'])) {
+                $params['payment_method'] = $data['payment_method'];
+            }
+
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (isset($data['confirm'])) {
+                $params['confirm'] = (bool)$data['confirm'];
+            }
+
+            if (!empty($data['capture_method'])) {
+                $params['capture_method'] = $data['capture_method'];
+            }
+
+            $paymentIntent = $this->client->paymentIntents->create($params);
+
+            Logger::info("Payment Intent criado", [
+                'payment_intent_id' => $paymentIntent->id,
+                'amount' => $paymentIntent->amount,
+                'currency' => $paymentIntent->currency,
+                'status' => $paymentIntent->status
+            ]);
+
+            return $paymentIntent;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar payment intent", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Reembolsa um pagamento
+     * 
+     * @param string $paymentIntentId ID do Payment Intent a ser reembolsado
+     * @param array $options Opções de reembolso:
+     *   - amount (opcional): Valor em centavos para reembolso parcial (se não fornecido, reembolsa total)
+     *   - reason (opcional): Motivo do reembolso ('duplicate', 'fraudulent', 'requested_by_customer')
+     *   - metadata (opcional): Metadados do reembolso
+     * @return \Stripe\Refund
+     */
+    public function refundPayment(string $paymentIntentId, array $options = []): \Stripe\Refund
+    {
+        try {
+            // Primeiro, obtém o Payment Intent para verificar o status
+            $paymentIntent = $this->client->paymentIntents->retrieve($paymentIntentId);
+            
+            // Verifica se o pagamento foi bem-sucedido
+            if ($paymentIntent->status !== 'succeeded') {
+                throw new \RuntimeException("Pagamento não pode ser reembolsado. Status atual: {$paymentIntent->status}");
+            }
+
+            // Prepara parâmetros do reembolso
+            $refundParams = [
+                'payment_intent' => $paymentIntentId
+            ];
+
+            // Reembolso parcial
+            if (isset($options['amount'])) {
+                $refundParams['amount'] = (int)$options['amount'];
+            }
+
+            // Motivo do reembolso
+            if (!empty($options['reason'])) {
+                $refundParams['reason'] = $options['reason'];
+            }
+
+            // Metadados
+            if (isset($options['metadata'])) {
+                $refundParams['metadata'] = $options['metadata'];
+            }
+
+            $refund = $this->client->refunds->create($refundParams);
+
+            Logger::info("Pagamento reembolsado", [
+                'refund_id' => $refund->id,
+                'payment_intent_id' => $paymentIntentId,
+                'amount' => $refund->amount,
+                'status' => $refund->status
+            ]);
+
+            return $refund;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao reembolsar pagamento", [
+                'payment_intent_id' => $paymentIntentId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Obtém fatura por ID
      */
     public function getInvoice(string $invoiceId): \Stripe\Invoice
@@ -239,6 +413,102 @@ class StripeService
     }
 
     /**
+     * Lista faturas de um customer
+     * 
+     * @param string $customerId ID do customer no Stripe
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - starting_after (string): ID da fatura para paginação
+     *   - ending_before (string): ID da fatura para paginação reversa
+     *   - status (string): Filtrar por status (draft, open, paid, uncollectible, void)
+     * @return \Stripe\Collection Lista de faturas
+     */
+    public function listInvoices(string $customerId, array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'customer' => $customerId,
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (!empty($options['status'])) {
+                $params['status'] = $options['status'];
+            }
+
+            $invoices = $this->client->invoices->all($params);
+
+            Logger::info("Faturas listadas", [
+                'customer_id' => $customerId,
+                'count' => count($invoices->data)
+            ]);
+
+            return $invoices;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar faturas", [
+                'customer_id' => $customerId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista métodos de pagamento de um customer
+     * 
+     * @param string $customerId ID do customer no Stripe
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - starting_after (string): ID do payment method para paginação
+     *   - ending_before (string): ID do payment method para paginação reversa
+     *   - type (string): Filtrar por tipo (card, us_bank_account, etc)
+     * @return \Stripe\Collection Lista de métodos de pagamento
+     */
+    public function listPaymentMethods(string $customerId, array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'customer' => $customerId,
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (!empty($options['type'])) {
+                $params['type'] = $options['type'];
+            }
+
+            $paymentMethods = $this->client->paymentMethods->all($params);
+
+            Logger::info("Métodos de pagamento listados", [
+                'customer_id' => $customerId,
+                'count' => count($paymentMethods->data)
+            ]);
+
+            return $paymentMethods;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar métodos de pagamento", [
+                'customer_id' => $customerId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Obtém customer por ID
      */
     public function getCustomer(string $customerId): \Stripe\Customer
@@ -247,6 +517,103 @@ class StripeService
             return $this->client->customers->retrieve($customerId);
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter customer", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista customers do Stripe
+     * 
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - starting_after (string): ID do customer para paginação
+     *   - ending_before (string): ID do customer para paginação reversa
+     *   - email (string): Filtrar por email
+     *   - created (array): Filtrar por data de criação (gte, lte, gt, lt)
+     * @return \Stripe\Collection Lista de customers
+     */
+    public function listCustomers(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (!empty($options['email'])) {
+                $params['email'] = $options['email'];
+            }
+
+            if (isset($options['created']) && is_array($options['created'])) {
+                $params['created'] = $options['created'];
+            }
+
+            $customers = $this->client->customers->all($params);
+
+            Logger::info("Customers listados", [
+                'count' => count($customers->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $customers;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar customers", [
+                'error' => $e->getMessage(),
+                'filters' => $options
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza customer no Stripe
+     * 
+     * @param string $customerId ID do customer no Stripe
+     * @param array $data Dados para atualização:
+     *   - email (opcional): Novo email
+     *   - name (opcional): Novo nome
+     *   - metadata (opcional): Metadados atualizados
+     *   - address (opcional): Endereço completo
+     *   - phone (opcional): Telefone
+     *   - description (opcional): Descrição
+     * @return \Stripe\Customer
+     */
+    public function updateCustomer(string $customerId, array $data): \Stripe\Customer
+    {
+        try {
+            $updateParams = [];
+
+            // Campos permitidos para atualização
+            $allowedFields = ['email', 'name', 'metadata', 'address', 'phone', 'description'];
+            
+            foreach ($allowedFields as $field) {
+                if (isset($data[$field])) {
+                    $updateParams[$field] = $data[$field];
+                }
+            }
+
+            // Se não há nada para atualizar, retorna customer atual
+            if (empty($updateParams)) {
+                return $this->getCustomer($customerId);
+            }
+
+            $customer = $this->client->customers->update($customerId, $updateParams);
+
+            Logger::info("Customer atualizado no Stripe", [
+                'customer_id' => $customerId,
+                'updated_fields' => array_keys($updateParams)
+            ]);
+
+            return $customer;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar customer", ['error' => $e->getMessage()]);
             throw $e;
         }
     }
@@ -427,6 +794,67 @@ class StripeService
                 Logger::error("Erro ao anexar payment method", ['error' => $e->getMessage()]);
                 throw $e;
             }
+        }
+    }
+
+    /**
+     * Lista preços (prices) do Stripe
+     * 
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - starting_after (string): ID do preço para paginação
+     *   - ending_before (string): ID do preço para paginação reversa
+     *   - active (bool): Filtrar apenas preços ativos (true) ou inativos (false)
+     *   - type (string): Filtrar por tipo (one_time, recurring)
+     *   - product (string): Filtrar por ID do produto
+     *   - currency (string): Filtrar por moeda (ex: 'brl', 'usd')
+     * @return \Stripe\Collection Lista de preços
+     */
+    public function listPrices(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (isset($options['active'])) {
+                $params['active'] = (bool)$options['active'];
+            }
+
+            if (!empty($options['type'])) {
+                $params['type'] = $options['type'];
+            }
+
+            if (!empty($options['product'])) {
+                $params['product'] = $options['product'];
+            }
+
+            if (!empty($options['currency'])) {
+                $params['currency'] = strtolower($options['currency']);
+            }
+
+            $prices = $this->client->prices->all($params);
+
+            Logger::info("Preços listados", [
+                'count' => count($prices->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $prices;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar preços", [
+                'error' => $e->getMessage(),
+                'filters' => $options
+            ]);
+            throw $e;
         }
     }
 

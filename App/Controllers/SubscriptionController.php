@@ -309,5 +309,104 @@ class SubscriptionController
             ], 500);
         }
     }
+
+    /**
+     * Reativa uma assinatura cancelada
+     * POST /v1/subscriptions/:id/reactivate
+     * 
+     * Remove a flag cancel_at_period_end para reativar uma assinatura que estava
+     * marcada para cancelar no final do período.
+     * 
+     * Nota: Assinaturas já canceladas (status = 'canceled') não podem ser reativadas.
+     */
+    public function reactivate(string $id): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            $subscriptionModel = new \App\Models\Subscription();
+            $subscription = $subscriptionModel->findById((int)$id);
+
+            if (!$subscription || $subscription['tenant_id'] != $tenantId) {
+                http_response_code(404);
+                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                return;
+            }
+
+            // Obtém assinatura atual do Stripe para verificar status
+            $currentStripeSubscription = $this->stripeService->getSubscription($subscription['stripe_subscription_id']);
+            
+            // Valida se pode ser reativada
+            if ($currentStripeSubscription->status === 'canceled') {
+                http_response_code(400);
+                Flight::json([
+                    'error' => 'Assinatura já está cancelada',
+                    'message' => 'Assinaturas canceladas não podem ser reativadas. Crie uma nova assinatura.'
+                ], 400);
+                return;
+            }
+
+            if (!$currentStripeSubscription->cancel_at_period_end) {
+                Flight::json([
+                    'success' => true,
+                    'message' => 'Assinatura já está ativa e não estava marcada para cancelar',
+                    'data' => [
+                        'id' => $subscription['id'],
+                        'stripe_subscription_id' => $currentStripeSubscription->id,
+                        'status' => $currentStripeSubscription->status,
+                        'cancel_at_period_end' => $currentStripeSubscription->cancel_at_period_end
+                    ]
+                ]);
+                return;
+            }
+
+            // Reativa a assinatura
+            $stripeSubscription = $this->stripeService->reactivateSubscription($subscription['stripe_subscription_id']);
+
+            // Atualiza no banco
+            $subscriptionModel->createOrUpdate(
+                $tenantId,
+                $subscription['customer_id'],
+                $stripeSubscription->toArray()
+            );
+
+            // Busca assinatura atualizada no banco
+            $updatedSubscription = $subscriptionModel->findById((int)$id);
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Assinatura reativada com sucesso',
+                'data' => [
+                    'id' => $updatedSubscription['id'],
+                    'stripe_subscription_id' => $stripeSubscription->id,
+                    'status' => $stripeSubscription->status,
+                    'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
+                    'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
+                    'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
+                    'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null
+                ]
+            ]);
+        } catch (\RuntimeException $e) {
+            Logger::error("Erro ao reativar assinatura", ['error' => $e->getMessage()]);
+            http_response_code(400);
+            Flight::json([
+                'error' => 'Erro ao reativar assinatura',
+                'message' => $e->getMessage()
+            ], 400);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            Logger::error("Erro ao reativar assinatura no Stripe", ['error' => $e->getMessage()]);
+            http_response_code(400);
+            Flight::json([
+                'error' => 'Erro ao reativar assinatura',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao reativar assinatura", ['error' => $e->getMessage()]);
+            http_response_code(500);
+            Flight::json([
+                'error' => 'Erro ao reativar assinatura',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 }
 

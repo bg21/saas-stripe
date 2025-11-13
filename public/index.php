@@ -137,12 +137,15 @@ $paymentService = new \App\Services\PaymentService(
 );
 
 // Inicializa controllers
-$customerController = new \App\Controllers\CustomerController($paymentService);
+$customerController = new \App\Controllers\CustomerController($paymentService, $stripeService);
 $checkoutController = new \App\Controllers\CheckoutController($stripeService);
 $subscriptionController = new \App\Controllers\SubscriptionController($paymentService, $stripeService);
 $webhookController = new \App\Controllers\WebhookController($paymentService, $stripeService);
 $billingPortalController = new \App\Controllers\BillingPortalController($stripeService);
 $invoiceController = new \App\Controllers\InvoiceController($stripeService);
+$priceController = new \App\Controllers\PriceController($stripeService);
+$paymentController = new \App\Controllers\PaymentController($stripeService);
+$statsController = new \App\Controllers\StatsController($stripeService);
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -159,7 +162,11 @@ $app->route('GET /', function() use ($app) {
             'subscriptions' => '/v1/subscriptions',
             'webhook' => '/v1/webhook',
             'billing-portal' => '/v1/billing-portal',
-            'invoices' => '/v1/invoices/:id'
+            'invoices' => '/v1/invoices/:id',
+            'prices' => '/v1/prices',
+            'payment-intents' => '/v1/payment-intents',
+            'refunds' => '/v1/refunds',
+            'stats' => '/v1/stats'
         ],
         'documentation' => 'Consulte o README.md para mais informações'
     ]);
@@ -202,9 +209,14 @@ if (Config::isDevelopment()) {
 // Rotas de clientes
 $app->route('POST /v1/customers', [$customerController, 'create']);
 $app->route('GET /v1/customers', [$customerController, 'list']);
+$app->route('GET /v1/customers/@id', [$customerController, 'get']);
+$app->route('PUT /v1/customers/@id', [$customerController, 'update']);
+$app->route('GET /v1/customers/@id/invoices', [$customerController, 'listInvoices']);
+$app->route('GET /v1/customers/@id/payment-methods', [$customerController, 'listPaymentMethods']);
 
 // Rotas de checkout
 $app->route('POST /v1/checkout', [$checkoutController, 'create']);
+$app->route('GET /v1/checkout/@id', [$checkoutController, 'get']);
 
 // Rotas de assinaturas
 $app->route('POST /v1/subscriptions', [$subscriptionController, 'create']);
@@ -212,6 +224,7 @@ $app->route('GET /v1/subscriptions', [$subscriptionController, 'list']);
 $app->route('GET /v1/subscriptions/@id', [$subscriptionController, 'get']);
 $app->route('PUT /v1/subscriptions/@id', [$subscriptionController, 'update']);
 $app->route('DELETE /v1/subscriptions/@id', [$subscriptionController, 'cancel']);
+$app->route('POST /v1/subscriptions/@id/reactivate', [$subscriptionController, 'reactivate']);
 
 // Rota de webhook
 $app->route('POST /v1/webhook', [$webhookController, 'handle']);
@@ -221,6 +234,16 @@ $app->route('POST /v1/billing-portal', [$billingPortalController, 'create']);
 
 // Rotas de faturas
 $app->route('GET /v1/invoices/@id', [$invoiceController, 'get']);
+
+// Rotas de preços
+$app->route('GET /v1/prices', [$priceController, 'list']);
+
+// Rotas de pagamentos
+$app->route('POST /v1/payment-intents', [$paymentController, 'createPaymentIntent']);
+$app->route('POST /v1/refunds', [$paymentController, 'createRefund']);
+
+// Rotas de estatísticas
+$app->route('GET /v1/stats', [$statsController, 'get']);
 
 // Tratamento de erros
 $app->map('notFound', function() use ($app) {
