@@ -859,6 +859,697 @@ class StripeService
     }
 
     /**
+     * Cria cupom de desconto
+     * 
+     * @param array $data Dados do cupom:
+     *   - id (opcional): ID customizado do cupom (se não fornecido, Stripe gera)
+     *   - percent_off (opcional): Desconto percentual (0-100)
+     *   - amount_off (opcional): Desconto em valor fixo (em centavos)
+     *   - currency (opcional): Moeda para amount_off (ex: 'brl', 'usd')
+     *   - duration (obrigatório): 'once', 'repeating', ou 'forever'
+     *   - duration_in_months (opcional): Número de meses se duration for 'repeating'
+     *   - max_redemptions (opcional): Número máximo de resgates
+     *   - redeem_by (opcional): Data limite para resgate (timestamp)
+     *   - name (opcional): Nome do cupom
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\Coupon
+     */
+    public function createCoupon(array $data): \Stripe\Coupon
+    {
+        try {
+            $params = [];
+
+            // ID customizado (opcional)
+            if (!empty($data['id'])) {
+                $params['id'] = $data['id'];
+            }
+
+            // Desconto percentual ou valor fixo
+            if (isset($data['percent_off'])) {
+                $params['percent_off'] = (float)$data['percent_off'];
+            } elseif (isset($data['amount_off'])) {
+                $params['amount_off'] = (int)$data['amount_off'];
+                $params['currency'] = strtolower($data['currency'] ?? 'brl');
+            } else {
+                throw new \InvalidArgumentException("É necessário fornecer percent_off ou amount_off");
+            }
+
+            // Duração (obrigatório)
+            if (empty($data['duration'])) {
+                throw new \InvalidArgumentException("Campo duration é obrigatório");
+            }
+            $params['duration'] = $data['duration'];
+
+            // Duração em meses (se repeating)
+            if ($data['duration'] === 'repeating' && isset($data['duration_in_months'])) {
+                $params['duration_in_months'] = (int)$data['duration_in_months'];
+            }
+
+            // Máximo de resgates
+            if (isset($data['max_redemptions'])) {
+                $params['max_redemptions'] = (int)$data['max_redemptions'];
+            }
+
+            // Data limite para resgate
+            if (isset($data['redeem_by'])) {
+                $params['redeem_by'] = is_numeric($data['redeem_by']) 
+                    ? (int)$data['redeem_by'] 
+                    : strtotime($data['redeem_by']);
+            }
+
+            // Nome
+            if (!empty($data['name'])) {
+                $params['name'] = $data['name'];
+            }
+
+            // Metadados
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $coupon = $this->client->coupons->create($params);
+
+            Logger::info("Cupom criado", [
+                'coupon_id' => $coupon->id,
+                'percent_off' => $coupon->percent_off ?? null,
+                'amount_off' => $coupon->amount_off ?? null
+            ]);
+
+            return $coupon;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar cupom", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém cupom por ID
+     */
+    public function getCoupon(string $couponId): \Stripe\Coupon
+    {
+        try {
+            return $this->client->coupons->retrieve($couponId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter cupom", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista cupons do Stripe
+     * 
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - starting_after (string): ID do cupom para paginação
+     *   - ending_before (string): ID do cupom para paginação reversa
+     * @return \Stripe\Collection Lista de cupons
+     */
+    public function listCoupons(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            $coupons = $this->client->coupons->all($params);
+
+            Logger::info("Cupons listados", [
+                'count' => count($coupons->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $coupons;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar cupons", [
+                'error' => $e->getMessage(),
+                'filters' => $options
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Deleta cupom
+     */
+    public function deleteCoupon(string $couponId): \Stripe\Coupon
+    {
+        try {
+            $coupon = $this->client->coupons->delete($couponId);
+
+            Logger::info("Cupom deletado", ['coupon_id' => $couponId]);
+
+            return $coupon;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao deletar cupom", [
+                'coupon_id' => $couponId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza método de pagamento
+     * 
+     * @param string $paymentMethodId ID do payment method no Stripe
+     * @param array $data Dados para atualização:
+     *   - billing_details (opcional): Detalhes de cobrança (address, email, name, phone)
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\PaymentMethod
+     */
+    public function updatePaymentMethod(string $paymentMethodId, array $data): \Stripe\PaymentMethod
+    {
+        try {
+            $params = [];
+
+            // Billing details
+            if (isset($data['billing_details'])) {
+                $params['billing_details'] = $data['billing_details'];
+            }
+
+            // Metadados
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $paymentMethod = $this->client->paymentMethods->update($paymentMethodId, $params);
+
+            Logger::info("Payment method atualizado", [
+                'payment_method_id' => $paymentMethodId,
+                'updated_fields' => array_keys($params)
+            ]);
+
+            return $paymentMethod;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar payment method", [
+                'payment_method_id' => $paymentMethodId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Desanexa método de pagamento de um customer
+     * Remove a associação mas não deleta o payment method
+     * 
+     * @param string $paymentMethodId ID do payment method no Stripe
+     * @return \Stripe\PaymentMethod
+     */
+    public function detachPaymentMethod(string $paymentMethodId): \Stripe\PaymentMethod
+    {
+        try {
+            $paymentMethod = $this->client->paymentMethods->detach($paymentMethodId);
+
+            Logger::info("Payment method desanexado", [
+                'payment_method_id' => $paymentMethodId,
+                'customer_id' => $paymentMethod->customer ?? null
+            ]);
+
+            return $paymentMethod;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao desanexar payment method", [
+                'payment_method_id' => $paymentMethodId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Deleta método de pagamento (desanexa do customer)
+     * 
+     * Nota: O Stripe não possui um método delete direto para payment methods.
+     * Quando desanexamos um payment method de um customer, ele fica "órfão"
+     * e pode ser reutilizado ou anexado a outro customer no futuro.
+     * Este método desanexa o payment method do customer atual.
+     * 
+     * @param string $paymentMethodId ID do payment method no Stripe
+     * @return \Stripe\PaymentMethod
+     */
+    public function deletePaymentMethod(string $paymentMethodId): \Stripe\PaymentMethod
+    {
+        try {
+            // Desanexa o payment method do customer
+            // Se não estiver anexado, o Stripe retornará erro, mas tratamos
+            $paymentMethod = $this->client->paymentMethods->detach($paymentMethodId);
+
+            Logger::info("Payment method desanexado (deletado)", [
+                'payment_method_id' => $paymentMethodId,
+                'customer_id' => $paymentMethod->customer ?? null
+            ]);
+
+            return $paymentMethod;
+        } catch (ApiErrorException $e) {
+            // Se o payment method não estiver anexado, ainda retorna sucesso
+            // pois o objetivo é garantir que não esteja anexado
+            if (strpos($e->getMessage(), 'not attached') !== false || 
+                strpos($e->getMessage(), 'No such payment_method') !== false) {
+                // Tenta obter o payment method para retornar
+                try {
+                    $paymentMethod = $this->client->paymentMethods->retrieve($paymentMethodId);
+                    Logger::info("Payment method não estava anexado", [
+                        'payment_method_id' => $paymentMethodId
+                    ]);
+                    return $paymentMethod;
+                } catch (ApiErrorException $e2) {
+                    // Se não conseguir obter, lança o erro original
+                    Logger::error("Erro ao deletar payment method", [
+                        'payment_method_id' => $paymentMethodId,
+                        'error' => $e->getMessage()
+                    ]);
+                    throw $e;
+                }
+            } else {
+                Logger::error("Erro ao deletar payment method", [
+                    'payment_method_id' => $paymentMethodId,
+                    'error' => $e->getMessage()
+                ]);
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * Define método de pagamento como padrão para um customer
+     * 
+     * @param string $paymentMethodId ID do payment method no Stripe
+     * @param string $customerId ID do customer no Stripe
+     * @return void
+     */
+    public function setDefaultPaymentMethod(string $paymentMethodId, string $customerId): void
+    {
+        try {
+            // Verifica se o payment method está anexado ao customer
+            $paymentMethod = $this->client->paymentMethods->retrieve($paymentMethodId);
+            
+            if ($paymentMethod->customer !== $customerId) {
+                throw new \InvalidArgumentException("Payment method não está anexado a este customer");
+            }
+
+            // Define como método de pagamento padrão
+            $this->client->customers->update($customerId, [
+                'invoice_settings' => [
+                    'default_payment_method' => $paymentMethodId,
+                ],
+            ]);
+
+            Logger::info("Payment method definido como padrão", [
+                'payment_method_id' => $paymentMethodId,
+                'customer_id' => $customerId
+            ]);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao definir payment method como padrão", [
+                'payment_method_id' => $paymentMethodId,
+                'customer_id' => $customerId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria produto no Stripe
+     * 
+     * @param array $data Dados do produto:
+     *   - name (obrigatório): Nome do produto
+     *   - description (opcional): Descrição do produto
+     *   - active (opcional): Se o produto está ativo (padrão: true)
+     *   - images (opcional): Array de URLs de imagens
+     *   - metadata (opcional): Metadados
+     *   - statement_descriptor (opcional): Descrição que aparece na fatura
+     *   - unit_label (opcional): Rótulo da unidade (ex: "seat", "user")
+     * @return \Stripe\Product
+     */
+    public function createProduct(array $data): \Stripe\Product
+    {
+        try {
+            if (empty($data['name'])) {
+                throw new \InvalidArgumentException("Campo name é obrigatório");
+            }
+
+            $params = [
+                'name' => $data['name']
+            ];
+
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            } else {
+                $params['active'] = true; // Padrão: ativo
+            }
+
+            if (!empty($data['images']) && is_array($data['images'])) {
+                $params['images'] = $data['images'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (!empty($data['statement_descriptor'])) {
+                $params['statement_descriptor'] = $data['statement_descriptor'];
+            }
+
+            if (!empty($data['unit_label'])) {
+                $params['unit_label'] = $data['unit_label'];
+            }
+
+            $product = $this->client->products->create($params);
+
+            Logger::info("Produto criado", [
+                'product_id' => $product->id,
+                'name' => $product->name
+            ]);
+
+            return $product;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar produto", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém produto por ID
+     * 
+     * @param string $productId ID do produto no Stripe
+     * @return \Stripe\Product
+     */
+    public function getProduct(string $productId): \Stripe\Product
+    {
+        try {
+            return $this->client->products->retrieve($productId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter produto", [
+                'product_id' => $productId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza produto no Stripe
+     * 
+     * @param string $productId ID do produto no Stripe
+     * @param array $data Dados para atualização:
+     *   - name (opcional): Nome do produto
+     *   - description (opcional): Descrição do produto
+     *   - active (opcional): Se o produto está ativo
+     *   - images (opcional): Array de URLs de imagens
+     *   - metadata (opcional): Metadados
+     *   - statement_descriptor (opcional): Descrição que aparece na fatura
+     *   - unit_label (opcional): Rótulo da unidade
+     * @return \Stripe\Product
+     */
+    public function updateProduct(string $productId, array $data): \Stripe\Product
+    {
+        try {
+            $params = [];
+
+            if (isset($data['name'])) {
+                $params['name'] = $data['name'];
+            }
+
+            if (isset($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            }
+
+            if (isset($data['images']) && is_array($data['images'])) {
+                $params['images'] = $data['images'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (isset($data['statement_descriptor'])) {
+                $params['statement_descriptor'] = $data['statement_descriptor'];
+            }
+
+            if (isset($data['unit_label'])) {
+                $params['unit_label'] = $data['unit_label'];
+            }
+
+            $product = $this->client->products->update($productId, $params);
+
+            Logger::info("Produto atualizado", [
+                'product_id' => $productId,
+                'updated_fields' => array_keys($params)
+            ]);
+
+            return $product;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar produto", [
+                'product_id' => $productId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Deleta produto no Stripe (soft delete - apenas desativa)
+     * 
+     * Nota: O Stripe não permite deletar produtos que têm preços associados.
+     * Este método desativa o produto (active = false) ao invés de deletar.
+     * Se o produto não tiver preços, pode ser deletado completamente.
+     * 
+     * @param string $productId ID do produto no Stripe
+     * @return \Stripe\Product
+     */
+    public function deleteProduct(string $productId): \Stripe\Product
+    {
+        try {
+            // Primeiro, tenta obter o produto para verificar se tem preços
+            $product = $this->client->products->retrieve($productId);
+            
+            // Lista preços associados ao produto
+            $prices = $this->client->prices->all([
+                'product' => $productId,
+                'limit' => 1
+            ]);
+
+            // Se tiver preços, apenas desativa
+            if (count($prices->data) > 0) {
+                $product = $this->client->products->update($productId, [
+                    'active' => false
+                ]);
+                
+                Logger::info("Produto desativado (tem preços associados)", [
+                    'product_id' => $productId,
+                    'prices_count' => count($prices->data)
+                ]);
+            } else {
+                // Se não tiver preços, pode deletar completamente
+                $product = $this->client->products->delete($productId);
+                
+                Logger::info("Produto deletado completamente", [
+                    'product_id' => $productId
+                ]);
+            }
+
+            return $product;
+        } catch (ApiErrorException $e) {
+            // Se o erro for que não pode deletar, tenta apenas desativar
+            if (strpos($e->getMessage(), 'cannot be deleted') !== false || 
+                strpos($e->getMessage(), 'has active prices') !== false) {
+                try {
+                    $product = $this->client->products->update($productId, [
+                        'active' => false
+                    ]);
+                    
+                    Logger::info("Produto desativado (não pode ser deletado)", [
+                        'product_id' => $productId
+                    ]);
+                    
+                    return $product;
+                } catch (ApiErrorException $e2) {
+                    Logger::error("Erro ao desativar produto", [
+                        'product_id' => $productId,
+                        'error' => $e2->getMessage()
+                    ]);
+                    throw $e2;
+                }
+            } else {
+                Logger::error("Erro ao deletar produto", [
+                    'product_id' => $productId,
+                    'error' => $e->getMessage()
+                ]);
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * Cria preço no Stripe
+     * 
+     * @param array $data Dados do preço:
+     *   - product (obrigatório): ID do produto
+     *   - unit_amount (obrigatório): Valor em centavos (ex: 2000 = $20.00)
+     *   - currency (obrigatório): Código da moeda (ex: 'brl', 'usd')
+     *   - recurring (opcional): Para preços recorrentes { interval: 'month'|'year'|'week'|'day', interval_count: int, trial_period_days: int }
+     *   - active (opcional): Se o preço está ativo (padrão: true)
+     *   - metadata (opcional): Metadados
+     *   - nickname (opcional): Apelido do preço
+     * @return \Stripe\Price
+     */
+    public function createPrice(array $data): \Stripe\Price
+    {
+        try {
+            // Validações obrigatórias
+            if (empty($data['product'])) {
+                throw new \InvalidArgumentException("Campo product é obrigatório");
+            }
+
+            if (!isset($data['unit_amount'])) {
+                throw new \InvalidArgumentException("Campo unit_amount é obrigatório");
+            }
+
+            if (empty($data['currency'])) {
+                throw new \InvalidArgumentException("Campo currency é obrigatório");
+            }
+
+            $params = [
+                'product' => $data['product'],
+                'unit_amount' => (int)$data['unit_amount'],
+                'currency' => strtolower($data['currency'])
+            ];
+
+            // Recurring (para assinaturas)
+            if (!empty($data['recurring']) && is_array($data['recurring'])) {
+                $params['recurring'] = [];
+                
+                if (!empty($data['recurring']['interval'])) {
+                    $params['recurring']['interval'] = $data['recurring']['interval'];
+                }
+                
+                if (isset($data['recurring']['interval_count'])) {
+                    $params['recurring']['interval_count'] = (int)$data['recurring']['interval_count'];
+                }
+                
+                if (isset($data['recurring']['trial_period_days'])) {
+                    $params['recurring']['trial_period_days'] = (int)$data['recurring']['trial_period_days'];
+                }
+            }
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            } else {
+                $params['active'] = true; // Padrão: ativo
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (!empty($data['nickname'])) {
+                $params['nickname'] = $data['nickname'];
+            }
+
+            $price = $this->client->prices->create($params);
+
+            Logger::info("Preço criado", [
+                'price_id' => $price->id,
+                'product_id' => $price->product,
+                'amount' => $price->unit_amount,
+                'currency' => $price->currency
+            ]);
+
+            return $price;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar preço", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém preço por ID
+     * 
+     * @param string $priceId ID do preço no Stripe
+     * @return \Stripe\Price
+     */
+    public function getPrice(string $priceId): \Stripe\Price
+    {
+        try {
+            return $this->client->prices->retrieve($priceId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter preço", [
+                'price_id' => $priceId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza preço no Stripe
+     * 
+     * Nota: O Stripe não permite alterar o valor (unit_amount) ou moeda de um preço existente.
+     * Apenas é possível atualizar: active, metadata, nickname.
+     * Para alterar o valor, crie um novo preço e desative o antigo.
+     * 
+     * @param string $priceId ID do preço no Stripe
+     * @param array $data Dados para atualização:
+     *   - active (opcional): Se o preço está ativo
+     *   - metadata (opcional): Metadados
+     *   - nickname (opcional): Apelido do preço
+     * @return \Stripe\Price
+     */
+    public function updatePrice(string $priceId, array $data): \Stripe\Price
+    {
+        try {
+            $params = [];
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (isset($data['nickname'])) {
+                $params['nickname'] = $data['nickname'];
+            }
+
+            if (empty($params)) {
+                throw new \InvalidArgumentException("Nenhum campo válido para atualização fornecido");
+            }
+
+            $price = $this->client->prices->update($priceId, $params);
+
+            Logger::info("Preço atualizado", [
+                'price_id' => $priceId,
+                'updated_fields' => array_keys($params)
+            ]);
+
+            return $price;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar preço", [
+                'price_id' => $priceId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Valida webhook signature
      */
     public function validateWebhook(string $payload, string $signature): \Stripe\Event

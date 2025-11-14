@@ -117,5 +117,20 @@ class CacheService
     {
         return self::delete($key);
     }
+
+    /**
+     * Obtém cliente Redis (para uso em outros serviços)
+     * Retorna null se Redis não estiver disponível
+     */
+    public static function getRedisClient(): ?Client
+    {
+        try {
+            $client = self::getClient();
+            $client->ping();
+            return $client;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
 }
 

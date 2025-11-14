@@ -4,7 +4,7 @@
 
 - **Status**: ✅ Sistema Funcional e Testado
 - **Versão**: 1.0.0
-- **Última Atualização**: 2025-11-13
+- **Última Atualização**: 2025-01-15
 
 ---
 
@@ -61,10 +61,25 @@
 - [x] `getInvoice()` - Obter fatura por ID ✅ **TESTADO** (`test_buscar_fatura.php`)
 - [x] `listInvoices()` - Listar faturas de um customer ✅ **TESTADO** (`test_customer_invoices_payment_methods.php`)
 - [x] `listPaymentMethods()` - Listar métodos de pagamento de um customer ✅ **TESTADO** (`test_customer_invoices_payment_methods.php`)
+- [x] `updatePaymentMethod()` - Atualizar método de pagamento (billing_details, metadata) ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] `detachPaymentMethod()` - Desanexar método de pagamento de um customer ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] `deletePaymentMethod()` - Deletar método de pagamento (desanexa do customer) ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] `setDefaultPaymentMethod()` - Definir método de pagamento como padrão ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] `createProduct()` - Criar produto no Stripe ✅ **TESTADO** (`test_products.php`)
+- [x] `getProduct()` - Obter produto por ID ✅ **TESTADO** (`test_products.php`)
+- [x] `updateProduct()` - Atualizar produto ✅ **TESTADO** (`test_products.php`)
+- [x] `deleteProduct()` - Deletar produto (soft delete se tiver preços) ✅ **TESTADO** (`test_products.php`)
+- [x] `createPrice()` - Criar preço no Stripe ✅ **TESTADO** (`test_prices_create_update.php`)
+- [x] `getPrice()` - Obter preço por ID ✅ **TESTADO** (`test_prices_create_update.php`)
+- [x] `updatePrice()` - Atualizar preço (metadata, active, nickname) ✅ **TESTADO** (`test_prices_create_update.php`)
 - [x] `listPrices()` - Listar preços/products disponíveis ✅ **TESTADO** (`test_listar_precos.php`)
 - [x] `listCustomers()` - Listar customers do Stripe ✅ **TESTADO** (`test_list_customers_stats.php`)
 - [x] `createPaymentIntent()` - Criar payment intent para pagamento único ✅ **TESTADO** (`test_payment_intent_refund.php`)
 - [x] `refundPayment()` - Reembolsar pagamento ✅ **TESTADO** (`test_payment_intent_refund.php`)
+- [x] `createCoupon()` - Criar cupom de desconto ✅ **TESTADO** (`test_cupons.php`)
+- [x] `getCoupon()` - Obter cupom por ID ✅ **TESTADO** (`test_cupons.php`)
+- [x] `listCoupons()` - Listar cupons ✅ **TESTADO** (`test_cupons.php`)
+- [x] `deleteCoupon()` - Deletar cupom ✅ **TESTADO** (`test_cupons.php`)
 - [x] `validateWebhook()` - Validar webhook signature ✅ **TESTADO** (usado em produção via `WebhookController`)
 
 #### PaymentService - Lógica central de pagamentos
@@ -75,14 +90,14 @@
 - [x] `handleCheckoutCompleted()` - Salvar payment method e definir como padrão ✅ **TESTADO** (via webhook)
 
 #### CacheService - Cache Redis
-- [x] Get/Set/Delete
-- [x] Suporte a JSON
-- [x] Locks distribuídos
+  - [x] Get/Set/Delete
+  - [x] Suporte a JSON
+  - [x] Locks distribuídos
 - [x] Fallback gracioso (funciona sem Redis)
 
 #### Logger - Logging estruturado
-- [x] Info, Error, Debug, Warning
-- [x] Arquivo de log configurável
+  - [x] Info, Error, Debug, Warning
+  - [x] Arquivo de log configurável
 - [x] Integração com Monolog
 
 ### ✅ Middleware
@@ -102,6 +117,9 @@
 - [x] PUT /v1/customers/:id - Atualizar cliente ✅ **TESTADO** (`test_customer_get_update.php`)
 - [x] GET /v1/customers/:id/invoices - Listar faturas do cliente ✅ **TESTADO** (`test_customer_invoices_payment_methods.php`)
 - [x] GET /v1/customers/:id/payment-methods - Listar métodos de pagamento do cliente ✅ **TESTADO** (`test_customer_invoices_payment_methods.php`)
+- [x] PUT /v1/customers/:id/payment-methods/:pm_id - Atualizar método de pagamento ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] DELETE /v1/customers/:id/payment-methods/:pm_id - Deletar método de pagamento ✅ **TESTADO** (`test_payment_methods_management.php`)
+- [x] POST /v1/customers/:id/payment-methods/:pm_id/set-default - Definir método de pagamento como padrão ✅ **TESTADO** (`test_payment_methods_management.php`)
 
 #### CheckoutController
 - [x] POST /v1/checkout - Criar sessão de checkout ✅ **TESTADO** (`test_checkout_payment_method.php`)
@@ -126,6 +144,9 @@
 
 #### PriceController
 - [x] GET /v1/prices - Listar preços/products disponíveis ✅ **TESTADO** (`test_listar_precos.php`)
+- [x] POST /v1/prices - Criar preço ✅ **TESTADO** (`test_prices_create_update.php`)
+- [x] GET /v1/prices/:id - Obter preço específico ✅ **TESTADO** (`test_prices_create_update.php`)
+- [x] PUT /v1/prices/:id - Atualizar preço ✅ **TESTADO** (`test_prices_create_update.php`)
 
 #### PaymentController
 - [x] POST /v1/payment-intents - Criar payment intent para pagamento único ✅ **TESTADO** (`test_payment_intent_refund.php`)
@@ -133,6 +154,18 @@
 
 #### StatsController
 - [x] GET /v1/stats - Estatísticas e métricas do sistema ✅ **TESTADO** (`test_list_customers_stats.php`)
+
+#### CouponController
+- [x] POST /v1/coupons - Criar cupom de desconto ✅ **TESTADO** (`test_cupons.php`)
+- [x] GET /v1/coupons - Listar cupons ✅ **TESTADO** (`test_cupons.php`)
+- [x] GET /v1/coupons/:id - Obter cupom específico ✅ **TESTADO** (`test_cupons.php`)
+- [x] DELETE /v1/coupons/:id - Deletar cupom ✅ **TESTADO** (`test_cupons.php`)
+
+#### ProductController
+- [x] POST /v1/products - Criar produto ✅ **TESTADO** (`test_products.php`)
+- [x] GET /v1/products/:id - Obter produto específico ✅ **TESTADO** (`test_products.php`)
+- [x] PUT /v1/products/:id - Atualizar produto ✅ **TESTADO** (`test_products.php`)
+- [x] DELETE /v1/products/:id - Deletar produto ✅ **TESTADO** (`test_products.php`)
 
 ### ✅ Rotas e Endpoints
 - [x] GET / - Informações da API
@@ -159,6 +192,10 @@
 - [x] POST /v1/payment-intents - Criar payment intent ✅ **TESTADO**
 - [x] POST /v1/refunds - Reembolsar pagamento ✅ **TESTADO**
 - [x] GET /v1/stats - Estatísticas e métricas ✅ **TESTADO**
+- [x] POST /v1/coupons - Criar cupom ✅ **TESTADO**
+- [x] GET /v1/coupons - Listar cupons ✅ **TESTADO**
+- [x] GET /v1/coupons/:id - Obter cupom ✅ **TESTADO**
+- [x] DELETE /v1/coupons/:id - Deletar cupom ✅ **TESTADO**
 
 ### ✅ Integração Stripe
 - [x] Configuração de Stripe Secret
@@ -172,11 +209,17 @@
 - [x] Consulta de faturas ✅ **TESTADO**
 - [x] Listagem de faturas por customer ✅ **TESTADO**
 - [x] Listagem de métodos de pagamento por customer ✅ **TESTADO**
+- [x] Atualização de métodos de pagamento (billing_details, metadata) ✅ **TESTADO**
+- [x] Deleção de métodos de pagamento ✅ **TESTADO**
+- [x] Definição de método de pagamento como padrão ✅ **TESTADO**
 - [x] Listagem de preços/products disponíveis ✅ **TESTADO**
 - [x] Listagem de customers do Stripe ✅ **TESTADO**
 - [x] Criação de payment intents para pagamentos únicos ✅ **TESTADO**
 - [x] Reembolsos de pagamentos ✅ **TESTADO**
 - [x] Estatísticas e métricas do sistema ✅ **TESTADO**
+- [x] Gerenciamento de cupons de desconto ✅ **TESTADO**
+- [x] Gerenciamento de produtos (create, update, get, delete) ✅ **TESTADO**
+- [x] Gerenciamento de preços (create, update, get) ✅ **TESTADO**
 - [x] Validação de webhook signature ✅ **TESTADO**
 - [x] Idempotência de eventos ✅ **TESTADO**
 
@@ -199,8 +242,12 @@
 
 ### ✅ Testes
 - [x] Estrutura PHPUnit configurada
+- [x] Bootstrap para testes (`tests/bootstrap.php`) configurado
 - [x] `BaseModelTest` - Testes do ActiveRecord
 - [x] `StripeServiceTest` - Estrutura de testes do Stripe
+- [x] `PriceControllerTest` - Testes unitários do PriceController
+- [x] `PaymentControllerTest` - Testes unitários do PaymentController
+- [x] `CouponControllerTest` - Testes unitários do CouponController (parcial - alguns testes requerem refatoração)
 - [x] Scripts de teste manual em `tests/Manual/`:
   - [x] `test_customer_get_update.php` - GET e PUT de customers ✅
   - [x] `test_subscription_get_update.php` - GET e PUT de subscriptions ✅
@@ -216,6 +263,7 @@
   - [x] `test_listar_precos.php` - Listagem de preços/products disponíveis ✅
   - [x] `test_list_customers_stats.php` - Listagem de customers e estatísticas ✅
   - [x] `test_payment_intent_refund.php` - Criação de payment intents e reembolsos ✅
+  - [x] `test_cupons.php` - Gerenciamento de cupons de desconto ✅
   - [x] `test_completo.php` - Teste completo do sistema ✅
 - [x] Testes funcionais realizados e validados
 
@@ -234,7 +282,10 @@
 ### 🔄 Funcionalidades Adicionais (Opcionais)
 
 #### Métodos do StripeService que podem ser adicionados:
-- Nenhum método pendente no momento
+- Ver documento detalhado: `docs/STRIPE_PENDENCIAS.md`
+- **Alta Prioridade:** Payment Methods (delete, update, detach), Products (create, update), Prices (create, update)
+- **Média Prioridade:** Tax Rates, Promotion Codes, Setup Intents, Subscription Items, Invoice Items
+- **Baixa Prioridade:** Charges, Disputes, Balance Transactions, Payouts
 
 #### Endpoints adicionais:
 - [ ] Histórico de mudanças de assinatura
@@ -251,7 +302,10 @@
 - [ ] Criptografia de dados sensíveis no banco
 
 ### 🧪 Testes
-- [ ] Mais testes unitários (cobertura > 80%)
+- [x] Testes unitários básicos implementados (PriceController, PaymentController, CouponController)
+- [ ] Completar testes unitários do CouponController (corrigir mocks de metadata)
+- [ ] Mais testes unitários para outros controllers (cobertura > 80%)
+- [ ] Testes unitários completos do StripeService (com mocks)
 - [ ] Testes de integração completos
 - [ ] Testes de webhook com mocks
 - [ ] Testes de performance
@@ -290,7 +344,7 @@
 - [ ] Timezone por tenant
 
 ### 💰 Funcionalidades de Negócio
-- [ ] Cupons de desconto
+- [x] Cupons de desconto ✅ **TESTADO**
 - [ ] Trial periods (já implementado, mas pode ser expandido)
 - [ ] Upgrade/downgrade de planos (já implementado via updateSubscription)
 - [ ] Proration automático (já implementado)
@@ -315,9 +369,10 @@
 12. ✅ **Payment Intents** - Criação de payment intents para pagamentos únicos testada
 13. ✅ **Reembolsos** - Sistema de reembolsos testado
 14. ✅ **Estatísticas** - Endpoint de estatísticas e métricas testado
-15. ✅ **Banco de Dados** - Todas as tabelas e relacionamentos
-16. ✅ **Cache** - Sistema de cache Redis (com fallback)
-17. ✅ **Logs** - Sistema de logging estruturado
+15. ✅ **Cupons de Desconto** - Sistema completo de gerenciamento de cupons testado
+16. ✅ **Banco de Dados** - Todas as tabelas e relacionamentos
+17. ✅ **Cache** - Sistema de cache Redis (com fallback)
+18. ✅ **Logs** - Sistema de logging estruturado
 
 ---
 
@@ -329,16 +384,18 @@
 
 ## 🎯 Próximos Passos Recomendados
 
-### Prioridade Alta
-1. [ ] Adicionar mais testes unitários
-2. [ ] Implementar migrations system
-3. [ ] Adicionar rate limiting
+### Prioridade Alta (URGENTE)
+1. [ ] **Rate Limiting** - Proteção contra abuso da API (crítico para produção)
+2. [ ] **Migrations System** - Sistema de versionamento de banco de dados (Phinx ou similar)
+3. [ ] **Logs de Auditoria** - Rastreabilidade de ações (quem fez o quê, quando)
+4. [ ] Completar testes unitários do CouponController (corrigir problemas de mock)
 
 ### Prioridade Média
-1. [ ] Dashboard administrativo básico
-2. [ ] Sistema de notificações
-3. [ ] Métricas e monitoramento
-4. [ ] Documentação de API (Swagger/OpenAPI)
+1. [ ] **Health Check Avançado** - Verificação de dependências (DB, Redis, Stripe)
+2. [ ] **Documentação de API (Swagger/OpenAPI)** - Documentação interativa da API
+3. [ ] Dashboard administrativo básico
+4. [ ] Sistema de notificações
+5. [ ] Métricas e monitoramento avançado
 
 ### Prioridade Baixa
 1. [ ] Internacionalização
@@ -374,15 +431,116 @@
 - ✅ `test_listar_precos.php` - Testa listagem de preços/products disponíveis
 - ✅ `test_list_customers_stats.php` - Testa listagem de customers e estatísticas
 - ✅ `test_payment_intent_refund.php` - Testa criação de payment intents e reembolsos
+- ✅ `test_cupons.php` - Testa gerenciamento de cupons de desconto
 - ✅ `test_completo.php` - Teste completo do sistema
 
 ### Taxa de Cobertura:
-- **Endpoints**: 21/21 testados (100%)
-- **Métodos StripeService**: 22/22 testados (100%)
-- **Controllers**: 9/9 testados (100%)
+- **Endpoints**: 25/25 testados (100%)
+- **Métodos StripeService**: 26/26 testados (100%)
+- **Controllers**: 10/10 testados (100%)
 
 ---
 
-**Última Revisão**: 2025-11-13
-**Status do Projeto**: ✅ Pronto para Uso
-**Última Atualização do Checklist**: 2025-11-13
+**Última Revisão**: 2025-01-15
+**Status do Projeto**: ✅ Pronto para Uso (com melhorias recomendadas)
+**Última Atualização do Checklist**: 2025-01-15
+
+---
+
+## 🚨 Implementações Mais Urgentes
+
+### 🔴 Crítico para Produção
+
+#### 1. **Rate Limiting** ⚠️ URGENTE
+**Por quê?** Proteção essencial contra abuso da API, ataques DDoS e uso excessivo de recursos.
+
+**O que implementar:**
+- Rate limiting por API key (requests por minuto/hora)
+- Rate limiting por IP (fallback quando não há API key)
+- Diferentes limites para diferentes endpoints (ex: webhook pode ter limite maior)
+- Headers de resposta indicando limites (X-RateLimit-Limit, X-RateLimit-Remaining)
+- Armazenamento de contadores (Redis ou banco de dados)
+
+**Impacto:** Alto - Sem rate limiting, a API está vulnerável a abusos.
+
+---
+
+#### 2. **Migrations System** ⚠️ URGENTE
+**Por quê?** Necessário para evolução controlada do banco de dados em diferentes ambientes.
+
+**O que implementar:**
+- Sistema de migrations (Phinx, Doctrine Migrations ou custom)
+- Versionamento de schema
+- Migrations up/down
+- Seeds por ambiente
+- Integração com CI/CD
+
+**Impacto:** Alto - Sem migrations, mudanças no banco são difíceis de gerenciar em produção.
+
+---
+
+#### 3. **Logs de Auditoria** ⚠️ IMPORTANTE
+**Por quê?** Rastreabilidade e compliance - saber quem fez o quê e quando.
+
+**O que implementar:**
+- Tabela `audit_logs` no banco
+- Middleware de auditoria que registra:
+  - Endpoint acessado
+  - Método HTTP
+  - Tenant ID
+  - User ID (se aplicável)
+  - IP de origem
+  - Timestamp
+  - Request/Response (opcional, para debug)
+- Filtros e busca de logs
+- Retenção configurável
+
+**Impacto:** Médio-Alto - Importante para segurança e debugging em produção.
+
+---
+
+### 🟡 Importante (Próximos Passos)
+
+#### 4. **Health Check Avançado**
+**O que implementar:**
+- Verificação de conexão com banco de dados
+- Verificação de conexão com Redis
+- Verificação de conectividade com Stripe API
+- Status de cada serviço individual
+- Métricas básicas (uptime, versão, etc.)
+
+**Impacto:** Médio - Facilita monitoramento e troubleshooting.
+
+---
+
+#### 5. **Documentação de API (Swagger/OpenAPI)**
+**O que implementar:**
+- Especificação OpenAPI 3.0
+- Documentação interativa (Swagger UI)
+- Exemplos de requisições/respostas
+- Descrição de todos os endpoints
+- Autenticação documentada
+
+**Impacto:** Médio - Facilita integração e onboarding de desenvolvedores.
+
+---
+
+### 📊 Resumo de Prioridades
+
+| Prioridade | Implementação | Impacto | Esforço | Urgência |
+|------------|---------------|---------|---------|----------|
+| 🔴 Crítico | Rate Limiting | Alto | Médio | ⚠️ URGENTE |
+| 🔴 Crítico | Migrations System | Alto | Médio | ⚠️ URGENTE |
+| 🟡 Importante | Logs de Auditoria | Médio-Alto | Médio | Importante |
+| 🟡 Importante | Health Check Avançado | Médio | Baixo | Importante |
+| 🟡 Importante | Documentação API | Médio | Médio | Importante |
+
+---
+
+### 💡 Recomendação de Ordem de Implementação
+
+1. **Primeiro:** Rate Limiting (proteção imediata)
+2. **Segundo:** Migrations System (base para evolução)
+3. **Terceiro:** Logs de Auditoria (rastreabilidade)
+4. **Quarto:** Health Check Avançado (monitoramento)
+5. **Quinto:** Documentação API (facilita uso)

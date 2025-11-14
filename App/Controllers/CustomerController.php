@@ -507,5 +507,250 @@ class CustomerController
             ], 500);
         }
     }
+
+    /**
+     * Atualiza método de pagamento de um cliente
+     * PUT /v1/customers/:id/payment-methods/:pm_id
+     * 
+     * Body JSON:
+     *   - billing_details (opcional): { address, email, name, phone }
+     *   - metadata (opcional): Metadados
+     */
+    public function updatePaymentMethod(string $id, string $pmId): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $customerModel = new \App\Models\Customer();
+            $customer = $customerModel->findById((int)$id);
+
+            // Valida se customer existe e pertence ao tenant
+            if (!$customer || $customer['tenant_id'] != $tenantId) {
+                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                return;
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            
+            if ($data === null) {
+                $data = [];
+            }
+
+            // Valida que o payment method pertence ao customer
+            $paymentMethods = $this->stripeService->listPaymentMethods($customer['stripe_customer_id'], ['limit' => 100]);
+            $paymentMethodExists = false;
+            foreach ($paymentMethods->data as $pm) {
+                if ($pm->id === $pmId) {
+                    $paymentMethodExists = true;
+                    break;
+                }
+            }
+
+            if (!$paymentMethodExists) {
+                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                return;
+            }
+
+            // Atualiza payment method
+            $paymentMethod = $this->stripeService->updatePaymentMethod($pmId, $data);
+
+            // Formata resposta
+            $paymentMethodData = [
+                'id' => $paymentMethod->id,
+                'type' => $paymentMethod->type,
+                'customer' => $paymentMethod->customer,
+                'created' => date('Y-m-d H:i:s', $paymentMethod->created),
+                'metadata' => $paymentMethod->metadata->toArray()
+            ];
+
+            // Adiciona dados específicos do tipo
+            if ($paymentMethod->type === 'card' && isset($paymentMethod->card)) {
+                $paymentMethodData['card'] = [
+                    'brand' => $paymentMethod->card->brand,
+                    'last4' => $paymentMethod->card->last4,
+                    'exp_month' => $paymentMethod->card->exp_month,
+                    'exp_year' => $paymentMethod->card->exp_year,
+                    'country' => $paymentMethod->card->country
+                ];
+            }
+
+            // Adiciona billing details se existir
+            if (isset($paymentMethod->billing_details)) {
+                $paymentMethodData['billing_details'] = [
+                    'name' => $paymentMethod->billing_details->name ?? null,
+                    'email' => $paymentMethod->billing_details->email ?? null,
+                    'phone' => $paymentMethod->billing_details->phone ?? null,
+                    'address' => $paymentMethod->billing_details->address ? [
+                        'line1' => $paymentMethod->billing_details->address->line1 ?? null,
+                        'line2' => $paymentMethod->billing_details->address->line2 ?? null,
+                        'city' => $paymentMethod->billing_details->address->city ?? null,
+                        'state' => $paymentMethod->billing_details->address->state ?? null,
+                        'postal_code' => $paymentMethod->billing_details->address->postal_code ?? null,
+                        'country' => $paymentMethod->billing_details->address->country ?? null,
+                    ] : null
+                ];
+            }
+
+            Flight::json([
+                'success' => true,
+                'data' => $paymentMethodData
+            ]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            Logger::error("Erro ao atualizar método de pagamento", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro ao atualizar método de pagamento',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao atualizar método de pagamento", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Deleta método de pagamento de um cliente
+     * DELETE /v1/customers/:id/payment-methods/:pm_id
+     */
+    public function deletePaymentMethod(string $id, string $pmId): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $customerModel = new \App\Models\Customer();
+            $customer = $customerModel->findById((int)$id);
+
+            // Valida se customer existe e pertence ao tenant
+            if (!$customer || $customer['tenant_id'] != $tenantId) {
+                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                return;
+            }
+
+            // Valida que o payment method pertence ao customer
+            $paymentMethods = $this->stripeService->listPaymentMethods($customer['stripe_customer_id'], ['limit' => 100]);
+            $paymentMethodExists = false;
+            foreach ($paymentMethods->data as $pm) {
+                if ($pm->id === $pmId) {
+                    $paymentMethodExists = true;
+                    break;
+                }
+            }
+
+            if (!$paymentMethodExists) {
+                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                return;
+            }
+
+            // Deleta payment method
+            $paymentMethod = $this->stripeService->deletePaymentMethod($pmId);
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Método de pagamento deletado com sucesso',
+                'data' => [
+                    'id' => $paymentMethod->id,
+                    'customer' => $paymentMethod->customer ?? null
+                ]
+            ]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            Logger::error("Erro ao deletar método de pagamento", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro ao deletar método de pagamento',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao deletar método de pagamento", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Define método de pagamento como padrão para um cliente
+     * POST /v1/customers/:id/payment-methods/:pm_id/set-default
+     */
+    public function setDefaultPaymentMethod(string $id, string $pmId): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $customerModel = new \App\Models\Customer();
+            $customer = $customerModel->findById((int)$id);
+
+            // Valida se customer existe e pertence ao tenant
+            if (!$customer || $customer['tenant_id'] != $tenantId) {
+                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                return;
+            }
+
+            // Valida que o payment method pertence ao customer
+            $paymentMethods = $this->stripeService->listPaymentMethods($customer['stripe_customer_id'], ['limit' => 100]);
+            $paymentMethodExists = false;
+            foreach ($paymentMethods->data as $pm) {
+                if ($pm->id === $pmId) {
+                    $paymentMethodExists = true;
+                    break;
+                }
+            }
+
+            if (!$paymentMethodExists) {
+                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                return;
+            }
+
+            // Define como padrão
+            $this->stripeService->setDefaultPaymentMethod($pmId, $customer['stripe_customer_id']);
+
+            // Obtém o customer atualizado para confirmar
+            $stripeCustomer = $this->stripeService->getCustomer($customer['stripe_customer_id']);
+
+            Flight::json([
+                'success' => true,
+                'message' => 'Método de pagamento definido como padrão',
+                'data' => [
+                    'payment_method_id' => $pmId,
+                    'customer_id' => $customer['stripe_customer_id'],
+                    'default_payment_method' => $stripeCustomer->invoice_settings->default_payment_method ?? null
+                ]
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            Logger::error("Erro de validação ao definir método padrão", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro de validação',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            Logger::error("Erro ao definir método de pagamento como padrão", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro ao definir método de pagamento como padrão',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao definir método de pagamento como padrão", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 }
 

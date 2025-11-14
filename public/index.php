@@ -128,6 +128,30 @@ $app->before('start', function() use ($app) {
 });
 
 // Inicializa serviços (injeção de dependência)
+$rateLimiterService = new \App\Services\RateLimiterService();
+$rateLimitMiddleware = new \App\Middleware\RateLimitMiddleware($rateLimiterService);
+
+// Middleware de Rate Limiting (após autenticação)
+$app->before('start', function() use ($rateLimitMiddleware, $app) {
+    // Rotas públicas não têm rate limiting
+    $publicRoutes = ['/', '/v1/webhook', '/health'];
+    $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    
+    if (in_array($requestUri, $publicRoutes)) {
+        return;
+    }
+    
+    // Verifica rate limit
+    $allowed = $rateLimitMiddleware->check($requestUri);
+    
+    if (!$allowed) {
+        // Rate limit excedido - resposta já foi enviada pelo middleware
+        $app->stop();
+        exit;
+    }
+});
+
+// Inicializa serviços (injeção de dependência)
 $stripeService = new \App\Services\StripeService();
 $paymentService = new \App\Services\PaymentService(
     $stripeService,
@@ -146,6 +170,8 @@ $invoiceController = new \App\Controllers\InvoiceController($stripeService);
 $priceController = new \App\Controllers\PriceController($stripeService);
 $paymentController = new \App\Controllers\PaymentController($stripeService);
 $statsController = new \App\Controllers\StatsController($stripeService);
+$couponController = new \App\Controllers\CouponController($stripeService);
+$productController = new \App\Controllers\ProductController($stripeService);
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -166,7 +192,8 @@ $app->route('GET /', function() use ($app) {
             'prices' => '/v1/prices',
             'payment-intents' => '/v1/payment-intents',
             'refunds' => '/v1/refunds',
-            'stats' => '/v1/stats'
+            'stats' => '/v1/stats',
+            'coupons' => '/v1/coupons'
         ],
         'documentation' => 'Consulte o README.md para mais informações'
     ]);
@@ -213,6 +240,9 @@ $app->route('GET /v1/customers/@id', [$customerController, 'get']);
 $app->route('PUT /v1/customers/@id', [$customerController, 'update']);
 $app->route('GET /v1/customers/@id/invoices', [$customerController, 'listInvoices']);
 $app->route('GET /v1/customers/@id/payment-methods', [$customerController, 'listPaymentMethods']);
+$app->route('PUT /v1/customers/@id/payment-methods/@pm_id', [$customerController, 'updatePaymentMethod']);
+$app->route('DELETE /v1/customers/@id/payment-methods/@pm_id', [$customerController, 'deletePaymentMethod']);
+$app->route('POST /v1/customers/@id/payment-methods/@pm_id/set-default', [$customerController, 'setDefaultPaymentMethod']);
 
 // Rotas de checkout
 $app->route('POST /v1/checkout', [$checkoutController, 'create']);
@@ -237,6 +267,15 @@ $app->route('GET /v1/invoices/@id', [$invoiceController, 'get']);
 
 // Rotas de preços
 $app->route('GET /v1/prices', [$priceController, 'list']);
+$app->route('POST /v1/prices', [$priceController, 'create']);
+$app->route('GET /v1/prices/@id', [$priceController, 'get']);
+$app->route('PUT /v1/prices/@id', [$priceController, 'update']);
+
+// Rotas de produtos
+$app->route('POST /v1/products', [$productController, 'create']);
+$app->route('GET /v1/products/@id', [$productController, 'get']);
+$app->route('PUT /v1/products/@id', [$productController, 'update']);
+$app->route('DELETE /v1/products/@id', [$productController, 'delete']);
 
 // Rotas de pagamentos
 $app->route('POST /v1/payment-intents', [$paymentController, 'createPaymentIntent']);
@@ -244,6 +283,12 @@ $app->route('POST /v1/refunds', [$paymentController, 'createRefund']);
 
 // Rotas de estatísticas
 $app->route('GET /v1/stats', [$statsController, 'get']);
+
+// Rotas de cupons
+$app->route('POST /v1/coupons', [$couponController, 'create']);
+$app->route('GET /v1/coupons', [$couponController, 'list']);
+$app->route('GET /v1/coupons/@id', [$couponController, 'get']);
+$app->route('DELETE /v1/coupons/@id', [$couponController, 'delete']);
 
 // Tratamento de erros
 $app->map('notFound', function() use ($app) {

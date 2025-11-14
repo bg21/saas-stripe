@@ -1,0 +1,302 @@
+<?php
+
+namespace App\Controllers;
+
+use App\Services\StripeService;
+use App\Services\Logger;
+use Flight;
+use Config;
+
+/**
+ * Controller para gerenciar produtos do Stripe
+ */
+class ProductController
+{
+    private StripeService $stripeService;
+
+    public function __construct(StripeService $stripeService)
+    {
+        $this->stripeService = $stripeService;
+    }
+
+    /**
+     * Cria um novo produto
+     * POST /v1/products
+     * 
+     * Body:
+     *   - name (obrigatório): Nome do produto
+     *   - description (opcional): Descrição do produto
+     *   - active (opcional): Se o produto está ativo (padrão: true)
+     *   - images (opcional): Array de URLs de imagens
+     *   - metadata (opcional): Metadados
+     *   - statement_descriptor (opcional): Descrição que aparece na fatura
+     *   - unit_label (opcional): Rótulo da unidade (ex: "seat", "user")
+     */
+    public function create(): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            
+            if ($data === null) {
+                $data = [];
+            }
+
+            // Validações obrigatórias
+            if (empty($data['name'])) {
+                Flight::json(['error' => 'Campo name é obrigatório'], 400);
+                return;
+            }
+
+            // Adiciona tenant_id aos metadados se não existir
+            if (!isset($data['metadata'])) {
+                $data['metadata'] = [];
+            }
+            $data['metadata']['tenant_id'] = $tenantId;
+
+            $product = $this->stripeService->createProduct($data);
+
+            Flight::json([
+                'success' => true,
+                'data' => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'description' => $product->description ?? null,
+                    'active' => $product->active,
+                    'images' => $product->images ?? [],
+                    'statement_descriptor' => $product->statement_descriptor ?? null,
+                    'unit_label' => $product->unit_label ?? null,
+                    'created' => date('Y-m-d H:i:s', $product->created),
+                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                    'metadata' => $product->metadata->toArray()
+                ]
+            ], 201);
+        } catch (\InvalidArgumentException $e) {
+            Logger::error("Erro de validação ao criar produto", [
+                'error' => $e->getMessage(),
+                'tenant_id' => $tenantId ?? null
+            ]);
+            Flight::json([
+                'error' => 'Erro de validação',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            Logger::error("Erro ao criar produto no Stripe", [
+                'error' => $e->getMessage(),
+                'tenant_id' => $tenantId ?? null
+            ]);
+            Flight::json([
+                'error' => 'Erro ao criar produto',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro inesperado ao criar produto", [
+                'error' => $e->getMessage(),
+                'tenant_id' => $tenantId ?? null
+            ]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtém produto específico
+     * GET /v1/products/:id
+     */
+    public function get(string $id): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $product = $this->stripeService->getProduct($id);
+
+            // Valida se o produto pertence ao tenant (via metadata)
+            if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+                return;
+            }
+
+            Flight::json([
+                'success' => true,
+                'data' => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'description' => $product->description ?? null,
+                    'active' => $product->active,
+                    'images' => $product->images ?? [],
+                    'statement_descriptor' => $product->statement_descriptor ?? null,
+                    'unit_label' => $product->unit_label ?? null,
+                    'created' => date('Y-m-d H:i:s', $product->created),
+                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                    'metadata' => $product->metadata->toArray()
+                ]
+            ]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            if ($e->getStripeCode() === 'resource_missing') {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+            } else {
+                Logger::error("Erro ao obter produto", ['error' => $e->getMessage()]);
+                Flight::json([
+                    'error' => 'Erro ao obter produto',
+                    'message' => Config::isDevelopment() ? $e->getMessage() : null
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Logger::error("Erro ao obter produto", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Atualiza produto
+     * PUT /v1/products/:id
+     * 
+     * Body:
+     *   - name (opcional): Nome do produto
+     *   - description (opcional): Descrição do produto
+     *   - active (opcional): Se o produto está ativo
+     *   - images (opcional): Array de URLs de imagens
+     *   - metadata (opcional): Metadados
+     *   - statement_descriptor (opcional): Descrição que aparece na fatura
+     *   - unit_label (opcional): Rótulo da unidade
+     */
+    public function update(string $id): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            // Primeiro, verifica se o produto existe e pertence ao tenant
+            $product = $this->stripeService->getProduct($id);
+            
+            if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+                return;
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            
+            if ($data === null) {
+                $data = [];
+            }
+
+            // Preserva tenant_id nos metadados se metadata for atualizado
+            if (isset($data['metadata'])) {
+                $data['metadata']['tenant_id'] = $tenantId;
+            }
+
+            $product = $this->stripeService->updateProduct($id, $data);
+
+            Flight::json([
+                'success' => true,
+                'data' => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'description' => $product->description ?? null,
+                    'active' => $product->active,
+                    'images' => $product->images ?? [],
+                    'statement_descriptor' => $product->statement_descriptor ?? null,
+                    'unit_label' => $product->unit_label ?? null,
+                    'created' => date('Y-m-d H:i:s', $product->created),
+                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                    'metadata' => $product->metadata->toArray()
+                ]
+            ]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            if ($e->getStripeCode() === 'resource_missing') {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+            } else {
+                Logger::error("Erro ao atualizar produto", ['error' => $e->getMessage()]);
+                Flight::json([
+                    'error' => 'Erro ao atualizar produto',
+                    'message' => Config::isDevelopment() ? $e->getMessage() : null
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Logger::error("Erro ao atualizar produto", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Deleta produto
+     * DELETE /v1/products/:id
+     * 
+     * Nota: Se o produto tiver preços associados, apenas desativa (soft delete)
+     */
+    public function delete(string $id): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            // Primeiro, verifica se o produto existe e pertence ao tenant
+            $product = $this->stripeService->getProduct($id);
+            
+            if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+                return;
+            }
+
+            $product = $this->stripeService->deleteProduct($id);
+
+            // Verifica se foi deletado ou apenas desativado
+            $wasDeleted = isset($product->deleted) && $product->deleted === true;
+            $isActive = isset($product->active) ? $product->active : false;
+
+            Flight::json([
+                'success' => true,
+                'message' => $wasDeleted ? 'Produto deletado com sucesso' : 'Produto desativado com sucesso (tem preços associados)',
+                'data' => [
+                    'id' => $product->id,
+                    'deleted' => $wasDeleted,
+                    'active' => $isActive
+                ]
+            ]);
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            if ($e->getStripeCode() === 'resource_missing') {
+                Flight::json(['error' => 'Produto não encontrado'], 404);
+            } else {
+                Logger::error("Erro ao deletar produto", ['error' => $e->getMessage()]);
+                Flight::json([
+                    'error' => 'Erro ao deletar produto',
+                    'message' => Config::isDevelopment() ? $e->getMessage() : null
+                ], 400);
+            }
+        } catch (\Exception $e) {
+            Logger::error("Erro ao deletar produto", ['error' => $e->getMessage()]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+}
+

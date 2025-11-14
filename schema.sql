@@ -87,3 +87,15 @@ CREATE TABLE IF NOT EXISTS stripe_events (
     INDEX idx_processed (processed)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Tabela de rate limits (fallback quando Redis não está disponível)
+CREATE TABLE IF NOT EXISTS rate_limits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    identifier_key VARCHAR(255) NOT NULL,
+    request_count INT NOT NULL DEFAULT 1,
+    reset_at INT NOT NULL,
+    created_at INT NOT NULL,
+    updated_at INT NOT NULL,
+    INDEX idx_identifier_key (identifier_key),
+    INDEX idx_reset_at (reset_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
