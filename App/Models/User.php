@@ -42,15 +42,55 @@ class User extends BaseModel
     /**
      * Cria um novo usuário
      */
-    public function create(int $tenantId, string $email, string $password, ?string $name = null): int
+    public function create(int $tenantId, string $email, string $password, ?string $name = null, string $role = 'viewer'): int
     {
         return $this->insert([
             'tenant_id' => $tenantId,
             'email' => $email,
             'password_hash' => $this->hashPassword($password),
             'name' => $name,
-            'status' => 'active'
+            'status' => 'active',
+            'role' => $role
         ]);
+    }
+
+    /**
+     * Busca usuários por tenant
+     * 
+     * @param int $tenantId ID do tenant
+     * @return array Lista de usuários
+     */
+    public function findByTenant(int $tenantId): array
+    {
+        return $this->findAll(['tenant_id' => $tenantId]);
+    }
+
+    /**
+     * Atualiza role do usuário
+     * 
+     * @param int $userId ID do usuário
+     * @param string $role Nova role (admin, editor, viewer)
+     * @return bool Sucesso da operação
+     */
+    public function updateRole(int $userId, string $role): bool
+    {
+        if (!in_array($role, ['admin', 'editor', 'viewer'])) {
+            return false;
+        }
+
+        return $this->update($userId, ['role' => $role]);
+    }
+
+    /**
+     * Verifica se usuário é admin
+     * 
+     * @param int $userId ID do usuário
+     * @return bool True se é admin
+     */
+    public function isAdmin(int $userId): bool
+    {
+        $user = $this->findById($userId);
+        return $user && $user['role'] === 'admin';
     }
 }
 

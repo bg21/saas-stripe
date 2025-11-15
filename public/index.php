@@ -33,10 +33,10 @@ $app->before('start', function() {
     }
 });
 
-// Middleware de autenticação
+// Middleware de autenticação (suporta API Key e Session ID)
 $app->before('start', function() use ($app) {
     // Rotas públicas (sem autenticação)
-    $publicRoutes = ['/', '/v1/webhook', '/health'];
+    $publicRoutes = ['/', '/v1/webhook', '/health', '/v1/auth/login'];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
     if (in_array($requestUri, $publicRoutes)) {
@@ -95,22 +95,40 @@ $app->before('start', function() use ($app) {
         exit;
     }
     
-    $apiKey = trim($matches[1]);
+    $token = trim($matches[1]);
     
-    // Busca tenant diretamente
+    // Tenta primeiro como Session ID (usuário autenticado)
+    $userSessionModel = new \App\Models\UserSession();
+    $session = $userSessionModel->validate($token);
+    
+    if ($session) {
+        // Autenticação via Session ID (usuário)
+        Flight::set('user_id', (int)$session['user_id']);
+        Flight::set('user_role', $session['role'] ?? 'viewer');
+        Flight::set('user_email', $session['email']);
+        Flight::set('user_name', $session['name']);
+        Flight::set('tenant_id', (int)$session['tenant_id']);
+        Flight::set('tenant_name', $session['tenant_name']);
+        Flight::set('is_user_auth', true);
+        Flight::set('is_master', false);
+        return;
+    }
+    
+    // Se não é Session ID, tenta como API Key (tenant)
     $tenantModel = new \App\Models\Tenant();
-    $tenant = $tenantModel->findByApiKey($apiKey);
+    $tenant = $tenantModel->findByApiKey($token);
     
     if (!$tenant) {
         // Verifica master key
         $masterKey = Config::get('API_MASTER_KEY');
-        if ($masterKey && $apiKey === $masterKey) {
+        if ($masterKey && $token === $masterKey) {
             Flight::set('tenant_id', null);
             Flight::set('is_master', true);
+            Flight::set('is_user_auth', false);
             return;
         }
         
-        $app->json(['error' => 'Token inválido', 'debug' => Config::isDevelopment() ? ['api_key_received' => substr($apiKey, 0, 20) . '...', 'length' => strlen($apiKey)] : null], 401);
+        $app->json(['error' => 'Token inválido', 'debug' => Config::isDevelopment() ? ['token_received' => substr($token, 0, 20) . '...', 'length' => strlen($token)] : null], 401);
         $app->stop();
         exit;
     }
@@ -121,10 +139,11 @@ $app->before('start', function() use ($app) {
         exit;
     }
 
-    // Armazena dados de autenticação (usa Flight::set para garantir compartilhamento)
+    // Autenticação via API Key (tenant)
     Flight::set('tenant_id', (int)$tenant['id']);
     Flight::set('tenant', $tenant);
     Flight::set('is_master', false);
+    Flight::set('is_user_auth', false);
 });
 
 // Inicializa serviços (injeção de dependência)
@@ -350,6 +369,12 @@ $app->route('GET /v1/balance-transactions/@id', [$balanceTransactionController, 
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
 $app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
+
+// Rotas de Autenticação (públicas - não precisam de autenticação)
+$authController = new \App\Controllers\AuthController();
+$app->route('POST /v1/auth/login', [$authController, 'login']);
+$app->route('POST /v1/auth/logout', [$authController, 'logout']);
+$app->route('GET /v1/auth/me', [$authController, 'me']);
 
 // Tratamento de erros
 $app->map('notFound', function() use ($app, $auditMiddleware) {

@@ -68,7 +68,7 @@ class UserSession extends BaseModel
      * @param string $sessionId Token da sessão
      * @return bool Sucesso da operação
      */
-    public function delete(string $sessionId): bool
+    public function deleteSession(string $sessionId): bool
     {
         $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE id = :session_id");
         $stmt->execute(['session_id' => $sessionId]);
@@ -101,12 +101,12 @@ class UserSession extends BaseModel
     }
 
     /**
-     * Busca sessão por ID
+     * Busca sessão por Session ID (token)
      * 
      * @param string $sessionId Token da sessão
      * @return array|null Dados da sessão ou null se não encontrada
      */
-    public function findById(string $sessionId): ?array
+    public function findBySessionId(string $sessionId): ?array
     {
         return $this->findBy('id', $sessionId);
     }

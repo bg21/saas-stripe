@@ -95,7 +95,11 @@ class UserPermission extends BaseModel
         
         if ($existing) {
             // Atualiza
-            return $this->update($existing['id'], ['granted' => true]);
+            $stmt = $this->db->prepare(
+                "UPDATE {$this->table} SET granted = :granted WHERE id = :id"
+            );
+            $stmt->execute(['granted' => true, 'id' => $existing['id']]);
+            return $stmt->rowCount() > 0;
         }
 
         // Cria nova
@@ -121,7 +125,11 @@ class UserPermission extends BaseModel
         
         if ($existing) {
             // Atualiza para negado
-            return $this->update($existing['id'], ['granted' => false]);
+            $stmt = $this->db->prepare(
+                "UPDATE {$this->table} SET granted = :granted WHERE id = :id"
+            );
+            $stmt->execute(['granted' => false, 'id' => $existing['id']]);
+            return $stmt->rowCount() > 0;
         }
 
         // Cria como negado
