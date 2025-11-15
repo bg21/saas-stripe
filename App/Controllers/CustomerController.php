@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Services\PaymentService;
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\PermissionHelper;
 use Flight;
 use Config;
 
@@ -29,6 +30,9 @@ class CustomerController
     public function create(): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('create_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null || $tenantId === '') {
@@ -76,6 +80,9 @@ class CustomerController
     public function list(): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -104,6 +111,9 @@ class CustomerController
     public function get(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -205,6 +215,9 @@ class CustomerController
     public function update(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('update_customers');
+            
             $data = json_decode(file_get_contents('php://input'), true) ?? [];
             $tenantId = Flight::get('tenant_id');
             
@@ -320,6 +333,9 @@ class CustomerController
     public function listInvoices(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -417,6 +433,9 @@ class CustomerController
     public function listPaymentMethods(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -519,6 +538,9 @@ class CustomerController
     public function updatePaymentMethod(string $id, string $pmId): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('update_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -622,6 +644,9 @@ class CustomerController
     public function deletePaymentMethod(string $id, string $pmId): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('update_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -686,6 +711,9 @@ class CustomerController
     public function setDefaultPaymentMethod(string $id, string $pmId): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('update_customers');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {

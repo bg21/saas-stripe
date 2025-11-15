@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Services\PaymentService;
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\PermissionHelper;
 use Flight;
 use Config;
 
@@ -38,6 +39,9 @@ class SubscriptionController
     public function create(): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('create_subscriptions');
+            
             $data = json_decode(file_get_contents('php://input'), true) ?? [];
             $tenantId = Flight::get('tenant_id');
 
@@ -75,6 +79,9 @@ class SubscriptionController
     public function list(): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_subscriptions');
+            
             $tenantId = Flight::get('tenant_id');
             $subscriptionModel = new \App\Models\Subscription();
             $subscriptions = $subscriptionModel->findByTenant($tenantId);
@@ -97,6 +104,9 @@ class SubscriptionController
     public function get(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_subscriptions');
+            
             $tenantId = Flight::get('tenant_id');
             $subscriptionModel = new \App\Models\Subscription();
             $subscription = $subscriptionModel->findById((int)$id);
@@ -174,6 +184,9 @@ class SubscriptionController
     public function update(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('update_subscriptions');
+            
             $data = json_decode(file_get_contents('php://input'), true) ?? [];
             $tenantId = Flight::get('tenant_id');
             $subscriptionModel = new \App\Models\Subscription();
@@ -304,6 +317,9 @@ class SubscriptionController
     public function cancel(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('cancel_subscriptions');
+            
             $tenantId = Flight::get('tenant_id');
             $subscriptionModel = new \App\Models\Subscription();
             $subscription = $subscriptionModel->findById((int)$id);
@@ -388,6 +404,9 @@ class SubscriptionController
     public function reactivate(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('reactivate_subscriptions');
+            
             $tenantId = Flight::get('tenant_id');
             $subscriptionModel = new \App\Models\Subscription();
             $subscription = $subscriptionModel->findById((int)$id);
@@ -510,6 +529,9 @@ class SubscriptionController
     public function history(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_subscriptions');
+            
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {

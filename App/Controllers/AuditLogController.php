@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Models\AuditLog;
 use App\Services\Logger;
+use App\Utils\PermissionHelper;
 use Flight;
 use Config;
 
@@ -35,8 +36,15 @@ class AuditLogController
     public function list(): void
     {
         try {
-            $tenantId = Flight::get('tenant_id');
             $isMaster = Flight::get('is_master') === true;
+            
+            // Master key não precisa de verificação de permissões
+            // Usuários normais precisam de permissão para ver logs
+            if (!$isMaster) {
+                PermissionHelper::require('view_audit_logs');
+            }
+            
+            $tenantId = Flight::get('tenant_id');
             
             if (!$isMaster && $tenantId === null) {
                 Flight::json(['error' => 'Não autenticado'], 401);
@@ -113,8 +121,15 @@ class AuditLogController
     public function get(string $id): void
     {
         try {
-            $tenantId = Flight::get('tenant_id');
             $isMaster = Flight::get('is_master') === true;
+            
+            // Master key não precisa de verificação de permissões
+            // Usuários normais precisam de permissão para ver logs
+            if (!$isMaster) {
+                PermissionHelper::require('view_audit_logs');
+            }
+            
+            $tenantId = Flight::get('tenant_id');
             $logId = $id;
             
             if (!$isMaster && $tenantId === null) {
