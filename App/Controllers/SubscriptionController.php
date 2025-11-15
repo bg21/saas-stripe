@@ -201,6 +201,17 @@ class SubscriptionController
                 return;
             }
 
+            // Prepara dados antigos para histórico
+            $oldData = [
+                'status' => $subscription['status'],
+                'plan_id' => $subscription['plan_id'],
+                'amount' => $subscription['amount'],
+                'currency' => $subscription['currency'],
+                'current_period_end' => $subscription['current_period_end'],
+                'cancel_at_period_end' => $subscription['cancel_at_period_end'],
+                'metadata' => $subscription['metadata'] ? json_decode($subscription['metadata'], true) : null
+            ];
+
             // Atualiza no Stripe
             $stripeSubscription = $this->stripeService->updateSubscription(
                 $subscription['stripe_subscription_id'],
@@ -216,6 +227,37 @@ class SubscriptionController
 
             // Busca assinatura atualizada no banco
             $updatedSubscription = $subscriptionModel->findById((int)$id);
+
+            // Prepara dados novos para histórico
+            $newData = [
+                'status' => $updatedSubscription['status'],
+                'plan_id' => $updatedSubscription['plan_id'],
+                'amount' => $updatedSubscription['amount'],
+                'currency' => $updatedSubscription['currency'],
+                'current_period_end' => $updatedSubscription['current_period_end'],
+                'cancel_at_period_end' => $updatedSubscription['cancel_at_period_end'],
+                'metadata' => $updatedSubscription['metadata'] ? json_decode($updatedSubscription['metadata'], true) : null
+            ];
+
+            // Determina tipo de mudança
+            $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_UPDATED;
+            if (isset($data['price_id']) && $oldData['plan_id'] !== $newData['plan_id']) {
+                $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_PLAN_CHANGED;
+            } elseif ($oldData['status'] !== $newData['status']) {
+                $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_STATUS_CHANGED;
+            }
+
+            // Registra no histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $historyModel->recordChange(
+                (int)$id,
+                $tenantId,
+                $changeType,
+                $oldData,
+                $newData,
+                \App\Models\SubscriptionHistory::CHANGED_BY_API,
+                isset($data['price_id']) ? "Plano alterado para {$newData['plan_id']}" : "Assinatura atualizada via API"
+            );
 
             Flight::json([
                 'success' => true,
@@ -277,6 +319,12 @@ class SubscriptionController
                 $immediately
             );
 
+            // Prepara dados antigos para histórico
+            $oldData = [
+                'status' => $subscription['status'],
+                'cancel_at_period_end' => $subscription['cancel_at_period_end']
+            ];
+
             // Atualiza no banco
             $subscriptionModel->createOrUpdate(
                 $tenantId,
@@ -286,6 +334,24 @@ class SubscriptionController
 
             // Busca assinatura atualizada no banco
             $updatedSubscription = $subscriptionModel->findById((int)$id);
+
+            // Prepara dados novos para histórico
+            $newData = [
+                'status' => $updatedSubscription['status'],
+                'cancel_at_period_end' => $updatedSubscription['cancel_at_period_end']
+            ];
+
+            // Registra no histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $historyModel->recordChange(
+                (int)$id,
+                $tenantId,
+                \App\Models\SubscriptionHistory::CHANGE_TYPE_CANCELED,
+                $oldData,
+                $newData,
+                \App\Models\SubscriptionHistory::CHANGED_BY_API,
+                $immediately ? 'Assinatura cancelada imediatamente' : 'Assinatura marcada para cancelar no final do período'
+            );
 
             Flight::json([
                 'success' => true,
@@ -359,6 +425,12 @@ class SubscriptionController
                 return;
             }
 
+            // Prepara dados antigos para histórico
+            $oldData = [
+                'status' => $subscription['status'],
+                'cancel_at_period_end' => $subscription['cancel_at_period_end']
+            ];
+
             // Reativa a assinatura
             $stripeSubscription = $this->stripeService->reactivateSubscription($subscription['stripe_subscription_id']);
 
@@ -371,6 +443,24 @@ class SubscriptionController
 
             // Busca assinatura atualizada no banco
             $updatedSubscription = $subscriptionModel->findById((int)$id);
+
+            // Prepara dados novos para histórico
+            $newData = [
+                'status' => $updatedSubscription['status'],
+                'cancel_at_period_end' => $updatedSubscription['cancel_at_period_end']
+            ];
+
+            // Registra no histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $historyModel->recordChange(
+                (int)$id,
+                $tenantId,
+                \App\Models\SubscriptionHistory::CHANGE_TYPE_REACTIVATED,
+                $oldData,
+                $newData,
+                \App\Models\SubscriptionHistory::CHANGED_BY_API,
+                'Assinatura reativada - cancelamento no final do período removido'
+            );
 
             Flight::json([
                 'success' => true,
@@ -404,6 +494,70 @@ class SubscriptionController
             http_response_code(500);
             Flight::json([
                 'error' => 'Erro ao reativar assinatura',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Lista histórico de mudanças de uma assinatura
+     * GET /v1/subscriptions/:id/history
+     * 
+     * Query params opcionais:
+     *   - limit: Limite de resultados (padrão: 100, máximo: 500)
+     *   - offset: Offset para paginação (padrão: 0)
+     */
+    public function history(string $id): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                http_response_code(401);
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $subscriptionModel = new \App\Models\Subscription();
+            $subscription = $subscriptionModel->findById((int)$id);
+
+            if (!$subscription || $subscription['tenant_id'] != $tenantId) {
+                http_response_code(404);
+                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                return;
+            }
+
+            $queryParams = Flight::request()->query;
+            
+            // Paginação
+            $limit = isset($queryParams['limit']) ? (int) $queryParams['limit'] : 100;
+            $limit = min(max($limit, 1), 500); // Entre 1 e 500
+            $offset = isset($queryParams['offset']) ? (int) $queryParams['offset'] : 0;
+            $offset = max($offset, 0); // Não pode ser negativo
+
+            // Busca histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $history = $historyModel->findBySubscription((int)$id, $tenantId, $limit, $offset);
+            $total = $historyModel->countBySubscription((int)$id, $tenantId);
+
+            Flight::json([
+                'success' => true,
+                'data' => $history,
+                'pagination' => [
+                    'total' => $total,
+                    'limit' => $limit,
+                    'offset' => $offset,
+                    'has_more' => ($offset + $limit) < $total
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao obter histórico de assinatura", [
+                'error' => $e->getMessage(),
+                'subscription_id' => $id
+            ]);
+            http_response_code(500);
+            Flight::json([
+                'error' => 'Erro ao obter histórico de assinatura',
                 'message' => Config::isDevelopment() ? $e->getMessage() : null
             ], 500);
         }

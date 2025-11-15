@@ -11,7 +11,8 @@
     "vlucas/phpdotenv": "^5.5"
   },
   "require-dev": {
-    "phpunit/phpunit": "^10.0"
+    "phpunit/phpunit": "^10.0",
+    "robmorgan/phinx": "^0.16.10"
   },
   "autoload": {
     "psr-4": {
@@ -19,7 +20,10 @@
     }
   },
   "scripts": {
-    "test": "phpunit"
+    "test": "phpunit",
+    "migrate": "phinx migrate",
+    "migrate:rollback": "phinx rollback",
+    "migrate:status": "phinx status",
+    "seed": "phinx seed:run"
   }
 }
-

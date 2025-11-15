@@ -131,6 +131,10 @@ $app->before('start', function() use ($app) {
 $rateLimiterService = new \App\Services\RateLimiterService();
 $rateLimitMiddleware = new \App\Middleware\RateLimitMiddleware($rateLimiterService);
 
+// Inicializa middleware de auditoria
+$auditLogModel = new \App\Models\AuditLog();
+$auditMiddleware = new \App\Middleware\AuditMiddleware($auditLogModel);
+
 // Middleware de Rate Limiting (após autenticação)
 $app->before('start', function() use ($rateLimitMiddleware, $app) {
     // Rotas públicas não têm rate limiting
@@ -149,6 +153,11 @@ $app->before('start', function() use ($rateLimitMiddleware, $app) {
         $app->stop();
         exit;
     }
+});
+
+// Middleware de Auditoria - Captura início da requisição
+$app->before('start', function() use ($auditMiddleware) {
+    $auditMiddleware->captureRequest();
 });
 
 // Inicializa serviços (injeção de dependência)
@@ -172,6 +181,13 @@ $paymentController = new \App\Controllers\PaymentController($stripeService);
 $statsController = new \App\Controllers\StatsController($stripeService);
 $couponController = new \App\Controllers\CouponController($stripeService);
 $productController = new \App\Controllers\ProductController($stripeService);
+$promotionCodeController = new \App\Controllers\PromotionCodeController($stripeService);
+$setupIntentController = new \App\Controllers\SetupIntentController($stripeService);
+$subscriptionItemController = new \App\Controllers\SubscriptionItemController($stripeService);
+$taxRateController = new \App\Controllers\TaxRateController($stripeService);
+$invoiceItemController = new \App\Controllers\InvoiceItemController($stripeService);
+$balanceTransactionController = new \App\Controllers\BalanceTransactionController($stripeService);
+$auditLogController = new \App\Controllers\AuditLogController();
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -193,7 +209,12 @@ $app->route('GET /', function() use ($app) {
             'payment-intents' => '/v1/payment-intents',
             'refunds' => '/v1/refunds',
             'stats' => '/v1/stats',
-            'coupons' => '/v1/coupons'
+            'coupons' => '/v1/coupons',
+            'promotion-codes' => '/v1/promotion-codes',
+            'setup-intents' => '/v1/setup-intents',
+            'subscription-items' => '/v1/subscription-items',
+            'balance-transactions' => '/v1/balance-transactions',
+            'audit-logs' => '/v1/audit-logs'
         ],
         'documentation' => 'Consulte o README.md para mais informações'
     ]);
@@ -255,6 +276,7 @@ $app->route('GET /v1/subscriptions/@id', [$subscriptionController, 'get']);
 $app->route('PUT /v1/subscriptions/@id', [$subscriptionController, 'update']);
 $app->route('DELETE /v1/subscriptions/@id', [$subscriptionController, 'cancel']);
 $app->route('POST /v1/subscriptions/@id/reactivate', [$subscriptionController, 'reactivate']);
+$app->route('GET /v1/subscriptions/@id/history', [$subscriptionController, 'history']);
 
 // Rota de webhook
 $app->route('POST /v1/webhook', [$webhookController, 'handle']);
@@ -290,12 +312,52 @@ $app->route('GET /v1/coupons', [$couponController, 'list']);
 $app->route('GET /v1/coupons/@id', [$couponController, 'get']);
 $app->route('DELETE /v1/coupons/@id', [$couponController, 'delete']);
 
+// Rotas de códigos promocionais
+$app->route('POST /v1/promotion-codes', [$promotionCodeController, 'create']);
+$app->route('GET /v1/promotion-codes', [$promotionCodeController, 'list']);
+$app->route('GET /v1/promotion-codes/@id', [$promotionCodeController, 'get']);
+$app->route('PUT /v1/promotion-codes/@id', [$promotionCodeController, 'update']);
+
+// Rotas de Setup Intents
+$app->route('POST /v1/setup-intents', [$setupIntentController, 'create']);
+$app->route('GET /v1/setup-intents/@id', [$setupIntentController, 'get']);
+$app->route('POST /v1/setup-intents/@id/confirm', [$setupIntentController, 'confirm']);
+
+// Rotas de Subscription Items
+$app->route('POST /v1/subscriptions/@subscription_id/items', [$subscriptionItemController, 'create']);
+$app->route('GET /v1/subscriptions/@subscription_id/items', [$subscriptionItemController, 'list']);
+$app->route('GET /v1/subscription-items/@id', [$subscriptionItemController, 'get']);
+$app->route('PUT /v1/subscription-items/@id', [$subscriptionItemController, 'update']);
+$app->route('DELETE /v1/subscription-items/@id', [$subscriptionItemController, 'delete']);
+
+// Rotas de Tax Rates
+$app->route('POST /v1/tax-rates', [$taxRateController, 'create']);
+$app->route('GET /v1/tax-rates', [$taxRateController, 'list']);
+$app->route('GET /v1/tax-rates/@id', [$taxRateController, 'get']);
+$app->route('PUT /v1/tax-rates/@id', [$taxRateController, 'update']);
+
+// Rotas de Invoice Items
+$app->route('POST /v1/invoice-items', [$invoiceItemController, 'create']);
+$app->route('GET /v1/invoice-items', [$invoiceItemController, 'list']);
+$app->route('GET /v1/invoice-items/@id', [$invoiceItemController, 'get']);
+$app->route('PUT /v1/invoice-items/@id', [$invoiceItemController, 'update']);
+$app->route('DELETE /v1/invoice-items/@id', [$invoiceItemController, 'delete']);
+
+// Rotas de Balance Transactions
+$app->route('GET /v1/balance-transactions', [$balanceTransactionController, 'list']);
+$app->route('GET /v1/balance-transactions/@id', [$balanceTransactionController, 'get']);
+
+// Rotas de Audit Logs
+$app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
+$app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
+
 // Tratamento de erros
-$app->map('notFound', function() use ($app) {
+$app->map('notFound', function() use ($app, $auditMiddleware) {
+    $auditMiddleware->logResponse(404);
     $app->json(['error' => 'Rota não encontrada'], 404);
 });
 
-$app->map('error', function(\Throwable $ex) use ($app) {
+$app->map('error', function(\Throwable $ex) use ($app, $auditMiddleware) {
     try {
         \App\Services\Logger::error("Erro não tratado", [
             'message' => $ex->getMessage(),
@@ -305,10 +367,20 @@ $app->map('error', function(\Throwable $ex) use ($app) {
         // Ignora erros de log
     }
     
+    $auditMiddleware->logResponse(500);
+    
     $app->json([
         'error' => 'Erro interno do servidor',
         'message' => Config::isDevelopment() ? $ex->getMessage() : null
     ], 500);
+});
+
+// Middleware de Auditoria - Registra resposta após processamento
+// Usa register_shutdown_function para garantir que sempre execute
+register_shutdown_function(function() use ($auditMiddleware) {
+    // Obtém status HTTP da resposta
+    $statusCode = http_response_code() ?: 200;
+    $auditMiddleware->logResponse($statusCode);
 });
 
 // Inicia aplicação

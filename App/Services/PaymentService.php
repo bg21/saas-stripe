@@ -114,6 +114,31 @@ class PaymentService
             $stripeSubscription->toArray()
         );
 
+        // Prepara dados novos para histórico
+        $newData = [
+            'status' => $stripeSubscription->status,
+            'plan_id' => $stripeSubscription->items->data[0]->price->id ?? null,
+            'amount' => ($stripeSubscription->items->data[0]->price->unit_amount ?? 0) / 100,
+            'currency' => strtoupper($stripeSubscription->currency ?? 'usd'),
+            'current_period_end' => $stripeSubscription->current_period_end 
+                ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) 
+                : null,
+            'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end ? 1 : 0,
+            'metadata' => $stripeSubscription->metadata->toArray()
+        ];
+
+        // Registra no histórico
+        $historyModel = new \App\Models\SubscriptionHistory();
+        $historyModel->recordChange(
+            $subscriptionId,
+            $tenantId,
+            \App\Models\SubscriptionHistory::CHANGE_TYPE_CREATED,
+            [],
+            $newData,
+            \App\Models\SubscriptionHistory::CHANGED_BY_API,
+            "Assinatura criada com plano {$newData['plan_id']}"
+        );
+
         Logger::info("Assinatura criada", [
             'tenant_id' => $tenantId,
             'subscription_id' => $subscriptionId,
@@ -331,15 +356,67 @@ class PaymentService
         $subscription = $this->subscriptionModel->findByStripeId($stripeSubscription->id);
 
         if ($subscription) {
+            // Prepara dados antigos para histórico
+            $oldData = [
+                'status' => $subscription['status'],
+                'plan_id' => $subscription['plan_id'],
+                'amount' => $subscription['amount'],
+                'currency' => $subscription['currency'],
+                'current_period_end' => $subscription['current_period_end'],
+                'cancel_at_period_end' => $subscription['cancel_at_period_end'],
+                'metadata' => $subscription['metadata'] ? json_decode($subscription['metadata'], true) : null
+            ];
+
+            // Determina tipo de evento
+            $eventType = $event->type;
+            $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_UPDATED;
+            $description = "Assinatura atualizada via webhook: {$eventType}";
+
+            if ($eventType === 'customer.subscription.deleted') {
+                $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_CANCELED;
+                $description = "Assinatura cancelada via webhook";
+            } elseif ($oldData['status'] !== $stripeSubscription->status) {
+                $changeType = \App\Models\SubscriptionHistory::CHANGE_TYPE_STATUS_CHANGED;
+                $description = "Status alterado de {$oldData['status']} para {$stripeSubscription->status}";
+            }
+
+            // Atualiza no banco
             $this->subscriptionModel->createOrUpdate(
                 $subscription['tenant_id'],
                 $subscription['customer_id'],
                 $stripeSubscription->toArray()
             );
 
+            // Busca assinatura atualizada
+            $updatedSubscription = $this->subscriptionModel->findById($subscription['id']);
+
+            // Prepara dados novos para histórico
+            $newData = [
+                'status' => $updatedSubscription['status'],
+                'plan_id' => $updatedSubscription['plan_id'],
+                'amount' => $updatedSubscription['amount'],
+                'currency' => $updatedSubscription['currency'],
+                'current_period_end' => $updatedSubscription['current_period_end'],
+                'cancel_at_period_end' => $updatedSubscription['cancel_at_period_end'],
+                'metadata' => $updatedSubscription['metadata'] ? json_decode($updatedSubscription['metadata'], true) : null
+            ];
+
+            // Registra no histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $historyModel->recordChange(
+                $subscription['id'],
+                $subscription['tenant_id'],
+                $changeType,
+                $oldData,
+                $newData,
+                \App\Models\SubscriptionHistory::CHANGED_BY_WEBHOOK,
+                $description
+            );
+
             Logger::info("Assinatura atualizada", [
                 'subscription_id' => $subscription['id'],
-                'status' => $stripeSubscription->status
+                'status' => $stripeSubscription->status,
+                'event_type' => $eventType
             ]);
         }
     }

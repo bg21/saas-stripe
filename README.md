@@ -2,6 +2,16 @@
 
 Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via Stripe em PHP 8.2 usando FlightPHP.
 
+## 🚀 Quer Integrar no Seu SaaS?
+
+**👉 Consulte o [Guia Completo de Integração](docs/GUIA_INTEGRACAO_SAAS.md)** para saber como usar este sistema no seu SaaS.
+
+**Resumo rápido:**
+1. Execute `php scripts/setup_tenant.php` para criar seu tenant
+2. Use a API Key gerada no seu SaaS
+3. Use o [SDK PHP](sdk/PaymentsClient.php) ou faça requisições HTTP diretamente
+4. Pronto! 🎉
+
 ## 🚀 Características
 
 - ✅ Arquitetura MVC com PSR-4

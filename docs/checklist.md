@@ -3,8 +3,9 @@
 ## 📋 Status Geral
 
 - **Status**: ✅ Sistema Funcional e Testado
-- **Versão**: 1.0.0
+- **Versão**: 1.0.2
 - **Última Atualização**: 2025-01-15
+- **Análise Completa**: 2025-01-15
 
 ---
 
@@ -80,6 +81,29 @@
 - [x] `getCoupon()` - Obter cupom por ID ✅ **TESTADO** (`test_cupons.php`)
 - [x] `listCoupons()` - Listar cupons ✅ **TESTADO** (`test_cupons.php`)
 - [x] `deleteCoupon()` - Deletar cupom ✅ **TESTADO** (`test_cupons.php`)
+- [x] `createPromotionCode()` - Criar código promocional ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] `getPromotionCode()` - Obter código promocional por ID ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] `listPromotionCodes()` - Listar códigos promocionais ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] `updatePromotionCode()` - Atualizar código promocional ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] `createSetupIntent()` - Criar setup intent (para salvar payment method sem cobrar) ✅ **TESTADO** (`test_setup_intents.php`)
+- [x] `getSetupIntent()` - Obter setup intent por ID ✅ **TESTADO** (`test_setup_intents.php`)
+- [x] `confirmSetupIntent()` - Confirmar setup intent ✅ **TESTADO** (`test_setup_intents.php`)
+- [x] `createSubscriptionItem()` - Adicionar item a uma assinatura (add-ons) ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] `getSubscriptionItem()` - Obter subscription item por ID ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] `listSubscriptionItems()` - Listar items de uma assinatura ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] `updateSubscriptionItem()` - Atualizar subscription item (price, quantity) ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] `deleteSubscriptionItem()` - Remover item de uma assinatura ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] `createTaxRate()` - Criar taxa de imposto (IVA, GST, ICMS, etc.) ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] `getTaxRate()` - Obter tax rate por ID ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] `listTaxRates()` - Listar tax rates ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] `updateTaxRate()` - Atualizar tax rate (display_name, description, active) ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] `createInvoiceItem()` - Criar item de fatura (ajustes manuais, créditos) ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] `getInvoiceItem()` - Obter invoice item por ID ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] `listInvoiceItems()` - Listar invoice items ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] `updateInvoiceItem()` - Atualizar invoice item (amount, description, quantity) ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] `deleteInvoiceItem()` - Remover invoice item ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] `listBalanceTransactions()` - Listar transações de saldo ✅ **TESTADO** (`test_balance_transactions.php`)
+- [x] `getBalanceTransaction()` - Obter transação de saldo por ID ✅ **TESTADO** (`test_balance_transactions.php`)
 - [x] `validateWebhook()` - Validar webhook signature ✅ **TESTADO** (usado em produção via `WebhookController`)
 
 #### PaymentService - Lógica central de pagamentos
@@ -160,6 +184,41 @@
 - [x] GET /v1/coupons - Listar cupons ✅ **TESTADO** (`test_cupons.php`)
 - [x] GET /v1/coupons/:id - Obter cupom específico ✅ **TESTADO** (`test_cupons.php`)
 - [x] DELETE /v1/coupons/:id - Deletar cupom ✅ **TESTADO** (`test_cupons.php`)
+
+#### PromotionCodeController
+- [x] POST /v1/promotion-codes - Criar código promocional ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] GET /v1/promotion-codes - Listar códigos promocionais ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] GET /v1/promotion-codes/:id - Obter código promocional específico ✅ **TESTADO** (`test_promotion_codes.php`)
+- [x] PUT /v1/promotion-codes/:id - Atualizar código promocional ✅ **TESTADO** (`test_promotion_codes.php`)
+
+#### SetupIntentController
+- [x] POST /v1/setup-intents - Criar setup intent (salvar payment method sem cobrar) ✅ **TESTADO** (`test_setup_intents.php`)
+- [x] GET /v1/setup-intents/:id - Obter setup intent por ID ✅ **TESTADO** (`test_setup_intents.php`)
+- [x] POST /v1/setup-intents/:id/confirm - Confirmar setup intent ✅ **TESTADO** (`test_setup_intents.php`)
+
+#### SubscriptionItemController
+- [x] POST /v1/subscriptions/:subscription_id/items - Adicionar item a uma assinatura (add-on) ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] GET /v1/subscriptions/:subscription_id/items - Listar items de uma assinatura ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] GET /v1/subscription-items/:id - Obter subscription item por ID ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] PUT /v1/subscription-items/:id - Atualizar subscription item (price, quantity) ✅ **TESTADO** (`test_subscription_items.php`)
+- [x] DELETE /v1/subscription-items/:id - Remover item de uma assinatura ✅ **TESTADO** (`test_subscription_items.php`)
+
+#### TaxRateController
+- [x] POST /v1/tax-rates - Criar tax rate (taxa de imposto) ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] GET /v1/tax-rates - Listar tax rates ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] GET /v1/tax-rates/:id - Obter tax rate por ID ✅ **TESTADO** (`test_tax_rates.php`)
+- [x] PUT /v1/tax-rates/:id - Atualizar tax rate ✅ **TESTADO** (`test_tax_rates.php`)
+
+#### InvoiceItemController
+- [x] POST /v1/invoice-items - Criar invoice item (ajustes manuais, créditos) ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] GET /v1/invoice-items - Listar invoice items ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] GET /v1/invoice-items/:id - Obter invoice item por ID ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] PUT /v1/invoice-items/:id - Atualizar invoice item ✅ **TESTADO** (`test_invoice_items.php`)
+- [x] DELETE /v1/invoice-items/:id - Remover invoice item ✅ **TESTADO** (`test_invoice_items.php`)
+
+#### BalanceTransactionController
+- [x] GET /v1/balance-transactions - Listar transações de saldo ✅ **TESTADO** (`test_balance_transactions.php`)
+- [x] GET /v1/balance-transactions/:id - Obter transação de saldo por ID ✅ **TESTADO** (`test_balance_transactions.php`)
 
 #### ProductController
 - [x] POST /v1/products - Criar produto ✅ **TESTADO** (`test_products.php`)
@@ -279,27 +338,124 @@
 
 ## 🚧 Melhorias e Funcionalidades Futuras
 
-### 🔄 Funcionalidades Adicionais (Opcionais)
+### 🔄 Funcionalidades do Stripe que Ainda Faltam
 
-#### Métodos do StripeService que podem ser adicionados:
-- Ver documento detalhado: `docs/STRIPE_PENDENCIAS.md`
-- **Alta Prioridade:** Payment Methods (delete, update, detach), Products (create, update), Prices (create, update)
-- **Média Prioridade:** Tax Rates, Promotion Codes, Setup Intents, Subscription Items, Invoice Items
-- **Baixa Prioridade:** Charges, Disputes, Balance Transactions, Payouts
+#### 🟢 Baixa Prioridade (Opcionais - Raramente Usados)
+- [ ] **Charges** - Listar e obter detalhes de cobranças individuais
+  - `listCharges()` - Listar cobranças com filtros
+  - `getCharge()` - Obter cobrança específica
+  - `updateCharge()` - Atualizar metadata de cobrança
+  - Endpoints: `GET /v1/charges`, `GET /v1/charges/:id`, `PUT /v1/charges/:id`
+  - **Impacto:** Baixo - Útil apenas para auditoria detalhada
+  - **Esforço:** Baixo
 
-#### Endpoints adicionais:
-- [ ] Histórico de mudanças de assinatura
-- [ ] Notificações por email (integração com serviço de email)
-- [ ] Dashboard administrativo (frontend)
-- [ ] API de relatórios e analytics
+- [ ] **Disputes** - Gerenciar disputas de pagamento (chargebacks)
+  - `listDisputes()` - Listar disputas
+  - `getDispute()` - Obter disputa específica
+  - `updateDispute()` - Adicionar evidências à disputa
+  - Endpoints: `GET /v1/disputes`, `GET /v1/disputes/:id`, `PUT /v1/disputes/:id`
+  - **Impacto:** Baixo - Importante apenas se houver muitas disputas
+  - **Esforço:** Médio
+
+- [x] **Balance Transactions** - Histórico de transações financeiras ✅ **TESTADO** (`test_balance_transactions.php`)
+  - `listBalanceTransactions()` - Listar transações de saldo ✅ **TESTADO**
+  - `getBalanceTransaction()` - Obter transação específica ✅ **TESTADO**
+  - Endpoints: `GET /v1/balance-transactions`, `GET /v1/balance-transactions/:id` ✅ **TESTADO**
+  - **Impacto:** Baixo - Útil para reconciliação financeira
+  - **Esforço:** Baixo
+
+- [ ] **Payouts** - Gerenciar saques para conta bancária
+  - `listPayouts()` - Listar saques
+  - `getPayout()` - Obter saque específico
+  - `createPayout()` - Criar saque manual
+  - `cancelPayout()` - Cancelar saque pendente
+  - Endpoints: `GET /v1/payouts`, `GET /v1/payouts/:id`, `POST /v1/payouts`, `POST /v1/payouts/:id/cancel`
+  - **Impacto:** Baixo - Geralmente gerenciado pelo Stripe Dashboard
+  - **Esforço:** Médio
+
+#### 🟡 Média Prioridade (Melhorias de Integração)
+- [ ] **Webhooks - Mais Eventos** - Tratar mais eventos do Stripe
+  - `payment_intent.succeeded` - Pagamento confirmado
+  - `payment_intent.payment_failed` - Falha no pagamento
+  - `invoice.payment_failed` - Falha no pagamento de fatura
+  - `invoice.upcoming` - Fatura próxima (para notificações)
+  - `customer.subscription.trial_will_end` - Trial terminando
+  - `charge.dispute.created` - Disputa criada
+  - `charge.refunded` - Reembolso processado
+  - **Impacto:** Médio - Melhora a integração e permite ações automáticas
+  - **Esforço:** Médio
+
+#### Endpoints Adicionais de Negócio:
+- [ ] **Histórico de Mudanças de Assinatura** - Auditoria de mudanças
+  - Tabela `subscription_history`
+  - Registro de todas as mudanças (plano, status, etc.)
+  - Endpoint: `GET /v1/subscriptions/:id/history`
+  - **Impacto:** Médio - Útil para auditoria e suporte
+  - **Esforço:** Médio
+  - **Prioridade:** Média
+
+- [ ] **Notificações por Email** - Sistema de notificações
+  - Integração com serviço de email (SendGrid, Mailgun, etc.)
+  - Templates de email
+  - Notificações de eventos importantes (pagamento falhou, assinatura cancelada, etc.)
+  - **Impacto:** Médio - Melhora experiência do usuário
+  - **Esforço:** Médio
+  - **Prioridade:** Média
+
+- [ ] **Dashboard Administrativo** - Frontend para administração
+  - Interface web para gerenciar tenants
+  - Visualização de métricas
+  - Gerenciamento de API keys
+  - **Impacto:** Baixo - Facilita administração mas não é essencial
+  - **Esforço:** Alto
+  - **Prioridade:** Baixa
+
+- [ ] **API de Relatórios e Analytics** - Endpoints de relatórios
+  - Relatórios de receita
+  - Relatórios de assinaturas
+  - Relatórios de churn
+  - Exportação de dados
+  - **Impacto:** Médio - Útil para análise de negócio
+  - **Esforço:** Médio
+  - **Prioridade:** Média
 
 ### 🔒 Segurança Avançada
-- [ ] Rate limiting por API key
-- [ ] Rotação automática de API keys
-- [ ] Logs de auditoria (quem fez o quê)
-- [ ] IP whitelist por tenant
-- [ ] 2FA para usuários administrativos
-- [ ] Criptografia de dados sensíveis no banco
+- [x] Rate limiting por API key ✅ **TESTADO** (`test_rate_limiting.php`)
+- [ ] **Rotação automática de API keys** - Sistema para rotacionar API keys periodicamente
+  - **Impacto:** Médio - Importante para segurança em produção
+  - **Esforço:** Médio
+  - **Prioridade:** Média
+
+- [ ] **Logs de Auditoria** - Rastreabilidade completa de ações
+  - Tabela `audit_logs` no banco
+  - Middleware de auditoria
+  - Registro de: endpoint, método HTTP, tenant_id, user_id, IP, timestamp, request/response
+  - Filtros e busca de logs
+  - Retenção configurável
+  - **Impacto:** Alto - Essencial para compliance e debugging
+  - **Esforço:** Médio
+  - **Prioridade:** Alta ⚠️ URGENTE
+
+- [ ] **IP Whitelist por Tenant** - Restringir acesso por IP
+  - Tabela `tenant_ip_whitelist`
+  - Middleware de validação de IP
+  - **Impacto:** Médio - Importante para segurança adicional
+  - **Esforço:** Baixo
+  - **Prioridade:** Média
+
+- [ ] **2FA para Usuários Administrativos** - Autenticação de dois fatores
+  - Integração com TOTP (Google Authenticator, Authy)
+  - Backup codes
+  - **Impacto:** Alto - Importante para segurança de contas admin
+  - **Esforço:** Alto
+  - **Prioridade:** Média
+
+- [ ] **Criptografia de Dados Sensíveis** - Criptografar dados no banco
+  - Criptografia de campos sensíveis (ex: API keys, tokens)
+  - Chaves de criptografia gerenciadas
+  - **Impacto:** Alto - Importante para compliance (LGPD, GDPR)
+  - **Esforço:** Alto
+  - **Prioridade:** Média
 
 ### 🧪 Testes
 - [x] Testes unitários básicos implementados (PriceController, PaymentController, CouponController)
@@ -313,17 +469,80 @@
 - [ ] CI/CD pipeline
 
 ### 📊 Monitoramento e Observabilidade
-- [ ] Métricas de performance
-- [ ] Health checks avançados
-- [ ] Alertas de erro
-- [ ] Dashboard de métricas
-- [ ] Tracing de requisições
+- [ ] **Health Check Avançado** - Verificação de dependências
+  - Verificação de conexão com banco de dados
+  - Verificação de conexão com Redis
+  - Verificação de conectividade com Stripe API
+  - Status de cada serviço individual
+  - Métricas básicas (uptime, versão, etc.)
+  - Endpoint `/health` expandido
+  - **Impacto:** Médio - Facilita monitoramento e troubleshooting
+  - **Esforço:** Baixo
+  - **Prioridade:** Média
+
+- [ ] **Métricas de Performance** - Coleta de métricas de performance
+  - Tempo de resposta por endpoint
+  - Taxa de erro por endpoint
+  - Uso de memória/CPU
+  - **Impacto:** Médio - Importante para otimização
+  - **Esforço:** Médio
+  - **Prioridade:** Média
+
+- [ ] **Alertas de Erro** - Sistema de alertas
+  - Alertas por email/Slack quando há erros críticos
+  - Thresholds configuráveis
+  - **Impacto:** Médio - Importante para produção
+  - **Esforço:** Médio
+  - **Prioridade:** Média
+
+- [ ] **Dashboard de Métricas** - Dashboard visual de métricas
+  - Gráficos de uso da API
+  - Métricas de negócio (receita, assinaturas, etc.)
+  - **Impacto:** Baixo - Útil para análise
+  - **Esforço:** Alto
+  - **Prioridade:** Baixa
+
+- [ ] **Tracing de Requisições** - Rastreamento de requisições
+  - Request ID único por requisição
+  - Logs correlacionados
+  - **Impacto:** Médio - Facilita debugging
+  - **Esforço:** Médio
+  - **Prioridade:** Média
 
 ### 🗄️ Banco de Dados
-- [ ] Migrations system (Phinx ou similar)
-- [ ] Seeds mais completos
-- [ ] Backup automático
-- [ ] Replicação (para produção)
+- [x] **Migrations System** - Sistema de versionamento de banco de dados ✅ **IMPLEMENTADO**
+  - [x] Sistema de migrations (Phinx) ✅
+  - [x] Versionamento de schema ✅
+  - [x] Migrations up/down ✅
+  - [x] Seeds por ambiente ✅
+  - [x] Integração com configuração .env ✅
+  - [x] Documentação completa (docs/MIGRATIONS.md) ✅
+  - [x] Scripts composer para facilitar uso ✅
+  - **Impacto:** Alto - Sem migrations, mudanças no banco são difíceis de gerenciar em produção
+  - **Esforço:** Médio
+  - **Prioridade:** Alta ⚠️ URGENTE
+
+- [ ] **Seeds Mais Completos** - Dados de exemplo mais robustos
+  - Seeds para diferentes cenários
+  - Seeds por ambiente (dev, staging, prod)
+  - **Impacto:** Baixo - Facilita desenvolvimento e testes
+  - **Esforço:** Baixo
+  - **Prioridade:** Baixa
+
+- [ ] **Backup Automático** - Sistema de backup do banco de dados
+  - Backup automático diário/semanal
+  - Retenção configurável
+  - Restauração facilitada
+  - **Impacto:** Alto - Essencial para produção
+  - **Esforço:** Médio
+  - **Prioridade:** Alta
+
+- [ ] **Replicação** - Replicação de banco para produção
+  - Master-slave replication
+  - Read replicas
+  - **Impacto:** Médio - Importante para alta disponibilidade
+  - **Esforço:** Alto
+  - **Prioridade:** Média
 
 ### 🔧 DevOps
 - [ ] Dockerfile e docker-compose
@@ -349,7 +568,7 @@
 - [ ] Upgrade/downgrade de planos (já implementado via updateSubscription)
 - [ ] Proration automático (já implementado)
 - [ ] Faturas recorrentes customizadas
-- [ ] Taxas e impostos
+- ✅ Taxas e impostos (Tax Rates) ✅ **IMPLEMENTADO E TESTADO**
 
 ---
 
@@ -370,9 +589,15 @@
 13. ✅ **Reembolsos** - Sistema de reembolsos testado
 14. ✅ **Estatísticas** - Endpoint de estatísticas e métricas testado
 15. ✅ **Cupons de Desconto** - Sistema completo de gerenciamento de cupons testado
-16. ✅ **Banco de Dados** - Todas as tabelas e relacionamentos
-17. ✅ **Cache** - Sistema de cache Redis (com fallback)
-18. ✅ **Logs** - Sistema de logging estruturado
+16. ✅ **Códigos Promocionais** - Sistema completo de gerenciamento de promotion codes testado
+17. ✅ **Rate Limiting** - Sistema completo de rate limiting (Redis + MySQL fallback) testado
+18. ✅ **Setup Intents** - Sistema completo para salvar payment methods sem cobrar (trials) testado
+19. ✅ **Subscription Items** - Sistema completo para gerenciar add-ons e itens de assinatura testado
+20. ✅ **Tax Rates** - Sistema completo para gerenciar taxas de imposto (compliance fiscal) testado
+21. ✅ **Invoice Items** - Sistema completo para ajustes manuais em faturas testado
+22. ✅ **Banco de Dados** - Todas as tabelas e relacionamentos
+23. ✅ **Cache** - Sistema de cache Redis (com fallback)
+24. ✅ **Logs** - Sistema de logging estruturado
 
 ---
 
@@ -384,23 +609,88 @@
 
 ## 🎯 Próximos Passos Recomendados
 
-### Prioridade Alta (URGENTE)
-1. [ ] **Rate Limiting** - Proteção contra abuso da API (crítico para produção)
-2. [ ] **Migrations System** - Sistema de versionamento de banco de dados (Phinx ou similar)
-3. [ ] **Logs de Auditoria** - Rastreabilidade de ações (quem fez o quê, quando)
-4. [ ] Completar testes unitários do CouponController (corrigir problemas de mock)
+### Prioridade Alta (URGENTE) 🔴
+1. ✅ **Rate Limiting** - Proteção contra abuso da API (crítico para produção) ✅ **IMPLEMENTADO E TESTADO**
+2. ✅ **Migrations System** - Sistema de versionamento de banco de dados (Phinx) ✅ **IMPLEMENTADO**
+   - **Por quê?** Sem migrations, mudanças no banco são difíceis de gerenciar em produção
+   - **Impacto:** Alto
+   - **Esforço:** Médio
+   - **Status:** ✅ Implementado com Phinx, documentação completa, scripts composer
+3. [ ] **Logs de Auditoria** - Rastreabilidade de ações (quem fez o quê, quando) ⚠️ **IMPORTANTE**
+   - **Por quê?** Essencial para compliance, segurança e debugging em produção
+   - **Impacto:** Alto
+   - **Esforço:** Médio
+4. [ ] **Backup Automático** - Sistema de backup do banco de dados
+   - **Por quê?** Essencial para produção - proteção contra perda de dados
+   - **Impacto:** Alto
+   - **Esforço:** Médio
 
-### Prioridade Média
+### Prioridade Média 🟡
 1. [ ] **Health Check Avançado** - Verificação de dependências (DB, Redis, Stripe)
+   - **Impacto:** Médio - Facilita monitoramento e troubleshooting
+   - **Esforço:** Baixo
 2. [ ] **Documentação de API (Swagger/OpenAPI)** - Documentação interativa da API
-3. [ ] Dashboard administrativo básico
-4. [ ] Sistema de notificações
-5. [ ] Métricas e monitoramento avançado
+   - **Impacto:** Médio - Facilita integração e onboarding de desenvolvedores
+   - **Esforço:** Médio
+3. [ ] **Histórico de Mudanças de Assinatura** - Auditoria de mudanças
+   - **Impacto:** Médio - Útil para auditoria e suporte
+   - **Esforço:** Médio
+4. [ ] **Sistema de Notificações por Email** - Notificações de eventos importantes
+   - **Impacto:** Médio - Melhora experiência do usuário
+   - **Esforço:** Médio
+5. [ ] **Métricas de Performance** - Coleta de métricas de performance
+   - **Impacto:** Médio - Importante para otimização
+   - **Esforço:** Médio
+6. [ ] **API de Relatórios e Analytics** - Endpoints de relatórios
+   - **Impacto:** Médio - Útil para análise de negócio
+   - **Esforço:** Médio
+7. [ ] **Rotação Automática de API Keys** - Sistema para rotacionar API keys
+   - **Impacto:** Médio - Importante para segurança em produção
+   - **Esforço:** Médio
+8. [ ] **Webhooks - Mais Eventos** - Tratar mais eventos do Stripe
+   - **Impacto:** Médio - Melhora a integração e permite ações automáticas
+   - **Esforço:** Médio
+9. [ ] **IP Whitelist por Tenant** - Restringir acesso por IP
+   - **Impacto:** Médio - Importante para segurança adicional
+   - **Esforço:** Baixo
+10. [ ] **Tracing de Requisições** - Rastreamento de requisições
+    - **Impacto:** Médio - Facilita debugging
+    - **Esforço:** Médio
 
-### Prioridade Baixa
-1. [ ] Internacionalização
-2. [ ] Funcionalidades avançadas de negócio
-3. [ ] Frontend completo
+### Prioridade Baixa 🟢
+1. [ ] **Charges** - Listar e obter detalhes de cobranças individuais
+   - **Impacto:** Baixo - Útil apenas para auditoria detalhada
+   - **Esforço:** Baixo
+2. [ ] **Disputes** - Gerenciar disputas de pagamento (chargebacks)
+   - **Impacto:** Baixo - Importante apenas se houver muitas disputas
+   - **Esforço:** Médio
+3. [ ] **Balance Transactions** - Histórico de transações financeiras
+   - **Impacto:** Baixo - Útil para reconciliação financeira
+   - **Esforço:** Baixo
+4. [ ] **Payouts** - Gerenciar saques para conta bancária
+   - **Impacto:** Baixo - Geralmente gerenciado pelo Stripe Dashboard
+   - **Esforço:** Médio
+5. [ ] **Dashboard Administrativo** - Frontend para administração
+   - **Impacto:** Baixo - Facilita administração mas não é essencial
+   - **Esforço:** Alto
+6. [ ] **Dashboard de Métricas** - Dashboard visual de métricas
+   - **Impacto:** Baixo - Útil para análise
+   - **Esforço:** Alto
+7. [ ] **Seeds Mais Completos** - Dados de exemplo mais robustos
+   - **Impacto:** Baixo - Facilita desenvolvimento e testes
+   - **Esforço:** Baixo
+8. [ ] **Internacionalização** - Suporte a múltiplos idiomas
+   - **Impacto:** Baixo - Útil apenas se houver necessidade
+   - **Esforço:** Alto
+9. [ ] **2FA para Usuários Administrativos** - Autenticação de dois fatores
+   - **Impacto:** Alto - Importante para segurança de contas admin
+   - **Esforço:** Alto
+10. [ ] **Criptografia de Dados Sensíveis** - Criptografar dados no banco
+    - **Impacto:** Alto - Importante para compliance (LGPD, GDPR)
+    - **Esforço:** Alto
+11. [ ] **Replicação de Banco** - Replicação de banco para produção
+    - **Impacto:** Médio - Importante para alta disponibilidade
+    - **Esforço:** Alto
 
 ---
 
@@ -432,12 +722,23 @@
 - ✅ `test_list_customers_stats.php` - Testa listagem de customers e estatísticas
 - ✅ `test_payment_intent_refund.php` - Testa criação de payment intents e reembolsos
 - ✅ `test_cupons.php` - Testa gerenciamento de cupons de desconto
+- ✅ `test_promotion_codes.php` - Testa gerenciamento de códigos promocionais
+- ✅ `test_setup_intents.php` - Testa criação, obtenção e confirmação de setup intents
+- ✅ `test_subscription_items.php` - Testa gerenciamento de subscription items (add-ons)
+- ✅ `test_tax_rates.php` - Testa gerenciamento de tax rates (impostos)
+- ✅ `test_invoice_items.php` - Testa gerenciamento de invoice items (ajustes manuais)
+- ✅ `test_payment_methods_management.php` - Testa atualização, deleção e definição de payment methods
+- ✅ `test_products.php` - Testa CRUD completo de produtos
+- ✅ `test_prices_create_update.php` - Testa criação e atualização de preços
+- ✅ `test_balance_transactions.php` - Testa listagem e obtenção de balance transactions
 - ✅ `test_completo.php` - Teste completo do sistema
+- ✅ `test_rate_limiting.php` - Testa rate limiting (headers, limites, 429, etc.)
 
 ### Taxa de Cobertura:
-- **Endpoints**: 25/25 testados (100%)
-- **Métodos StripeService**: 26/26 testados (100%)
-- **Controllers**: 10/10 testados (100%)
+- **Endpoints**: 31/31 testados (100%)
+- **Métodos StripeService**: 60/60 testados (100%)
+- **Controllers**: 17/17 testados (100%)
+- **Testes Manuais**: 29 arquivos de teste
 
 ---
 
@@ -451,31 +752,37 @@
 
 ### 🔴 Crítico para Produção
 
-#### 1. **Rate Limiting** ⚠️ URGENTE
+#### 1. **Rate Limiting** ✅ **IMPLEMENTADO E TESTADO**
 **Por quê?** Proteção essencial contra abuso da API, ataques DDoS e uso excessivo de recursos.
 
-**O que implementar:**
-- Rate limiting por API key (requests por minuto/hora)
-- Rate limiting por IP (fallback quando não há API key)
-- Diferentes limites para diferentes endpoints (ex: webhook pode ter limite maior)
-- Headers de resposta indicando limites (X-RateLimit-Limit, X-RateLimit-Remaining)
-- Armazenamento de contadores (Redis ou banco de dados)
+**O que foi implementado:**
+- ✅ Rate limiting por API key (requests por minuto/hora)
+- ✅ Rate limiting por IP (fallback quando não há API key)
+- ✅ Diferentes limites para diferentes endpoints (ex: webhook pode ter limite maior)
+- ✅ Headers de resposta indicando limites (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)
+- ✅ Armazenamento de contadores (Redis com fallback para banco de dados)
+- ✅ Resposta 429 quando excede limite
+- ✅ RateLimiterService com suporte a Redis e MySQL
+- ✅ RateLimitMiddleware integrado ao sistema
+- ✅ Teste completo: `test_rate_limiting.php` ✅ **TESTADO**
 
-**Impacto:** Alto - Sem rate limiting, a API está vulnerável a abusos.
+**Impacto:** Alto - API agora está protegida contra abusos.
 
 ---
 
-#### 2. **Migrations System** ⚠️ URGENTE
+#### 2. ✅ **Migrations System** ✅ **IMPLEMENTADO**
 **Por quê?** Necessário para evolução controlada do banco de dados em diferentes ambientes.
 
-**O que implementar:**
-- Sistema de migrations (Phinx, Doctrine Migrations ou custom)
-- Versionamento de schema
-- Migrations up/down
-- Seeds por ambiente
-- Integração com CI/CD
+**O que foi implementado:**
+- ✅ Sistema de migrations (Phinx)
+- ✅ Versionamento de schema
+- ✅ Migrations up/down
+- ✅ Seeds por ambiente
+- ✅ Integração com .env
+- ✅ Documentação completa (docs/MIGRATIONS.md)
+- ✅ Scripts composer (migrate, migrate:status, migrate:rollback, seed)
 
-**Impacto:** Alto - Sem migrations, mudanças no banco são difíceis de gerenciar em produção.
+**Impacto:** Alto - Sistema agora permite evolução controlada do banco de dados.
 
 ---
 
@@ -525,22 +832,55 @@
 
 ---
 
-### 📊 Resumo de Prioridades
+### 📊 Resumo de Prioridades (Análise Completa)
 
-| Prioridade | Implementação | Impacto | Esforço | Urgência |
-|------------|---------------|---------|---------|----------|
-| 🔴 Crítico | Rate Limiting | Alto | Médio | ⚠️ URGENTE |
-| 🔴 Crítico | Migrations System | Alto | Médio | ⚠️ URGENTE |
-| 🟡 Importante | Logs de Auditoria | Médio-Alto | Médio | Importante |
-| 🟡 Importante | Health Check Avançado | Médio | Baixo | Importante |
-| 🟡 Importante | Documentação API | Médio | Médio | Importante |
+| Prioridade | Implementação | Impacto | Esforço | Urgência | Status |
+|------------|---------------|---------|---------|----------|--------|
+| 🔴 Crítico | Rate Limiting | Alto | Médio | ⚠️ URGENTE | ✅ **IMPLEMENTADO** |
+| 🔴 Crítico | Migrations System | Alto | Médio | ⚠️ URGENTE | ✅ **IMPLEMENTADO** |
+| 🔴 Crítico | Logs de Auditoria | Alto | Médio | ⚠️ IMPORTANTE | ❌ **PENDENTE** |
+| 🔴 Crítico | Backup Automático | Alto | Médio | ⚠️ IMPORTANTE | ❌ **PENDENTE** |
+| 🟡 Importante | Health Check Avançado | Médio | Baixo | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Documentação API | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Histórico de Mudanças | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Notificações por Email | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Métricas de Performance | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Rotação de API Keys | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Webhooks - Mais Eventos | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | IP Whitelist | Médio | Baixo | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Tracing de Requisições | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟢 Baixa | Charges | Baixo | Baixo | Opcional | ❌ **PENDENTE** |
+| 🟢 Baixa | Disputes | Baixo | Médio | Opcional | ❌ **PENDENTE** |
+| 🟢 Baixa | Balance Transactions | Baixo | Baixo | Opcional | ❌ **PENDENTE** |
+| 🟢 Baixa | Payouts | Baixo | Médio | Opcional | ❌ **PENDENTE** |
 
 ---
 
 ### 💡 Recomendação de Ordem de Implementação
 
-1. **Primeiro:** Rate Limiting (proteção imediata)
-2. **Segundo:** Migrations System (base para evolução)
-3. **Terceiro:** Logs de Auditoria (rastreabilidade)
-4. **Quarto:** Health Check Avançado (monitoramento)
-5. **Quinto:** Documentação API (facilita uso)
+#### Fase 1 - Crítico para Produção (URGENTE) 🔴
+1. ✅ **Rate Limiting** - ✅ **CONCLUÍDO**
+2. ✅ **Migrations System** - ✅ **CONCLUÍDO** - Base para evolução do banco de dados
+3. **Logs de Auditoria** - Rastreabilidade e compliance
+4. **Backup Automático** - Proteção contra perda de dados
+
+#### Fase 2 - Importante para Operação (MÉDIA) 🟡
+5. **Health Check Avançado** - Monitoramento e troubleshooting
+6. **Documentação API (Swagger/OpenAPI)** - Facilita integração
+7. **Histórico de Mudanças de Assinatura** - Auditoria de negócio
+8. **Sistema de Notificações por Email** - Melhora experiência do usuário
+9. **Métricas de Performance** - Otimização e monitoramento
+10. **Rotação Automática de API Keys** - Segurança adicional
+11. **Webhooks - Mais Eventos** - Melhor integração automática
+12. **IP Whitelist por Tenant** - Segurança adicional
+13. **Tracing de Requisições** - Facilita debugging
+
+#### Fase 3 - Opcional (BAIXA) 🟢
+14. **Charges** - Auditoria detalhada
+15. **Disputes** - Gerenciamento de chargebacks
+16. **Balance Transactions** - Reconciliação financeira
+17. **Payouts** - Gerenciamento de saques
+18. **Dashboard Administrativo** - Interface web
+19. **Dashboard de Métricas** - Visualização de dados
+20. **2FA para Usuários Administrativos** - Segurança avançada
+21. **Criptografia de Dados Sensíveis** - Compliance (LGPD, GDPR)

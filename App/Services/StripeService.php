@@ -1566,5 +1566,1043 @@ class StripeService
             throw $e;
         }
     }
+
+    /**
+     * Cria código promocional (Promotion Code)
+     * 
+     * Promotion Codes são códigos que os clientes podem digitar no checkout para aplicar cupons.
+     * Um Promotion Code sempre referencia um Coupon existente.
+     * 
+     * @param array $data Dados do promotion code:
+     *   - coupon (obrigatório): ID do cupom existente
+     *   - code (opcional): Código customizado (se não fornecido, Stripe gera)
+     *   - active (opcional): Se o código está ativo (padrão: true)
+     *   - customer (opcional): ID do customer que pode usar este código
+     *   - expires_at (opcional): Data de expiração (timestamp)
+     *   - first_time_transaction (opcional): Se true, só pode ser usado na primeira transação
+     *   - max_redemptions (opcional): Número máximo de resgates
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\PromotionCode
+     */
+    public function createPromotionCode(array $data): \Stripe\PromotionCode
+    {
+        try {
+            // Validações obrigatórias
+            if (empty($data['coupon'])) {
+                throw new \InvalidArgumentException("Campo coupon é obrigatório");
+            }
+
+            $params = [
+                'coupon' => $data['coupon']
+            ];
+
+            // Código customizado (opcional)
+            if (!empty($data['code'])) {
+                $params['code'] = $data['code'];
+            }
+
+            // Status ativo (opcional)
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            }
+
+            // Customer específico (opcional)
+            if (!empty($data['customer'])) {
+                $params['customer'] = $data['customer'];
+            }
+
+            // Data de expiração (opcional)
+            if (isset($data['expires_at'])) {
+                $params['expires_at'] = is_numeric($data['expires_at']) 
+                    ? (int)$data['expires_at'] 
+                    : strtotime($data['expires_at']);
+            }
+
+            // Primeira transação apenas (opcional)
+            if (isset($data['first_time_transaction'])) {
+                $params['first_time_transaction'] = (bool)$data['first_time_transaction'];
+            }
+
+            // Máximo de resgates (opcional)
+            if (isset($data['max_redemptions'])) {
+                $params['max_redemptions'] = (int)$data['max_redemptions'];
+            }
+
+            // Metadados
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $promotionCode = $this->client->promotionCodes->create($params);
+
+            Logger::info("Promotion code criado", [
+                'promotion_code_id' => $promotionCode->id,
+                'code' => $promotionCode->code,
+                'coupon_id' => $promotionCode->coupon->id
+            ]);
+
+            return $promotionCode;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar promotion code", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém promotion code por ID
+     * 
+     * @param string $promotionCodeId ID do promotion code no Stripe
+     * @return \Stripe\PromotionCode
+     */
+    public function getPromotionCode(string $promotionCodeId): \Stripe\PromotionCode
+    {
+        try {
+            return $this->client->promotionCodes->retrieve($promotionCodeId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter promotion code", [
+                'promotion_code_id' => $promotionCodeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista promotion codes do Stripe
+     * 
+     * @param array $options Opções de filtro:
+     *   - limit (int): Número máximo de resultados (padrão: 10)
+     *   - active (bool): Filtrar por status ativo/inativo
+     *   - code (string): Filtrar por código específico
+     *   - coupon (string): Filtrar por ID do cupom
+     *   - customer (string): Filtrar por ID do customer
+     *   - starting_after (string): ID do promotion code para paginação
+     *   - ending_before (string): ID do promotion code para paginação reversa
+     * @return \Stripe\Collection Lista de promotion codes
+     */
+    public function listPromotionCodes(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (isset($options['active'])) {
+                $params['active'] = (bool)$options['active'];
+            }
+
+            if (!empty($options['code'])) {
+                $params['code'] = $options['code'];
+            }
+
+            if (!empty($options['coupon'])) {
+                $params['coupon'] = $options['coupon'];
+            }
+
+            if (!empty($options['customer'])) {
+                $params['customer'] = $options['customer'];
+            }
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            $promotionCodes = $this->client->promotionCodes->all($params);
+
+            Logger::info("Promotion codes listados", [
+                'count' => count($promotionCodes->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $promotionCodes;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar promotion codes", [
+                'error' => $e->getMessage(),
+                'filters' => $options
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza promotion code no Stripe
+     * 
+     * @param string $promotionCodeId ID do promotion code no Stripe
+     * @param array $data Dados para atualização:
+     *   - active (opcional): Se o código está ativo
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\PromotionCode
+     */
+    public function updatePromotionCode(string $promotionCodeId, array $data): \Stripe\PromotionCode
+    {
+        try {
+            $params = [];
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (empty($params)) {
+                throw new \InvalidArgumentException("Nenhum campo válido para atualização fornecido");
+            }
+
+            $promotionCode = $this->client->promotionCodes->update($promotionCodeId, $params);
+
+            Logger::info("Promotion code atualizado", [
+                'promotion_code_id' => $promotionCodeId,
+                'updated_fields' => array_keys($params)
+            ]);
+
+            return $promotionCode;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar promotion code", [
+                'promotion_code_id' => $promotionCodeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria Setup Intent para salvar método de pagamento sem processar pagamento
+     * 
+     * Setup Intents são úteis para:
+     * - Trial periods: salvar cartão sem cobrar
+     * - Pré-cadastro: salvar método de pagamento antes de ativar serviço
+     * - Upgrade futuro: salvar cartão para cobrança automática depois
+     * 
+     * @param array $data Dados do setup intent:
+     *   - customer_id (opcional): ID do customer no Stripe
+     *   - payment_method_types (opcional): Tipos de pagamento (padrão: ['card'])
+     *   - description (opcional): Descrição
+     *   - metadata (opcional): Metadados
+     *   - usage (opcional): 'off_session' ou 'on_session' (padrão: 'off_session')
+     * @return \Stripe\SetupIntent
+     */
+    public function createSetupIntent(array $data): \Stripe\SetupIntent
+    {
+        try {
+            $params = [
+                'payment_method_types' => $data['payment_method_types'] ?? ['card']
+            ];
+
+            if (!empty($data['customer_id'])) {
+                $params['customer'] = $data['customer_id'];
+            }
+
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (!empty($data['usage'])) {
+                $params['usage'] = $data['usage'];
+            }
+
+            $setupIntent = $this->client->setupIntents->create($params);
+
+            Logger::info("Setup Intent criado", [
+                'setup_intent_id' => $setupIntent->id,
+                'customer_id' => $setupIntent->customer ?? null,
+                'status' => $setupIntent->status
+            ]);
+
+            return $setupIntent;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar setup intent", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Setup Intent por ID
+     * 
+     * @param string $setupIntentId ID do setup intent no Stripe
+     * @return \Stripe\SetupIntent
+     */
+    public function getSetupIntent(string $setupIntentId): \Stripe\SetupIntent
+    {
+        try {
+            return $this->client->setupIntents->retrieve($setupIntentId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter setup intent", [
+                'setup_intent_id' => $setupIntentId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Confirma Setup Intent
+     * 
+     * Usado quando o cliente confirma o método de pagamento no frontend.
+     * 
+     * @param string $setupIntentId ID do setup intent no Stripe
+     * @param array $data Dados adicionais:
+     *   - payment_method (opcional): ID do método de pagamento
+     *   - return_url (opcional): URL de retorno após confirmação
+     * @return \Stripe\SetupIntent
+     */
+    public function confirmSetupIntent(string $setupIntentId, array $data = []): \Stripe\SetupIntent
+    {
+        try {
+            $params = [];
+
+            if (!empty($data['payment_method'])) {
+                $params['payment_method'] = $data['payment_method'];
+            }
+
+            if (!empty($data['return_url'])) {
+                $params['return_url'] = $data['return_url'];
+            }
+
+            $setupIntent = $this->client->setupIntents->confirm($setupIntentId, $params);
+
+            Logger::info("Setup Intent confirmado", [
+                'setup_intent_id' => $setupIntentId,
+                'status' => $setupIntent->status
+            ]);
+
+            return $setupIntent;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao confirmar setup intent", [
+                'setup_intent_id' => $setupIntentId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria Subscription Item (adiciona item a uma assinatura existente)
+     * 
+     * Útil para adicionar add-ons, upgrades, ou múltiplos produtos em uma assinatura.
+     * 
+     * @param string $subscriptionId ID da assinatura no Stripe
+     * @param array $data Dados do subscription item:
+     *   - price_id (obrigatório): ID do preço no Stripe
+     *   - quantity (opcional): Quantidade (padrão: 1)
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\SubscriptionItem
+     */
+    public function createSubscriptionItem(string $subscriptionId, array $data): \Stripe\SubscriptionItem
+    {
+        try {
+            if (empty($data['price_id'])) {
+                throw new \InvalidArgumentException("Campo price_id é obrigatório");
+            }
+
+            $params = [
+                'subscription' => $subscriptionId,
+                'price' => $data['price_id']
+            ];
+
+            if (isset($data['quantity'])) {
+                $params['quantity'] = (int)$data['quantity'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $subscriptionItem = $this->client->subscriptionItems->create($params);
+
+            Logger::info("Subscription Item criado", [
+                'subscription_item_id' => $subscriptionItem->id,
+                'subscription_id' => $subscriptionId,
+                'price_id' => $data['price_id']
+            ]);
+
+            return $subscriptionItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar subscription item", [
+                'subscription_id' => $subscriptionId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Subscription Item por ID
+     * 
+     * @param string $subscriptionItemId ID do subscription item no Stripe
+     * @return \Stripe\SubscriptionItem
+     */
+    public function getSubscriptionItem(string $subscriptionItemId): \Stripe\SubscriptionItem
+    {
+        try {
+            return $this->client->subscriptionItems->retrieve($subscriptionItemId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter subscription item", [
+                'subscription_item_id' => $subscriptionItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista Subscription Items de uma assinatura
+     * 
+     * @param string $subscriptionId ID da assinatura no Stripe
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número de itens por página (padrão: 10)
+     *   - starting_after (opcional): ID do item para paginação
+     *   - ending_before (opcional): ID do item para paginação
+     * @return \Stripe\Collection
+     */
+    public function listSubscriptionItems(string $subscriptionId, array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'subscription' => $subscriptionId
+            ];
+
+            if (isset($options['limit'])) {
+                $params['limit'] = (int)$options['limit'];
+            }
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            return $this->client->subscriptionItems->all($params);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar subscription items", [
+                'subscription_id' => $subscriptionId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza Subscription Item
+     * 
+     * @param string $subscriptionItemId ID do subscription item no Stripe
+     * @param array $data Dados para atualização:
+     *   - price_id (opcional): Novo preço (migração de preço)
+     *   - quantity (opcional): Nova quantidade
+     *   - metadata (opcional): Metadados (merge com existentes)
+     * @return \Stripe\SubscriptionItem
+     */
+    public function updateSubscriptionItem(string $subscriptionItemId, array $data): \Stripe\SubscriptionItem
+    {
+        try {
+            $params = [];
+
+            if (!empty($data['price_id'])) {
+                $params['price'] = $data['price_id'];
+            }
+
+            if (isset($data['quantity'])) {
+                $params['quantity'] = (int)$data['quantity'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $subscriptionItem = $this->client->subscriptionItems->update($subscriptionItemId, $params);
+
+            Logger::info("Subscription Item atualizado", [
+                'subscription_item_id' => $subscriptionItemId
+            ]);
+
+            return $subscriptionItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar subscription item", [
+                'subscription_item_id' => $subscriptionItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Remove Subscription Item de uma assinatura
+     * 
+     * @param string $subscriptionItemId ID do subscription item no Stripe
+     * @param array $options Opções:
+     *   - prorate (opcional): Se true, prorata o valor (padrão: true)
+     * @return \Stripe\SubscriptionItem
+     */
+    public function deleteSubscriptionItem(string $subscriptionItemId, array $options = []): \Stripe\SubscriptionItem
+    {
+        try {
+            $params = [];
+
+            if (isset($options['prorate'])) {
+                $params['prorate'] = (bool)$options['prorate'];
+            }
+
+            $subscriptionItem = $this->client->subscriptionItems->delete($subscriptionItemId, $params);
+
+            Logger::info("Subscription Item removido", [
+                'subscription_item_id' => $subscriptionItemId
+            ]);
+
+            return $subscriptionItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao remover subscription item", [
+                'subscription_item_id' => $subscriptionItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria Tax Rate (taxa de imposto)
+     * 
+     * Tax Rates são usadas para calcular impostos automaticamente em invoices e subscriptions.
+     * Útil para compliance fiscal (IVA, GST, ICMS, etc.).
+     * 
+     * @param array $data Dados do tax rate:
+     *   - display_name (obrigatório): Nome exibido (ex: "IVA", "GST", "ICMS")
+     *   - description (opcional): Descrição
+     *   - percentage (obrigatório): Percentual de imposto (ex: 20.0 para 20%)
+     *   - inclusive (opcional): Se true, o imposto está incluído no preço (padrão: false)
+     *   - country (opcional): Código do país (ISO 3166-1 alpha-2, ex: 'BR', 'US')
+     *   - state (opcional): Estado/região (ex: 'SP', 'CA')
+     *   - jurisdiction (opcional): Jurisdição fiscal
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\TaxRate
+     */
+    public function createTaxRate(array $data): \Stripe\TaxRate
+    {
+        try {
+            // Validações obrigatórias
+            if (empty($data['display_name'])) {
+                throw new \InvalidArgumentException("Campo display_name é obrigatório");
+            }
+
+            if (!isset($data['percentage']) || !is_numeric($data['percentage'])) {
+                throw new \InvalidArgumentException("Campo percentage é obrigatório e deve ser numérico");
+            }
+
+            $params = [
+                'display_name' => $data['display_name'],
+                'percentage' => (float)$data['percentage']
+            ];
+
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['inclusive'])) {
+                $params['inclusive'] = (bool)$data['inclusive'];
+            }
+
+            if (!empty($data['country'])) {
+                $params['country'] = strtoupper($data['country']);
+            }
+
+            if (!empty($data['state'])) {
+                $params['state'] = $data['state'];
+            }
+
+            if (!empty($data['jurisdiction'])) {
+                $params['jurisdiction'] = $data['jurisdiction'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $taxRate = $this->client->taxRates->create($params);
+
+            Logger::info("Tax Rate criado", [
+                'tax_rate_id' => $taxRate->id,
+                'display_name' => $taxRate->display_name,
+                'percentage' => $taxRate->percentage
+            ]);
+
+            return $taxRate;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar tax rate", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Tax Rate por ID
+     * 
+     * @param string $taxRateId ID do tax rate no Stripe
+     * @return \Stripe\TaxRate
+     */
+    public function getTaxRate(string $taxRateId): \Stripe\TaxRate
+    {
+        try {
+            return $this->client->taxRates->retrieve($taxRateId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter tax rate", [
+                'tax_rate_id' => $taxRateId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista Tax Rates
+     * 
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número de tax rates por página (padrão: 10)
+     *   - active (opcional): Filtrar por status ativo (true/false)
+     *   - inclusive (opcional): Filtrar por tipo inclusivo (true/false)
+     *   - starting_after (opcional): ID do tax rate para paginação
+     *   - ending_before (opcional): ID do tax rate para paginação
+     * @return \Stripe\Collection
+     */
+    public function listTaxRates(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [];
+
+            if (isset($options['limit'])) {
+                $params['limit'] = (int)$options['limit'];
+            }
+
+            if (isset($options['active'])) {
+                $params['active'] = (bool)$options['active'];
+            }
+
+            if (isset($options['inclusive'])) {
+                $params['inclusive'] = (bool)$options['inclusive'];
+            }
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            return $this->client->taxRates->all($params);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar tax rates", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza Tax Rate
+     * 
+     * Nota: No Stripe, apenas display_name, description, active e metadata podem ser atualizados.
+     * percentage, inclusive, country, state e jurisdiction não podem ser alterados após criação.
+     * 
+     * @param string $taxRateId ID do tax rate no Stripe
+     * @param array $data Dados para atualização:
+     *   - display_name (opcional): Novo nome
+     *   - description (opcional): Nova descrição
+     *   - active (opcional): Status ativo/inativo
+     *   - metadata (opcional): Metadados (merge com existentes)
+     * @return \Stripe\TaxRate
+     */
+    public function updateTaxRate(string $taxRateId, array $data): \Stripe\TaxRate
+    {
+        try {
+            $params = [];
+
+            if (!empty($data['display_name'])) {
+                $params['display_name'] = $data['display_name'];
+            }
+
+            if (isset($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['active'])) {
+                $params['active'] = (bool)$data['active'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $taxRate = $this->client->taxRates->update($taxRateId, $params);
+
+            Logger::info("Tax Rate atualizado", [
+                'tax_rate_id' => $taxRateId
+            ]);
+
+            return $taxRate;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar tax rate", [
+                'tax_rate_id' => $taxRateId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria Invoice Item (item de fatura)
+     * 
+     * Invoice Items são usados para adicionar cobranças únicas ou ajustes manuais a invoices.
+     * Útil para fazer ajustes manuais frequentes, créditos, taxas adicionais, etc.
+     * 
+     * @param array $data Dados do invoice item:
+     *   - customer_id (obrigatório): ID do customer no Stripe
+     *   - amount (obrigatório): Valor em centavos (ex: 2000 para $20.00)
+     *   - currency (obrigatório): Código da moeda (ex: 'brl', 'usd')
+     *   - description (opcional): Descrição do item
+     *   - invoice (opcional): ID da invoice existente (se não fornecido, será adicionado à próxima invoice)
+     *   - subscription (opcional): ID da subscription (para adicionar à próxima invoice da assinatura)
+     *   - price (opcional): ID do preço (alternativa a amount/currency)
+     *   - quantity (opcional): Quantidade (padrão: 1)
+     *   - tax_rates (opcional): Array de IDs de tax rates
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\InvoiceItem
+     */
+    public function createInvoiceItem(array $data): \Stripe\InvoiceItem
+    {
+        try {
+            // Validações obrigatórias
+            if (empty($data['customer_id'])) {
+                throw new \InvalidArgumentException("Campo customer_id é obrigatório");
+            }
+
+            $params = [
+                'customer' => $data['customer_id']
+            ];
+
+            // Amount e currency (ou price)
+            // NOTA: O Stripe removeu o suporte ao parâmetro 'price' na criação de Invoice Items
+            // Se o usuário fornecer 'price', precisamos buscar o price primeiro para obter unit_amount e currency
+            if (!empty($data['price'])) {
+                // Busca o price do Stripe para obter unit_amount e currency
+                try {
+                    $price = $this->client->prices->retrieve($data['price']);
+                    
+                    // Verifica se é one_time (Invoice Items só aceitam one_time)
+                    if ($price->type !== 'one_time') {
+                        throw new \InvalidArgumentException("Invoice Items só aceitam prices do tipo 'one_time'. O price fornecido é do tipo '{$price->type}'.");
+                    }
+                    
+                    // Calcula o amount total baseado no price e quantity
+                    $unitAmount = $price->unit_amount;
+                    $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
+                    $params['amount'] = $unitAmount * $quantity;
+                    $params['currency'] = $price->currency;
+                    
+                    // NOTA: Stripe não permite 'amount' e 'quantity' juntos em Invoice Items
+                    // Por isso, calculamos o amount total (unit_amount * quantity)
+                } catch (ApiErrorException $e) {
+                    throw new \InvalidArgumentException("Erro ao buscar price: " . $e->getMessage());
+                }
+            } else {
+                if (!isset($data['amount']) || !is_numeric($data['amount'])) {
+                    throw new \InvalidArgumentException("Campo amount é obrigatório quando price não é fornecido");
+                }
+                if (empty($data['currency'])) {
+                    throw new \InvalidArgumentException("Campo currency é obrigatório quando price não é fornecido");
+                }
+                // Usa amount (parâmetro correto do Stripe)
+                // NOTA: Se quantity for fornecido, calcula o amount total
+                $unitAmount = (int)$data['amount'];
+                $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 1;
+                $params['amount'] = $unitAmount * $quantity;
+                $params['currency'] = strtolower($data['currency']);
+                
+                // NOTA: Stripe não permite 'amount' e 'quantity' juntos em Invoice Items
+                // Por isso, calculamos o amount total (amount * quantity)
+            }
+
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (!empty($data['invoice'])) {
+                $params['invoice'] = $data['invoice'];
+            }
+
+            if (!empty($data['subscription'])) {
+                $params['subscription'] = $data['subscription'];
+            }
+
+            if (!empty($data['tax_rates']) && is_array($data['tax_rates'])) {
+                $params['tax_rates'] = $data['tax_rates'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $invoiceItem = $this->client->invoiceItems->create($params);
+
+            Logger::info("Invoice Item criado", [
+                'invoice_item_id' => $invoiceItem->id,
+                'customer_id' => $data['customer_id'],
+                'amount' => $invoiceItem->amount ?? null
+            ]);
+
+            return $invoiceItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar invoice item", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Invoice Item por ID
+     * 
+     * @param string $invoiceItemId ID do invoice item no Stripe
+     * @return \Stripe\InvoiceItem
+     */
+    public function getInvoiceItem(string $invoiceItemId): \Stripe\InvoiceItem
+    {
+        try {
+            return $this->client->invoiceItems->retrieve($invoiceItemId);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter invoice item", [
+                'invoice_item_id' => $invoiceItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista Invoice Items
+     * 
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número de invoice items por página (padrão: 10)
+     *   - customer (opcional): Filtrar por ID do customer
+     *   - invoice (opcional): Filtrar por ID da invoice
+     *   - pending (opcional): Filtrar por itens pendentes (true/false)
+     *   - starting_after (opcional): ID do invoice item para paginação
+     *   - ending_before (opcional): ID do invoice item para paginação
+     * @return \Stripe\Collection
+     */
+    public function listInvoiceItems(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [];
+
+            if (isset($options['limit'])) {
+                $params['limit'] = (int)$options['limit'];
+            }
+
+            if (!empty($options['customer'])) {
+                $params['customer'] = $options['customer'];
+            }
+
+            if (!empty($options['invoice'])) {
+                $params['invoice'] = $options['invoice'];
+            }
+
+            if (isset($options['pending'])) {
+                $params['pending'] = (bool)$options['pending'];
+            }
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            return $this->client->invoiceItems->all($params);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar invoice items", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza Invoice Item
+     * 
+     * @param string $invoiceItemId ID do invoice item no Stripe
+     * @param array $data Dados para atualização:
+     *   - amount (opcional): Novo valor em centavos
+     *   - currency (opcional): Nova moeda (deve ser fornecido junto com amount)
+     *   - description (opcional): Nova descrição
+     *   - quantity (opcional): Nova quantidade
+     *   - tax_rates (opcional): Array de IDs de tax rates
+     *   - metadata (opcional): Metadados (merge com existentes)
+     * @return \Stripe\InvoiceItem
+     */
+    public function updateInvoiceItem(string $invoiceItemId, array $data): \Stripe\InvoiceItem
+    {
+        try {
+            $params = [];
+
+            if (isset($data['amount']) && is_numeric($data['amount'])) {
+                $params['amount'] = (int)$data['amount'];
+                if (!empty($data['currency'])) {
+                    $params['currency'] = strtolower($data['currency']);
+                }
+            }
+
+            if (isset($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+
+            if (isset($data['quantity'])) {
+                $params['quantity'] = (int)$data['quantity'];
+            }
+
+            if (isset($data['tax_rates']) && is_array($data['tax_rates'])) {
+                $params['tax_rates'] = $data['tax_rates'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            $invoiceItem = $this->client->invoiceItems->update($invoiceItemId, $params);
+
+            Logger::info("Invoice Item atualizado", [
+                'invoice_item_id' => $invoiceItemId
+            ]);
+
+            return $invoiceItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar invoice item", [
+                'invoice_item_id' => $invoiceItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Remove Invoice Item
+     * 
+     * @param string $invoiceItemId ID do invoice item no Stripe
+     * @return \Stripe\InvoiceItem
+     */
+    public function deleteInvoiceItem(string $invoiceItemId): \Stripe\InvoiceItem
+    {
+        try {
+            $invoiceItem = $this->client->invoiceItems->delete($invoiceItemId);
+
+            Logger::info("Invoice Item removido", [
+                'invoice_item_id' => $invoiceItemId
+            ]);
+
+            return $invoiceItem;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao remover invoice item", [
+                'invoice_item_id' => $invoiceItemId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Lista Balance Transactions (transações de saldo)
+     * 
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número de transações por página (padrão: 10)
+     *   - starting_after (opcional): ID da transação para paginação
+     *   - ending_before (opcional): ID da transação para paginação reversa
+     *   - created (opcional): Filtrar por data de criação (array com gte, lte, gt, lt)
+     *   - payout (opcional): Filtrar por ID do payout
+     *   - type (opcional): Filtrar por tipo de transação (charge, refund, adjustment, etc.)
+     *   - currency (opcional): Filtrar por moeda (ex: 'brl', 'usd')
+     * @return \Stripe\Collection
+     */
+    public function listBalanceTransactions(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (isset($options['created']) && is_array($options['created'])) {
+                $params['created'] = $options['created'];
+            }
+
+            if (!empty($options['payout'])) {
+                $params['payout'] = $options['payout'];
+            }
+
+            if (!empty($options['type'])) {
+                $params['type'] = $options['type'];
+            }
+
+            if (!empty($options['currency'])) {
+                $params['currency'] = strtolower($options['currency']);
+            }
+
+            $balanceTransactions = $this->client->balanceTransactions->all($params);
+
+            Logger::info("Balance Transactions listadas", [
+                'count' => count($balanceTransactions->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $balanceTransactions;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar balance transactions", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Balance Transaction por ID
+     * 
+     * @param string $balanceTransactionId ID da balance transaction no Stripe
+     * @return \Stripe\BalanceTransaction
+     */
+    public function getBalanceTransaction(string $balanceTransactionId): \Stripe\BalanceTransaction
+    {
+        try {
+            $balanceTransaction = $this->client->balanceTransactions->retrieve($balanceTransactionId);
+
+            Logger::info("Balance Transaction obtida", [
+                'balance_transaction_id' => $balanceTransactionId
+            ]);
+
+            return $balanceTransaction;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter balance transaction", [
+                'balance_transaction_id' => $balanceTransactionId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
 }
 
