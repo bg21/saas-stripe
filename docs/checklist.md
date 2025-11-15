@@ -346,6 +346,7 @@
 - [x] Gerenciamento de preços (create, update, get) ✅ **TESTADO**
 - [x] Validação de webhook signature ✅ **TESTADO**
 - [x] Idempotência de eventos ✅ **TESTADO**
+- [x] Webhooks - Mais Eventos (7 novos eventos) ✅ **IMPLEMENTADO E TESTADO**
 - [x] Sistema de autenticação de usuários (Session ID) ✅ **IMPLEMENTADO E TESTADO**
 - [x] Sistema de permissões (RBAC) ✅ **IMPLEMENTADO E TESTADO**
 - [x] Logs de auditoria ✅ **IMPLEMENTADO E TESTADO**
@@ -353,6 +354,9 @@
 - [x] Gerenciamento de Disputes (chargebacks) ✅ **IMPLEMENTADO E TESTADO**
 - [x] Balance Transactions (reconciliação financeira) ✅ **IMPLEMENTADO E TESTADO**
 - [x] Health Check Avançado (verificação de dependências) ✅ **IMPLEMENTADO E TESTADO**
+- [x] Charges (cobranças individuais) ✅ **IMPLEMENTADO E TESTADO**
+- [x] Webhooks - Mais Eventos (7 novos eventos implementados) ✅ **IMPLEMENTADO E TESTADO**
+- [x] Backup Automático (sistema completo de backup do banco) ✅ **IMPLEMENTADO E TESTADO**
 
 ### ✅ Segurança
 - [x] Autenticação via Bearer Token
@@ -417,13 +421,16 @@
 ### 🔄 Funcionalidades do Stripe que Ainda Faltam
 
 #### 🟢 Baixa Prioridade (Opcionais - Raramente Usados)
-- [ ] **Charges** - Listar e obter detalhes de cobranças individuais
-  - `listCharges()` - Listar cobranças com filtros
-  - `getCharge()` - Obter cobrança específica
-  - `updateCharge()` - Atualizar metadata de cobrança
-  - Endpoints: `GET /v1/charges`, `GET /v1/charges/:id`, `PUT /v1/charges/:id`
+- [x] **Charges** - Listar e obter detalhes de cobranças individuais ✅ **IMPLEMENTADO E TESTADO** (`test_charges.php`)
+  - [x] `listCharges()` - Listar cobranças com filtros ✅ **TESTADO**
+  - [x] `getCharge()` - Obter cobrança específica ✅ **TESTADO**
+  - [x] `updateCharge()` - Atualizar metadata de cobrança ✅ **TESTADO**
+  - [x] Endpoints: `GET /v1/charges`, `GET /v1/charges/:id`, `PUT /v1/charges/:id` ✅ **TESTADO**
+  - [x] Filtros: customer, payment_intent, created (gte, lte, gt, lt) ✅ **TESTADO**
+  - [x] Permissões: `view_charges`, `manage_charges` ✅ **IMPLEMENTADO**
   - **Impacto:** Baixo - Útil apenas para auditoria detalhada
   - **Esforço:** Baixo
+  - **Status:** ✅ Implementado com ChargeController e testes completos
 
 - [x] **Disputes** - Gerenciar disputas de pagamento (chargebacks) ✅ **IMPLEMENTADO E TESTADO** (`test_disputes.php`)
   - [x] `listDisputes()` - Listar disputas ✅ **TESTADO**
@@ -454,16 +461,20 @@
   - **Esforço:** Médio
 
 #### 🟡 Média Prioridade (Melhorias de Integração)
-- [ ] **Webhooks - Mais Eventos** - Tratar mais eventos do Stripe
-  - `payment_intent.succeeded` - Pagamento confirmado
-  - `payment_intent.payment_failed` - Falha no pagamento
-  - `invoice.payment_failed` - Falha no pagamento de fatura
-  - `invoice.upcoming` - Fatura próxima (para notificações)
-  - `customer.subscription.trial_will_end` - Trial terminando
-  - `charge.dispute.created` - Disputa criada
-  - `charge.refunded` - Reembolso processado
+- [x] **Webhooks - Mais Eventos** - ✅ **CONCLUÍDO** - Tratar mais eventos do Stripe
+  - [x] `payment_intent.succeeded` - Pagamento confirmado ✅ **IMPLEMENTADO**
+  - [x] `payment_intent.payment_failed` - Falha no pagamento ✅ **IMPLEMENTADO**
+  - [x] `invoice.payment_failed` - Falha no pagamento de fatura ✅ **IMPLEMENTADO E TESTADO**
+  - [x] `invoice.upcoming` - Fatura próxima (para notificações) ✅ **IMPLEMENTADO**
+  - [x] `customer.subscription.trial_will_end` - Trial terminando ✅ **IMPLEMENTADO E TESTADO**
+  - [x] `charge.dispute.created` - Disputa criada ✅ **IMPLEMENTADO**
+  - [x] `charge.refunded` - Reembolso processado ✅ **IMPLEMENTADO**
+  - [x] Integração com SubscriptionHistory (invoice.payment_failed, trial_will_end) ✅ **IMPLEMENTADO**
+  - [x] Logs estruturados para todos os eventos ✅ **IMPLEMENTADO**
+  - [x] Método getCharge no StripeService ✅ **IMPLEMENTADO**
   - **Impacto:** Médio - Melhora a integração e permite ações automáticas
   - **Esforço:** Médio
+  - **Status:** ✅ Implementado com 7 novos handlers e testes completos (`test_webhooks_events.php`)
 
 #### Endpoints Adicionais de Negócio:
 - [x] **Histórico de Mudanças de Assinatura** - Auditoria de mudanças ✅ **IMPLEMENTADO E TESTADO**
@@ -613,13 +624,18 @@
   - **Esforço:** Baixo
   - **Prioridade:** Baixa
 
-- [ ] **Backup Automático** - Sistema de backup do banco de dados
-  - Backup automático diário/semanal
-  - Retenção configurável
-  - Restauração facilitada
+- [x] **Backup Automático** - ✅ **CONCLUÍDO** - Sistema de backup do banco de dados
+  - [x] BackupService com criação, listagem, restauração e limpeza ✅ **IMPLEMENTADO**
+  - [x] Compressão automática (gzip) ✅ **IMPLEMENTADO**
+  - [x] Retenção configurável (BACKUP_RETENTION_DAYS) ✅ **IMPLEMENTADO**
+  - [x] Logs de backup (tabela backup_logs) ✅ **IMPLEMENTADO**
+  - [x] Script CLI completo (scripts/backup.php) ✅ **IMPLEMENTADO**
+  - [x] Comandos composer (backup, backup:list, backup:stats, backup:clean) ✅ **IMPLEMENTADO**
+  - [x] Estatísticas de backups ✅ **IMPLEMENTADO**
+  - [x] Restauração facilitada ✅ **IMPLEMENTADO**
   - **Impacto:** Alto - Essencial para produção
   - **Esforço:** Médio
-  - **Prioridade:** Alta
+  - **Status:** ✅ Implementado com testes completos (`test_backup.php`)
 
 - [ ] **Replicação** - Replicação de banco para produção
   - Master-slave replication
@@ -744,9 +760,10 @@
 7. [ ] **Rotação Automática de API Keys** - Sistema para rotacionar API keys
    - **Impacto:** Médio - Importante para segurança em produção
    - **Esforço:** Médio
-8. [ ] **Webhooks - Mais Eventos** - Tratar mais eventos do Stripe
+8. ✅ **Webhooks - Mais Eventos** - ✅ **CONCLUÍDO** - Tratar mais eventos do Stripe
    - **Impacto:** Médio - Melhora a integração e permite ações automáticas
    - **Esforço:** Médio
+   - **Status:** ✅ Implementado com 7 novos handlers e testes completos
 9. [ ] **IP Whitelist por Tenant** - Restringir acesso por IP
    - **Impacto:** Médio - Importante para segurança adicional
    - **Esforço:** Baixo
@@ -900,12 +917,26 @@
 - [x] **Informações do sistema**: PHP version, memory, uptime ✅ **TESTADO**
 - [x] **Tempo de resposta** de cada verificação ✅ **TESTADO**
 
+### ✅ Webhooks - Mais Eventos
+- [x] **7 novos handlers implementados** ✅ **TESTADO** (`test_webhooks_events.php`)
+- [x] **Payment Intents**: payment_intent.succeeded, payment_intent.payment_failed ✅ **IMPLEMENTADO**
+- [x] **Invoices**: invoice.payment_failed, invoice.upcoming ✅ **IMPLEMENTADO**
+- [x] **Subscriptions**: customer.subscription.trial_will_end ✅ **IMPLEMENTADO**
+- [x] **Charges**: charge.dispute.created, charge.refunded ✅ **IMPLEMENTADO**
+- [x] **Integração com SubscriptionHistory** (invoice.payment_failed, trial_will_end) ✅ **IMPLEMENTADO**
+- [x] **Logs estruturados** para todos os eventos ✅ **IMPLEMENTADO**
+- [x] **Método getCharge** no StripeService ✅ **IMPLEMENTADO**
+- [x] **Correção de headers** no WebhookController ✅ **IMPLEMENTADO**
+
 ### 📊 Estatísticas de Implementação
 - **Controllers adicionados**: 6 (AuthController, UserController, PermissionController, AuditLogController, DisputeController, HealthCheckController)
 - **Models adicionados**: 4 (UserSession, UserPermission, AuditLog, SubscriptionHistory)
 - **Middlewares adicionados**: 3 (UserAuthMiddleware, PermissionMiddleware, AuditMiddleware)
 - **Endpoints adicionados**: 23 novos endpoints
-- **Testes criados**: 7 scripts de teste automatizados
+- **Webhook handlers adicionados**: 7 novos handlers (payment_intent.succeeded, payment_intent.payment_failed, invoice.payment_failed, invoice.upcoming, customer.subscription.trial_will_end, charge.dispute.created, charge.refunded)
+- **Services adicionados**: BackupService (backup automático do banco)
+- **Models adicionados**: BackupLog (histórico de backups)
+- **Testes criados**: 9 scripts de teste automatizados
 - **Documentação**: 4 documentos de resumo criados
 - **Permissões adicionadas**: 3 novas permissões (view_disputes, manage_disputes, view_balance_transactions)
 
@@ -1016,10 +1047,10 @@
 | 🟡 Importante | Notificações por Email | Médio | Médio | Importante | ❌ **PENDENTE** |
 | 🟡 Importante | Métricas de Performance | Médio | Médio | Importante | ❌ **PENDENTE** |
 | 🟡 Importante | Rotação de API Keys | Médio | Médio | Importante | ❌ **PENDENTE** |
-| 🟡 Importante | Webhooks - Mais Eventos | Médio | Médio | Importante | ❌ **PENDENTE** |
+| 🟡 Importante | Webhooks - Mais Eventos | Médio | Médio | Importante | ✅ **IMPLEMENTADO** |
 | 🟡 Importante | IP Whitelist | Médio | Baixo | Importante | ❌ **PENDENTE** |
 | 🟡 Importante | Tracing de Requisições | Médio | Médio | Importante | ❌ **PENDENTE** |
-| 🟢 Baixa | Charges | Baixo | Baixo | Opcional | ❌ **PENDENTE** |
+| 🟢 Baixa | Charges | Baixo | Baixo | Opcional | ✅ **IMPLEMENTADO** |
 | 🟢 Baixa | Disputes | Baixo | Médio | Opcional | ✅ **IMPLEMENTADO** |
 | 🟢 Baixa | Balance Transactions | Baixo | Baixo | Opcional | ✅ **IMPLEMENTADO** |
 | 🟢 Baixa | Payouts | Baixo | Médio | Opcional | ❌ **PENDENTE** |
@@ -1051,7 +1082,7 @@
 13. **Tracing de Requisições** - Facilita debugging
 
 #### Fase 3 - Opcional (BAIXA) 🟢
-14. **Charges** - Auditoria detalhada
+14. ✅ **Charges** - ✅ **CONCLUÍDO** - Auditoria detalhada
 15. ✅ **Disputes** - ✅ **CONCLUÍDO** - Gerenciamento de chargebacks
 16. ✅ **Balance Transactions** - ✅ **CONCLUÍDO** - Reconciliação financeira
 17. **Payouts** - Gerenciamento de saques

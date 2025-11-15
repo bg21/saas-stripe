@@ -30,7 +30,28 @@ class WebhookController
     {
         try {
             $payload = file_get_contents('php://input');
-            $signature = Flight::request()->getHeader('Stripe-Signature');
+            
+            // Obtém header Stripe-Signature
+            $signature = null;
+            $headers = [];
+            
+            if (function_exists('getallheaders')) {
+                $headers = getallheaders();
+            } else {
+                // Fallback para CLI ou quando getallheaders não está disponível
+                foreach ($_SERVER as $key => $value) {
+                    if (strpos($key, 'HTTP_') === 0) {
+                        $headerName = str_replace(' ', '-', ucwords(str_replace('_', ' ', strtolower(substr($key, 5)))));
+                        $headers[$headerName] = $value;
+                    }
+                }
+            }
+            
+            // Tenta obter Stripe-Signature de várias formas
+            $signature = $headers['Stripe-Signature'] ?? 
+                        $headers['stripe-signature'] ?? 
+                        $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? 
+                        null;
 
             if (empty($signature)) {
                 Logger::error("Webhook sem signature");

@@ -180,17 +180,50 @@ class PaymentService
         try {
             // Processa evento
             switch ($eventType) {
+                // Checkout
                 case 'checkout.session.completed':
                     $this->handleCheckoutCompleted($event);
                     break;
 
+                // Payment Intents
+                case 'payment_intent.succeeded':
+                    $this->handlePaymentIntentSucceeded($event);
+                    break;
+
+                case 'payment_intent.payment_failed':
+                    $this->handlePaymentIntentFailed($event);
+                    break;
+
+                // Invoices
                 case 'invoice.paid':
                     $this->handleInvoicePaid($event);
                     break;
 
+                case 'invoice.payment_failed':
+                    $this->handleInvoicePaymentFailed($event);
+                    break;
+
+                case 'invoice.upcoming':
+                    $this->handleInvoiceUpcoming($event);
+                    break;
+
+                // Subscriptions
                 case 'customer.subscription.updated':
                 case 'customer.subscription.deleted':
                     $this->handleSubscriptionUpdate($event);
+                    break;
+
+                case 'customer.subscription.trial_will_end':
+                    $this->handleSubscriptionTrialWillEnd($event);
+                    break;
+
+                // Charges
+                case 'charge.dispute.created':
+                    $this->handleChargeDisputeCreated($event);
+                    break;
+
+                case 'charge.refunded':
+                    $this->handleChargeRefunded($event);
                     break;
 
                 default:
@@ -428,6 +461,263 @@ class PaymentService
                 'event_type' => $eventType
             ]);
         }
+    }
+
+    /**
+     * Trata payment_intent.succeeded
+     * Pagamento confirmado com sucesso
+     */
+    private function handlePaymentIntentSucceeded(\Stripe\Event $event): void
+    {
+        $paymentIntent = $event->data->object;
+        
+        Logger::info("Payment Intent bem-sucedido", [
+            'payment_intent_id' => $paymentIntent->id,
+            'amount' => $paymentIntent->amount,
+            'currency' => $paymentIntent->currency,
+            'customer_id' => $paymentIntent->customer ?? null,
+            'metadata' => $paymentIntent->metadata->toArray() ?? []
+        ]);
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Atualizar status de pedido
+        // - Enviar notificação ao cliente
+        // - Registrar em histórico de transações
+    }
+
+    /**
+     * Trata payment_intent.payment_failed
+     * Falha no pagamento
+     */
+    private function handlePaymentIntentFailed(\Stripe\Event $event): void
+    {
+        $paymentIntent = $event->data->object;
+        
+        Logger::warning("Payment Intent falhou", [
+            'payment_intent_id' => $paymentIntent->id,
+            'amount' => $paymentIntent->amount,
+            'currency' => $paymentIntent->currency,
+            'customer_id' => $paymentIntent->customer ?? null,
+            'last_payment_error' => $paymentIntent->last_payment_error ? [
+                'type' => $paymentIntent->last_payment_error->type ?? null,
+                'code' => $paymentIntent->last_payment_error->code ?? null,
+                'message' => $paymentIntent->last_payment_error->message ?? null,
+                'decline_code' => $paymentIntent->last_payment_error->decline_code ?? null
+            ] : null,
+            'metadata' => $paymentIntent->metadata->toArray() ?? []
+        ]);
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Notificar o cliente sobre a falha
+        // - Tentar método de pagamento alternativo
+        // - Registrar tentativa de pagamento falhada
+    }
+
+    /**
+     * Trata invoice.payment_failed
+     * Falha no pagamento de fatura
+     */
+    private function handleInvoicePaymentFailed(\Stripe\Event $event): void
+    {
+        $invoice = $event->data->object;
+        
+        Logger::warning("Falha no pagamento de fatura", [
+            'invoice_id' => $invoice->id,
+            'customer_id' => $invoice->customer,
+            'subscription_id' => $invoice->subscription ?? null,
+            'amount_due' => $invoice->amount_due,
+            'currency' => $invoice->currency,
+            'attempt_count' => $invoice->attempt_count ?? 0,
+            'next_payment_attempt' => $invoice->next_payment_attempt 
+                ? date('Y-m-d H:i:s', $invoice->next_payment_attempt) 
+                : null
+        ]);
+
+        // Busca subscription relacionada se existir
+        if ($invoice->subscription) {
+            $subscription = $this->subscriptionModel->findByStripeId($invoice->subscription);
+            
+            if ($subscription) {
+                // Registra no histórico da assinatura
+                $historyModel = new \App\Models\SubscriptionHistory();
+                $historyModel->recordChange(
+                    $subscription['id'],
+                    $subscription['tenant_id'],
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_STATUS_CHANGED,
+                    ['status' => $subscription['status']],
+                    ['status' => 'past_due'],
+                    \App\Models\SubscriptionHistory::CHANGED_BY_WEBHOOK,
+                    "Falha no pagamento da fatura {$invoice->id}",
+                    null
+                );
+            }
+        }
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Enviar notificação ao cliente
+        // - Atualizar status da assinatura para past_due
+        // - Tentar cobrança novamente após X dias
+    }
+
+    /**
+     * Trata invoice.upcoming
+     * Fatura próxima (para notificações)
+     */
+    private function handleInvoiceUpcoming(\Stripe\Event $event): void
+    {
+        $invoice = $event->data->object;
+        
+        Logger::info("Fatura próxima", [
+            'invoice_id' => $invoice->id,
+            'customer_id' => $invoice->customer,
+            'subscription_id' => $invoice->subscription ?? null,
+            'amount_due' => $invoice->amount_due,
+            'currency' => $invoice->currency,
+            'period_end' => $invoice->period_end 
+                ? date('Y-m-d H:i:s', $invoice->period_end) 
+                : null,
+            'due_date' => $invoice->due_date 
+                ? date('Y-m-d H:i:s', $invoice->due_date) 
+                : null
+        ]);
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Enviar email de lembrete ao cliente
+        // - Notificar sobre fatura próxima
+        // - Verificar se há método de pagamento válido
+    }
+
+    /**
+     * Trata customer.subscription.trial_will_end
+     * Trial terminando em breve
+     */
+    private function handleSubscriptionTrialWillEnd(\Stripe\Event $event): void
+    {
+        $stripeSubscription = $event->data->object;
+        $subscription = $this->subscriptionModel->findByStripeId($stripeSubscription->id);
+
+        if ($subscription) {
+            Logger::info("Trial da assinatura terminando em breve", [
+                'subscription_id' => $subscription['id'],
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'trial_end' => $stripeSubscription->trial_end 
+                    ? date('Y-m-d H:i:s', $stripeSubscription->trial_end) 
+                    : null,
+                'status' => $stripeSubscription->status
+            ]);
+
+            // Registra no histórico
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $historyModel->recordChange(
+                $subscription['id'],
+                $subscription['tenant_id'],
+                \App\Models\SubscriptionHistory::CHANGE_TYPE_UPDATED,
+                [],
+                [
+                    'status' => $stripeSubscription->status,
+                    'trial_end' => $stripeSubscription->trial_end 
+                        ? date('Y-m-d H:i:s', $stripeSubscription->trial_end) 
+                        : null
+                ],
+                \App\Models\SubscriptionHistory::CHANGED_BY_WEBHOOK,
+                "Trial terminando em " . ($stripeSubscription->trial_end 
+                    ? date('Y-m-d H:i:s', $stripeSubscription->trial_end) 
+                    : 'breve'),
+                null
+            );
+        }
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Enviar notificação ao cliente sobre fim do trial
+        // - Verificar se há método de pagamento configurado
+        // - Oferecer desconto para conversão
+    }
+
+    /**
+     * Trata charge.dispute.created
+     * Disputa/chargeback criada
+     */
+    private function handleChargeDisputeCreated(\Stripe\Event $event): void
+    {
+        $dispute = $event->data->object;
+        $charge = $dispute->charge;
+        
+        Logger::warning("Disputa/chargeback criada", [
+            'dispute_id' => $dispute->id,
+            'charge_id' => $charge,
+            'amount' => $dispute->amount,
+            'currency' => $dispute->currency,
+            'reason' => $dispute->reason,
+            'status' => $dispute->status,
+            'evidence_due_by' => $dispute->evidence_details->due_by 
+                ? date('Y-m-d H:i:s', $dispute->evidence_details->due_by) 
+                : null
+        ]);
+
+        // Tenta encontrar customer relacionado através do charge
+        try {
+            $chargeObj = $this->stripeService->getCharge($charge);
+            if ($chargeObj->customer) {
+                $customer = $this->customerModel->findByStripeId($chargeObj->customer);
+                
+                if ($customer) {
+                    Logger::info("Disputa associada a customer", [
+                        'dispute_id' => $dispute->id,
+                        'customer_id' => $customer['id'],
+                        'tenant_id' => $customer['tenant_id']
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Logger::warning("Não foi possível obter charge para disputa", [
+                'dispute_id' => $dispute->id,
+                'charge_id' => $charge,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Notificar equipe sobre a disputa
+        // - Criar ticket de suporte
+        // - Preparar evidências automaticamente
+    }
+
+    /**
+     * Trata charge.refunded
+     * Reembolso processado
+     */
+    private function handleChargeRefunded(\Stripe\Event $event): void
+    {
+        $charge = $event->data->object;
+        
+        Logger::info("Reembolso processado", [
+            'charge_id' => $charge->id,
+            'amount' => $charge->amount,
+            'amount_refunded' => $charge->amount_refunded,
+            'currency' => $charge->currency,
+            'customer_id' => $charge->customer ?? null,
+            'refunded' => $charge->refunded,
+            'metadata' => $charge->metadata->toArray() ?? []
+        ]);
+
+        // Tenta encontrar customer relacionado
+        if ($charge->customer) {
+            $customer = $this->customerModel->findByStripeId($charge->customer);
+            
+            if ($customer) {
+                Logger::info("Reembolso associado a customer", [
+                    'charge_id' => $charge->id,
+                    'customer_id' => $customer['id'],
+                    'tenant_id' => $customer['tenant_id'],
+                    'amount_refunded' => $charge->amount_refunded
+                ]);
+            }
+        }
+
+        // Aqui você pode adicionar lógica adicional, como:
+        // - Atualizar status de pedido para reembolsado
+        // - Notificar o cliente sobre o reembolso
+        // - Registrar em histórico financeiro
     }
 }
 

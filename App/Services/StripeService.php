@@ -2765,5 +2765,145 @@ class StripeService
             throw $e;
         }
     }
+
+    /**
+     * Lista Charges (cobranças)
+     * 
+     * @param array $options Opções de filtro e paginação:
+     *   - limit (opcional): Número máximo de resultados (padrão: 10, máximo: 100)
+     *   - starting_after (opcional): ID da charge para paginação
+     *   - ending_before (opcional): ID da charge para paginação reversa
+     *   - created (opcional): Filtrar por data de criação (objeto com gte, lte, gt, lt)
+     *   - customer (opcional): Filtrar por ID do customer
+     *   - payment_intent (opcional): Filtrar por ID do payment intent
+     * @return \Stripe\Collection
+     */
+    public function listCharges(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [];
+
+            // Limite de resultados
+            if (isset($options['limit'])) {
+                $params['limit'] = min((int)$options['limit'], 100);
+            } else {
+                $params['limit'] = 10;
+            }
+
+            // Paginação
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            // Filtro por customer
+            if (!empty($options['customer'])) {
+                $params['customer'] = $options['customer'];
+            }
+
+            // Filtro por payment_intent
+            if (!empty($options['payment_intent'])) {
+                $params['payment_intent'] = $options['payment_intent'];
+            }
+
+            // Filtro por data de criação
+            if (isset($options['created'])) {
+                $created = $options['created'];
+                if (isset($created['gte'])) {
+                    $params['created']['gte'] = (int)$created['gte'];
+                }
+                if (isset($created['lte'])) {
+                    $params['created']['lte'] = (int)$created['lte'];
+                }
+                if (isset($created['gt'])) {
+                    $params['created']['gt'] = (int)$created['gt'];
+                }
+                if (isset($created['lt'])) {
+                    $params['created']['lt'] = (int)$created['lt'];
+                }
+            }
+
+            $charges = $this->client->charges->all($params);
+
+            Logger::info("Charges listadas", [
+                'count' => count($charges->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $charges;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar charges", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Charge por ID
+     * 
+     * @param string $chargeId ID da charge no Stripe
+     * @return \Stripe\Charge
+     */
+    public function getCharge(string $chargeId): \Stripe\Charge
+    {
+        try {
+            $charge = $this->client->charges->retrieve($chargeId);
+
+            Logger::info("Charge obtida", [
+                'charge_id' => $chargeId
+            ]);
+
+            return $charge;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter charge", [
+                'charge_id' => $chargeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza Charge (apenas metadata)
+     * 
+     * @param string $chargeId ID da charge no Stripe
+     * @param array $data Dados para atualização:
+     *   - metadata (opcional): Metadados para atualizar
+     * @return \Stripe\Charge
+     */
+    public function updateCharge(string $chargeId, array $data): \Stripe\Charge
+    {
+        try {
+            $updateParams = [];
+
+            // Atualiza metadata
+            if (isset($data['metadata'])) {
+                $updateParams['metadata'] = $data['metadata'];
+            }
+
+            if (empty($updateParams)) {
+                throw new \InvalidArgumentException("Nenhum campo para atualizar. Apenas metadata pode ser atualizado.");
+            }
+
+            $charge = $this->client->charges->update($chargeId, $updateParams);
+
+            Logger::info("Charge atualizada", [
+                'charge_id' => $chargeId,
+                'updated_fields' => array_keys($updateParams)
+            ]);
+
+            return $charge;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar charge", [
+                'charge_id' => $chargeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
 }
 

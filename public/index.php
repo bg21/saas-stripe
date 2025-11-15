@@ -207,6 +207,7 @@ $taxRateController = new \App\Controllers\TaxRateController($stripeService);
 $invoiceItemController = new \App\Controllers\InvoiceItemController($stripeService);
 $balanceTransactionController = new \App\Controllers\BalanceTransactionController($stripeService);
 $disputeController = new \App\Controllers\DisputeController($stripeService);
+$chargeController = new \App\Controllers\ChargeController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
 
@@ -373,6 +374,11 @@ $app->route('GET /v1/balance-transactions/@id', [$balanceTransactionController, 
 $app->route('GET /v1/disputes', [$disputeController, 'list']);
 $app->route('GET /v1/disputes/@id', [$disputeController, 'get']);
 $app->route('PUT /v1/disputes/@id', [$disputeController, 'update']);
+
+// Rotas de Charges
+$app->route('GET /v1/charges', [$chargeController, 'list']);
+$app->route('GET /v1/charges/@id', [$chargeController, 'get']);
+$app->route('PUT /v1/charges/@id', [$chargeController, 'update']);
 
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
