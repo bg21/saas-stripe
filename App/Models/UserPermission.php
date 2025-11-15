@@ -63,11 +63,15 @@ class UserPermission extends BaseModel
                 'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
                 'cancel_subscriptions', 'reactivate_subscriptions',
                 'view_customers', 'create_customers', 'update_customers',
-                'view_audit_logs', 'manage_users', 'manage_permissions'
+                'view_audit_logs', 'manage_users', 'manage_permissions',
+                'view_disputes', 'manage_disputes',
+                'view_balance_transactions'
             ],
             'editor' => [
                 'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
-                'view_customers', 'create_customers', 'update_customers'
+                'view_customers', 'create_customers', 'update_customers',
+                'view_disputes',
+                'view_balance_transactions'
             ],
             'viewer' => [
                 'view_subscriptions', 'view_customers'

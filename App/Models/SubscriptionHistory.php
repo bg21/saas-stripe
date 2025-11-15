@@ -36,6 +36,7 @@ class SubscriptionHistory extends BaseModel
      * @param array $newData Dados novos (opcional)
      * @param string|null $changedBy Origem da mudança (api, webhook, admin)
      * @param string|null $description Descrição da mudança (opcional)
+     * @param int|null $userId ID do usuário que fez a mudança (opcional, quando via API com autenticação de usuário)
      * @return int ID do registro criado
      */
     public function recordChange(
@@ -45,13 +46,15 @@ class SubscriptionHistory extends BaseModel
         array $oldData = [],
         array $newData = [],
         ?string $changedBy = null,
-        ?string $description = null
+        ?string $description = null,
+        ?int $userId = null
     ): int {
         $historyData = [
             'subscription_id' => $subscriptionId,
             'tenant_id' => $tenantId,
             'change_type' => $changeType,
             'changed_by' => $changedBy ?? self::CHANGED_BY_API,
+            'user_id' => $userId,
             'old_status' => $oldData['status'] ?? null,
             'new_status' => $newData['status'] ?? null,
             'old_plan_id' => $oldData['plan_id'] ?? null,
@@ -81,26 +84,66 @@ class SubscriptionHistory extends BaseModel
     }
 
     /**
-     * Busca histórico de uma assinatura
+     * Busca histórico de uma assinatura com filtros opcionais
      * 
      * @param int $subscriptionId ID da assinatura
      * @param int|null $tenantId ID do tenant (para validação de segurança)
      * @param int $limit Limite de resultados
      * @param int $offset Offset para paginação
+     * @param array $filters Filtros opcionais:
+     *   - change_type: Tipo de mudança (created, updated, canceled, etc.)
+     *   - changed_by: Origem da mudança (api, webhook, admin)
+     *   - user_id: ID do usuário que fez a mudança
+     *   - date_from: Data inicial (Y-m-d H:i:s)
+     *   - date_to: Data final (Y-m-d H:i:s)
      * @return array Lista de registros de histórico
      */
-    public function findBySubscription(int $subscriptionId, ?int $tenantId = null, int $limit = 100, int $offset = 0): array
-    {
-        $sql = "SELECT * FROM {$this->table} WHERE subscription_id = :subscription_id";
+    public function findBySubscription(
+        int $subscriptionId, 
+        ?int $tenantId = null, 
+        int $limit = 100, 
+        int $offset = 0,
+        array $filters = []
+    ): array {
+        $sql = "SELECT sh.*, u.email as user_email, u.name as user_name 
+                FROM {$this->table} sh 
+                LEFT JOIN users u ON sh.user_id = u.id 
+                WHERE sh.subscription_id = :subscription_id";
         $params = ['subscription_id' => $subscriptionId];
 
         // Validação de segurança: se tenant_id fornecido, filtra por ele
         if ($tenantId !== null) {
-            $sql .= " AND tenant_id = :tenant_id";
+            $sql .= " AND sh.tenant_id = :tenant_id";
             $params['tenant_id'] = $tenantId;
         }
 
-        $sql .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+        // Filtros opcionais
+        if (!empty($filters['change_type'])) {
+            $sql .= " AND sh.change_type = :change_type";
+            $params['change_type'] = $filters['change_type'];
+        }
+
+        if (!empty($filters['changed_by'])) {
+            $sql .= " AND sh.changed_by = :changed_by";
+            $params['changed_by'] = $filters['changed_by'];
+        }
+
+        if (isset($filters['user_id']) && $filters['user_id'] !== null) {
+            $sql .= " AND sh.user_id = :user_id";
+            $params['user_id'] = (int)$filters['user_id'];
+        }
+
+        if (!empty($filters['date_from'])) {
+            $sql .= " AND sh.created_at >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $sql .= " AND sh.created_at <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+
+        $sql .= " ORDER BY sh.created_at DESC LIMIT :limit OFFSET :offset";
 
         $stmt = $this->db->prepare($sql);
         
@@ -116,13 +159,14 @@ class SubscriptionHistory extends BaseModel
     }
 
     /**
-     * Conta total de registros de histórico de uma assinatura
+     * Conta total de registros de histórico de uma assinatura com filtros opcionais
      * 
      * @param int $subscriptionId ID da assinatura
      * @param int|null $tenantId ID do tenant (para validação de segurança)
+     * @param array $filters Filtros opcionais (mesmos do findBySubscription)
      * @return int Total de registros
      */
-    public function countBySubscription(int $subscriptionId, ?int $tenantId = null): int
+    public function countBySubscription(int $subscriptionId, ?int $tenantId = null, array $filters = []): int
     {
         $sql = "SELECT COUNT(*) as total FROM {$this->table} WHERE subscription_id = :subscription_id";
         $params = ['subscription_id' => $subscriptionId];
@@ -130,6 +174,32 @@ class SubscriptionHistory extends BaseModel
         if ($tenantId !== null) {
             $sql .= " AND tenant_id = :tenant_id";
             $params['tenant_id'] = $tenantId;
+        }
+
+        // Aplica mesmos filtros do findBySubscription
+        if (!empty($filters['change_type'])) {
+            $sql .= " AND change_type = :change_type";
+            $params['change_type'] = $filters['change_type'];
+        }
+
+        if (!empty($filters['changed_by'])) {
+            $sql .= " AND changed_by = :changed_by";
+            $params['changed_by'] = $filters['changed_by'];
+        }
+
+        if (isset($filters['user_id']) && $filters['user_id'] !== null) {
+            $sql .= " AND user_id = :user_id";
+            $params['user_id'] = (int)$filters['user_id'];
+        }
+
+        if (!empty($filters['date_from'])) {
+            $sql .= " AND created_at >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $sql .= " AND created_at <= :date_to";
+            $params['date_to'] = $filters['date_to'];
         }
 
         $stmt = $this->db->prepare($sql);
@@ -158,6 +228,65 @@ class SubscriptionHistory extends BaseModel
         $stmt->execute();
         
         return $stmt->rowCount();
+    }
+
+    /**
+     * Obtém estatísticas do histórico de uma assinatura
+     * 
+     * @param int $subscriptionId ID da assinatura
+     * @param int|null $tenantId ID do tenant (para validação de segurança)
+     * @return array Estatísticas do histórico
+     */
+    public function getStatistics(int $subscriptionId, ?int $tenantId = null): array
+    {
+        $sql = "SELECT 
+                    COUNT(*) as total_changes,
+                    COUNT(DISTINCT change_type) as unique_change_types,
+                    COUNT(DISTINCT changed_by) as unique_sources,
+                    COUNT(DISTINCT user_id) as unique_users,
+                    MIN(created_at) as first_change,
+                    MAX(created_at) as last_change,
+                    SUM(CASE WHEN change_type = 'created' THEN 1 ELSE 0 END) as created_count,
+                    SUM(CASE WHEN change_type = 'updated' THEN 1 ELSE 0 END) as updated_count,
+                    SUM(CASE WHEN change_type = 'canceled' THEN 1 ELSE 0 END) as canceled_count,
+                    SUM(CASE WHEN change_type = 'reactivated' THEN 1 ELSE 0 END) as reactivated_count,
+                    SUM(CASE WHEN change_type = 'plan_changed' THEN 1 ELSE 0 END) as plan_changed_count,
+                    SUM(CASE WHEN change_type = 'status_changed' THEN 1 ELSE 0 END) as status_changed_count
+                FROM {$this->table} 
+                WHERE subscription_id = :subscription_id";
+        
+        $params = ['subscription_id' => $subscriptionId];
+
+        if ($tenantId !== null) {
+            $sql .= " AND tenant_id = :tenant_id";
+            $params['tenant_id'] = $tenantId;
+        }
+
+        $stmt = $this->db->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":{$key}", $value);
+        }
+        
+        $stmt->execute();
+        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+        
+        return [
+            'total_changes' => (int) ($result['total_changes'] ?? 0),
+            'unique_change_types' => (int) ($result['unique_change_types'] ?? 0),
+            'unique_sources' => (int) ($result['unique_sources'] ?? 0),
+            'unique_users' => (int) ($result['unique_users'] ?? 0),
+            'first_change' => $result['first_change'] ?? null,
+            'last_change' => $result['last_change'] ?? null,
+            'by_type' => [
+                'created' => (int) ($result['created_count'] ?? 0),
+                'updated' => (int) ($result['updated_count'] ?? 0),
+                'canceled' => (int) ($result['canceled_count'] ?? 0),
+                'reactivated' => (int) ($result['reactivated_count'] ?? 0),
+                'plan_changed' => (int) ($result['plan_changed_count'] ?? 0),
+                'status_changed' => (int) ($result['status_changed_count'] ?? 0)
+            ]
+        ];
     }
 }
 

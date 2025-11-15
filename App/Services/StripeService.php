@@ -2604,5 +2604,166 @@ class StripeService
             throw $e;
         }
     }
+
+    /**
+     * Lista Disputes (disputas/chargebacks)
+     * 
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número de disputas por página (padrão: 10)
+     *   - starting_after (opcional): ID da disputa para paginação
+     *   - ending_before (opcional): ID da disputa para paginação reversa
+     *   - created (opcional): Filtrar por data de criação (array com gte, lte, gt, lt)
+     *   - charge (opcional): Filtrar por ID da charge
+     *   - payment_intent (opcional): Filtrar por ID do payment intent
+     * @return \Stripe\Collection
+     */
+    public function listDisputes(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [
+                'limit' => $options['limit'] ?? 10
+            ];
+
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+
+            if (isset($options['created']) && is_array($options['created'])) {
+                $params['created'] = $options['created'];
+            }
+
+            if (!empty($options['charge'])) {
+                $params['charge'] = $options['charge'];
+            }
+
+            if (!empty($options['payment_intent'])) {
+                $params['payment_intent'] = $options['payment_intent'];
+            }
+
+            $disputes = $this->client->disputes->all($params);
+
+            Logger::info("Disputes listadas", [
+                'count' => count($disputes->data),
+                'filters' => array_keys($options)
+            ]);
+
+            return $disputes;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar disputes", [
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Dispute por ID
+     * 
+     * @param string $disputeId ID da dispute no Stripe
+     * @return \Stripe\Dispute
+     */
+    public function getDispute(string $disputeId): \Stripe\Dispute
+    {
+        try {
+            $dispute = $this->client->disputes->retrieve($disputeId);
+
+            Logger::info("Dispute obtida", [
+                'dispute_id' => $disputeId
+            ]);
+
+            return $dispute;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter dispute", [
+                'dispute_id' => $disputeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza Dispute (adiciona evidências)
+     * 
+     * @param string $disputeId ID da dispute no Stripe
+     * @param array $evidence Dados das evidências:
+     *   - access_activity_log (opcional): Log de atividade de acesso
+     *   - billing_address (opcional): Endereço de cobrança
+     *   - cancellation_policy (opcional): Política de cancelamento
+     *   - cancellation_policy_disclosure (opcional): Divulgação da política de cancelamento
+     *   - cancellation_rebuttal (opcional): Rebuttal de cancelamento
+     *   - customer_communication (opcional): Comunicação com o cliente
+     *   - customer_email_address (opcional): Email do cliente
+     *   - customer_name (opcional): Nome do cliente
+     *   - customer_purchase_ip (opcional): IP da compra
+     *   - customer_signature (opcional): Assinatura do cliente
+     *   - duplicate_charge_documentation (opcional): Documentação de cobrança duplicada
+     *   - duplicate_charge_explanation (opcional): Explicação de cobrança duplicada
+     *   - duplicate_charge_id (opcional): ID da cobrança duplicada
+     *   - product_description (opcional): Descrição do produto
+     *   - receipt (opcional): Recibo
+     *   - refund_policy (opcional): Política de reembolso
+     *   - refund_policy_disclosure (opcional): Divulgação da política de reembolso
+     *   - refund_refusal_explanation (opcional): Explicação de recusa de reembolso
+     *   - service_date (opcional): Data do serviço
+     *   - service_documentation (opcional): Documentação do serviço
+     *   - shipping_address (opcional): Endereço de entrega
+     *   - shipping_carrier (opcional): Transportadora
+     *   - shipping_date (opcional): Data de envio
+     *   - shipping_documentation (opcional): Documentação de envio
+     *   - shipping_tracking_number (opcional): Número de rastreamento
+     *   - uncategorized_file (opcional): Arquivo não categorizado
+     *   - uncategorized_text (opcional): Texto não categorizado
+     * @return \Stripe\Dispute
+     */
+    public function updateDispute(string $disputeId, array $evidence = []): \Stripe\Dispute
+    {
+        try {
+            $params = [];
+
+            // Adiciona apenas campos de evidência que foram fornecidos
+            $evidenceFields = [
+                'access_activity_log', 'billing_address', 'cancellation_policy',
+                'cancellation_policy_disclosure', 'cancellation_rebuttal',
+                'customer_communication', 'customer_email_address', 'customer_name',
+                'customer_purchase_ip', 'customer_signature',
+                'duplicate_charge_documentation', 'duplicate_charge_explanation',
+                'duplicate_charge_id', 'product_description', 'receipt',
+                'refund_policy', 'refund_policy_disclosure', 'refund_refusal_explanation',
+                'service_date', 'service_documentation', 'shipping_address',
+                'shipping_carrier', 'shipping_date', 'shipping_documentation',
+                'shipping_tracking_number', 'uncategorized_file', 'uncategorized_text'
+            ];
+
+            foreach ($evidenceFields as $field) {
+                if (isset($evidence[$field])) {
+                    $params[$field] = $evidence[$field];
+                }
+            }
+
+            // Se não há evidências, retorna a dispute sem atualizar
+            if (empty($params)) {
+                return $this->getDispute($disputeId);
+            }
+
+            $dispute = $this->client->disputes->update($disputeId, $params);
+
+            Logger::info("Dispute atualizada", [
+                'dispute_id' => $disputeId,
+                'evidence_fields' => array_keys($params)
+            ]);
+
+            return $dispute;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar dispute", [
+                'dispute_id' => $disputeId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
 }
 

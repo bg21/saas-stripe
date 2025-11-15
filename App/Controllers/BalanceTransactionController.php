@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\PermissionHelper;
 use Flight;
 use Config;
 
@@ -38,6 +39,9 @@ class BalanceTransactionController
     public function list(): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_balance_transactions');
+            
             $queryParams = Flight::request()->query;
             
             $options = [];
@@ -143,8 +147,11 @@ class BalanceTransactionController
     public function get(string $id): void
     {
         try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_balance_transactions');
+            
             if (empty($id)) {
-                Flight::json(['error' => 'ID da balance transaction é obrigatório'], 400);
+                Flight::halt(400, json_encode(['error' => 'ID da balance transaction é obrigatório']));
                 return;
             }
 

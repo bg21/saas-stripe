@@ -128,6 +128,12 @@ class PaymentService
         ];
 
         // Registra no histórico
+        // Tenta obter user_id do Flight (pode ser null se for API Key)
+        $userId = null;
+        if (class_exists('\Flight')) {
+            $userId = \Flight::get('user_id');
+        }
+        
         $historyModel = new \App\Models\SubscriptionHistory();
         $historyModel->recordChange(
             $subscriptionId,
@@ -136,7 +142,8 @@ class PaymentService
             [],
             $newData,
             \App\Models\SubscriptionHistory::CHANGED_BY_API,
-            "Assinatura criada com plano {$newData['plan_id']}"
+            "Assinatura criada com plano {$newData['plan_id']}",
+            $userId
         );
 
         Logger::info("Assinatura criada", [
@@ -402,6 +409,7 @@ class PaymentService
             ];
 
             // Registra no histórico
+            // Webhooks não têm user_id (são eventos do Stripe)
             $historyModel = new \App\Models\SubscriptionHistory();
             $historyModel->recordChange(
                 $subscription['id'],
@@ -410,7 +418,8 @@ class PaymentService
                 $oldData,
                 $newData,
                 \App\Models\SubscriptionHistory::CHANGED_BY_WEBHOOK,
-                $description
+                $description,
+                null // Webhooks não têm user_id
             );
 
             Logger::info("Assinatura atualizada", [

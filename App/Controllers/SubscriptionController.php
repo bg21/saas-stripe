@@ -261,6 +261,7 @@ class SubscriptionController
             }
 
             // Registra no histórico
+            $userId = Flight::get('user_id'); // Pode ser null se for API Key
             $historyModel = new \App\Models\SubscriptionHistory();
             $historyModel->recordChange(
                 (int)$id,
@@ -269,7 +270,8 @@ class SubscriptionController
                 $oldData,
                 $newData,
                 \App\Models\SubscriptionHistory::CHANGED_BY_API,
-                isset($data['price_id']) ? "Plano alterado para {$newData['plan_id']}" : "Assinatura atualizada via API"
+                isset($data['price_id']) ? "Plano alterado para {$newData['plan_id']}" : "Assinatura atualizada via API",
+                $userId
             );
 
             Flight::json([
@@ -358,6 +360,7 @@ class SubscriptionController
             ];
 
             // Registra no histórico
+            $userId = Flight::get('user_id'); // Pode ser null se for API Key
             $historyModel = new \App\Models\SubscriptionHistory();
             $historyModel->recordChange(
                 (int)$id,
@@ -366,7 +369,8 @@ class SubscriptionController
                 $oldData,
                 $newData,
                 \App\Models\SubscriptionHistory::CHANGED_BY_API,
-                $immediately ? 'Assinatura cancelada imediatamente' : 'Assinatura marcada para cancelar no final do período'
+                $immediately ? 'Assinatura cancelada imediatamente' : 'Assinatura marcada para cancelar no final do período',
+                $userId
             );
 
             Flight::json([
@@ -470,6 +474,7 @@ class SubscriptionController
             ];
 
             // Registra no histórico
+            $userId = Flight::get('user_id'); // Pode ser null se for API Key
             $historyModel = new \App\Models\SubscriptionHistory();
             $historyModel->recordChange(
                 (int)$id,
@@ -478,7 +483,8 @@ class SubscriptionController
                 $oldData,
                 $newData,
                 \App\Models\SubscriptionHistory::CHANGED_BY_API,
-                'Assinatura reativada - cancelamento no final do período removido'
+                'Assinatura reativada - cancelamento no final do período removido',
+                $userId
             );
 
             Flight::json([
@@ -525,6 +531,11 @@ class SubscriptionController
      * Query params opcionais:
      *   - limit: Limite de resultados (padrão: 100, máximo: 500)
      *   - offset: Offset para paginação (padrão: 0)
+     *   - change_type: Filtrar por tipo de mudança (created, updated, canceled, reactivated, plan_changed, status_changed)
+     *   - changed_by: Filtrar por origem (api, webhook, admin)
+     *   - user_id: Filtrar por ID do usuário que fez a mudança
+     *   - date_from: Data inicial (Y-m-d ou Y-m-d H:i:s)
+     *   - date_to: Data final (Y-m-d ou Y-m-d H:i:s)
      */
     public function history(string $id): void
     {
@@ -535,8 +546,7 @@ class SubscriptionController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                Flight::halt(401, json_encode(['error' => 'Não autenticado']));
                 return;
             }
 
@@ -544,8 +554,7 @@ class SubscriptionController
             $subscription = $subscriptionModel->findById((int)$id);
 
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                http_response_code(404);
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                Flight::halt(404, json_encode(['error' => 'Assinatura não encontrada']));
                 return;
             }
 
@@ -557,14 +566,65 @@ class SubscriptionController
             $offset = isset($queryParams['offset']) ? (int) $queryParams['offset'] : 0;
             $offset = max($offset, 0); // Não pode ser negativo
 
+            // Filtros opcionais
+            $filters = [];
+            
+            if (!empty($queryParams['change_type'])) {
+                $validTypes = [
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_CREATED,
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_UPDATED,
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_CANCELED,
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_REACTIVATED,
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_PLAN_CHANGED,
+                    \App\Models\SubscriptionHistory::CHANGE_TYPE_STATUS_CHANGED
+                ];
+                if (in_array($queryParams['change_type'], $validTypes)) {
+                    $filters['change_type'] = $queryParams['change_type'];
+                }
+            }
+            
+            if (!empty($queryParams['changed_by'])) {
+                $validSources = [
+                    \App\Models\SubscriptionHistory::CHANGED_BY_API,
+                    \App\Models\SubscriptionHistory::CHANGED_BY_WEBHOOK,
+                    \App\Models\SubscriptionHistory::CHANGED_BY_ADMIN
+                ];
+                if (in_array($queryParams['changed_by'], $validSources)) {
+                    $filters['changed_by'] = $queryParams['changed_by'];
+                }
+            }
+            
+            if (isset($queryParams['user_id']) && $queryParams['user_id'] !== '') {
+                $filters['user_id'] = (int) $queryParams['user_id'];
+            }
+            
+            if (!empty($queryParams['date_from'])) {
+                // Se não tiver hora, adiciona 00:00:00
+                $dateFrom = $queryParams['date_from'];
+                if (strlen($dateFrom) === 10) {
+                    $dateFrom .= ' 00:00:00';
+                }
+                $filters['date_from'] = $dateFrom;
+            }
+            
+            if (!empty($queryParams['date_to'])) {
+                // Se não tiver hora, adiciona 23:59:59
+                $dateTo = $queryParams['date_to'];
+                if (strlen($dateTo) === 10) {
+                    $dateTo .= ' 23:59:59';
+                }
+                $filters['date_to'] = $dateTo;
+            }
+
             // Busca histórico
             $historyModel = new \App\Models\SubscriptionHistory();
-            $history = $historyModel->findBySubscription((int)$id, $tenantId, $limit, $offset);
-            $total = $historyModel->countBySubscription((int)$id, $tenantId);
+            $history = $historyModel->findBySubscription((int)$id, $tenantId, $limit, $offset, $filters);
+            $total = $historyModel->countBySubscription((int)$id, $tenantId, $filters);
 
             Flight::json([
                 'success' => true,
                 'data' => $history,
+                'filters_applied' => $filters,
                 'pagination' => [
                     'total' => $total,
                     'limit' => $limit,
@@ -577,11 +637,55 @@ class SubscriptionController
                 'error' => $e->getMessage(),
                 'subscription_id' => $id
             ]);
-            http_response_code(500);
-            Flight::json([
+            Flight::halt(500, json_encode([
                 'error' => 'Erro ao obter histórico de assinatura',
                 'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ]));
+        }
+    }
+
+    /**
+     * Obtém estatísticas do histórico de uma assinatura
+     * GET /v1/subscriptions/:id/history/stats
+     */
+    public function historyStats(string $id): void
+    {
+        try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_subscriptions');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::halt(401, json_encode(['error' => 'Não autenticado']));
+                return;
+            }
+
+            $subscriptionModel = new \App\Models\Subscription();
+            $subscription = $subscriptionModel->findById((int)$id);
+
+            if (!$subscription || $subscription['tenant_id'] != $tenantId) {
+                Flight::halt(404, json_encode(['error' => 'Assinatura não encontrada']));
+                return;
+            }
+
+            // Busca estatísticas
+            $historyModel = new \App\Models\SubscriptionHistory();
+            $stats = $historyModel->getStatistics((int)$id, $tenantId);
+
+            Flight::json([
+                'success' => true,
+                'data' => $stats
+            ]);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao obter estatísticas do histórico", [
+                'error' => $e->getMessage(),
+                'subscription_id' => $id
+            ]);
+            Flight::halt(500, json_encode([
+                'error' => 'Erro ao obter estatísticas do histórico',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ]));
         }
     }
 }

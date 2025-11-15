@@ -36,7 +36,7 @@ $app->before('start', function() {
 // Middleware de autenticação (suporta API Key e Session ID)
 $app->before('start', function() use ($app) {
     // Rotas públicas (sem autenticação)
-    $publicRoutes = ['/', '/v1/webhook', '/health', '/v1/auth/login'];
+    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login'];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
     if (in_array($requestUri, $publicRoutes)) {
@@ -157,7 +157,7 @@ $auditMiddleware = new \App\Middleware\AuditMiddleware($auditLogModel);
 // Middleware de Rate Limiting (após autenticação)
 $app->before('start', function() use ($rateLimitMiddleware, $app) {
     // Rotas públicas não têm rate limiting
-    $publicRoutes = ['/', '/v1/webhook', '/health'];
+    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed'];
     $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
     
     if (in_array($requestUri, $publicRoutes)) {
@@ -206,7 +206,9 @@ $subscriptionItemController = new \App\Controllers\SubscriptionItemController($s
 $taxRateController = new \App\Controllers\TaxRateController($stripeService);
 $invoiceItemController = new \App\Controllers\InvoiceItemController($stripeService);
 $balanceTransactionController = new \App\Controllers\BalanceTransactionController($stripeService);
+$disputeController = new \App\Controllers\DisputeController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
+$healthCheckController = new \App\Controllers\HealthCheckController();
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -218,6 +220,7 @@ $app->route('GET /', function() use ($app) {
         'environment' => Config::env(),
         'endpoints' => [
             'health' => '/health',
+            'health_detailed' => '/health/detailed',
             'customers' => '/v1/customers',
             'checkout' => '/v1/checkout',
             'subscriptions' => '/v1/subscriptions',
@@ -233,20 +236,19 @@ $app->route('GET /', function() use ($app) {
             'setup-intents' => '/v1/setup-intents',
             'subscription-items' => '/v1/subscription-items',
             'balance-transactions' => '/v1/balance-transactions',
-            'audit-logs' => '/v1/audit-logs'
+            'disputes' => '/v1/disputes',
+            'audit-logs' => '/v1/audit-logs',
+            'auth' => '/v1/auth',
+            'users' => '/v1/users',
+            'permissions' => '/v1/permissions'
         ],
         'documentation' => 'Consulte o README.md para mais informações'
     ]);
 });
 
-// Rota de health check
-$app->route('GET /health', function() use ($app) {
-    $app->json([
-        'status' => 'ok',
-        'timestamp' => date('Y-m-d H:i:s'),
-        'environment' => Config::env()
-    ]);
-});
+// Rotas de Health Check
+$app->route('GET /health', [$healthCheckController, 'basic']);
+$app->route('GET /health/detailed', [$healthCheckController, 'detailed']);
 
 // Rota de debug (apenas em desenvolvimento)
 if (Config::isDevelopment()) {
@@ -296,6 +298,7 @@ $app->route('PUT /v1/subscriptions/@id', [$subscriptionController, 'update']);
 $app->route('DELETE /v1/subscriptions/@id', [$subscriptionController, 'cancel']);
 $app->route('POST /v1/subscriptions/@id/reactivate', [$subscriptionController, 'reactivate']);
 $app->route('GET /v1/subscriptions/@id/history', [$subscriptionController, 'history']);
+$app->route('GET /v1/subscriptions/@id/history/stats', [$subscriptionController, 'historyStats']);
 
 // Rota de webhook
 $app->route('POST /v1/webhook', [$webhookController, 'handle']);
@@ -366,6 +369,11 @@ $app->route('DELETE /v1/invoice-items/@id', [$invoiceItemController, 'delete']);
 $app->route('GET /v1/balance-transactions', [$balanceTransactionController, 'list']);
 $app->route('GET /v1/balance-transactions/@id', [$balanceTransactionController, 'get']);
 
+// Rotas de Disputes
+$app->route('GET /v1/disputes', [$disputeController, 'list']);
+$app->route('GET /v1/disputes/@id', [$disputeController, 'get']);
+$app->route('PUT /v1/disputes/@id', [$disputeController, 'update']);
+
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
 $app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
@@ -375,6 +383,22 @@ $authController = new \App\Controllers\AuthController();
 $app->route('POST /v1/auth/login', [$authController, 'login']);
 $app->route('POST /v1/auth/logout', [$authController, 'logout']);
 $app->route('GET /v1/auth/me', [$authController, 'me']);
+
+// Rotas de Usuários (apenas admin)
+$userController = new \App\Controllers\UserController();
+$app->route('GET /v1/users', [$userController, 'list']);
+$app->route('GET /v1/users/@id', [$userController, 'get']);
+$app->route('POST /v1/users', [$userController, 'create']);
+$app->route('PUT /v1/users/@id', [$userController, 'update']);
+$app->route('DELETE /v1/users/@id', [$userController, 'delete']);
+$app->route('PUT /v1/users/@id/role', [$userController, 'updateRole']);
+
+// Rotas de Permissões (apenas admin)
+$permissionController = new \App\Controllers\PermissionController();
+$app->route('GET /v1/permissions', [$permissionController, 'listAvailable']);
+$app->route('GET /v1/users/@id/permissions', [$permissionController, 'listUserPermissions']);
+$app->route('POST /v1/users/@id/permissions', [$permissionController, 'grant']);
+$app->route('DELETE /v1/users/@id/permissions/@permission', [$permissionController, 'revoke']);
 
 // Tratamento de erros
 $app->map('notFound', function() use ($app, $auditMiddleware) {
