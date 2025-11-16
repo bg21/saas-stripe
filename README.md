@@ -12,6 +12,19 @@ Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via
 3. Use o [SDK PHP](sdk/PaymentsClient.php) ou faça requisições HTTP diretamente
 4. Pronto! 🎉
 
+## 🌐 Integração com Front-End Separado
+
+**👉 Consulte o [Guia Completo de Integração Front-End](docs/INTEGRACAO_FRONTEND.md)** para integrar este backend com um front-end separado (React, Vue, Angular, etc.).
+
+**Resumo rápido:**
+- ✅ API REST completa com 60+ endpoints
+- ✅ CORS configurado (ajustável para produção)
+- ✅ Autenticação via Bearer Token (API Key ou Session ID)
+- ✅ Exemplos completos em JavaScript/TypeScript
+- ✅ Exemplos de componentes React
+- ✅ SDK pronto para uso
+- ✅ Documentação Swagger/OpenAPI disponível em `/api-docs/ui`
+
 ## 🚀 Características
 
 - ✅ Arquitetura MVC com PSR-4
@@ -53,6 +66,7 @@ Copie `.env.example` para `.env` e configure:
 
 ```env
 APP_ENV=development
+APP_URL=http://localhost:8080
 DB_HOST=127.0.0.1
 DB_NAME=saas_payments
 DB_USER=root
@@ -119,6 +133,10 @@ Authorization: Bearer <api_key_ou_session_id>
 #### Health Check
 - `GET /health` - Status básico da API
 - `GET /health/detailed` - Status detalhado (DB, Redis, Stripe)
+
+#### Documentação da API
+- `GET /api-docs` - Especificação OpenAPI 3.0 (JSON)
+- `GET /api-docs/ui` - Interface Swagger UI (documentação interativa)
 
 #### Autenticação de Usuários
 - `POST /v1/auth/login` - Login de usuário (email/senha)
@@ -431,11 +449,22 @@ composer run backup:clean
 
 ## 📚 Documentação Adicional
 
+- **[Documentação Swagger/OpenAPI](docs/SWAGGER_OPENAPI.md)** - Como usar e adicionar anotações Swagger
 - **[Checklist Completo](docs/checklist.md)** - Lista completa de funcionalidades
 - **[Análise de Implementações Pendentes](docs/ANALISE_IMPLEMENTACOES_PENDENTES.md)** - O que ainda falta implementar
 - **[Guia de Integração](docs/GUIA_INTEGRACAO_SAAS.md)** - Como integrar no seu SaaS
 - **[Sistema de Migrations](docs/MIGRATIONS.md)** - Como usar migrations
 - **[Backup Automático](docs/BACKUP_AUTOMATICO.md)** - Documentação do sistema de backup
+
+## 📖 Documentação Interativa (Swagger)
+
+Acesse a documentação interativa da API:
+
+```
+http://localhost:8080/api-docs/ui
+```
+
+A documentação é gerada automaticamente a partir de anotações nos controllers. Para adicionar anotações, consulte [docs/SWAGGER_OPENAPI.md](docs/SWAGGER_OPENAPI.md).
 
 ## 📄 Licença
 

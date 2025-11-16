@@ -5,6 +5,50 @@
  * Configura FlightPHP e rotas
  */
 
+// Servir arquivos estáticos da pasta /app (front-end)
+$requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+
+if (preg_match('/^\/app\//', $requestUri)) {
+    $filePath = __DIR__ . $requestUri;
+    
+    // Verificar se arquivo existe e é seguro (dentro da pasta public/app)
+    if (file_exists($filePath) && is_file($filePath)) {
+        $realPath = realpath($filePath);
+        $publicPath = realpath(__DIR__);
+        
+        // Verificar se o arquivo está dentro de public/app
+        if ($realPath && strpos($realPath, $publicPath . DIRECTORY_SEPARATOR . 'app') === 0) {
+            $ext = pathinfo($filePath, PATHINFO_EXTENSION);
+            $mimeTypes = [
+                'html' => 'text/html; charset=utf-8',
+                'js' => 'application/javascript; charset=utf-8',
+                'css' => 'text/css; charset=utf-8',
+                'json' => 'application/json; charset=utf-8',
+                'png' => 'image/png',
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'gif' => 'image/gif',
+                'svg' => 'image/svg+xml',
+                'ico' => 'image/x-icon',
+                'woff' => 'font/woff',
+                'woff2' => 'font/woff2',
+                'ttf' => 'font/ttf'
+            ];
+            
+            header('Content-Type: ' . ($mimeTypes[$ext] ?? 'text/plain'));
+            header('Cache-Control: public, max-age=3600');
+            readfile($filePath);
+            exit;
+        }
+    }
+    
+    // Arquivo não encontrado
+    http_response_code(404);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html><head><title>404 - Not Found</title></head><body><h1>404 - Arquivo não encontrado</h1></body></html>';
+    exit;
+}
+
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // Carrega configurações
@@ -36,10 +80,10 @@ $app->before('start', function() {
 // Middleware de autenticação (suporta API Key e Session ID)
 $app->before('start', function() use ($app) {
     // Rotas públicas (sem autenticação)
-    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login'];
+    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login', '/api-docs', '/api-docs/ui'];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
-    if (in_array($requestUri, $publicRoutes)) {
+    if (in_array($requestUri, $publicRoutes) || strpos($requestUri, '/api-docs') === 0) {
         return;
     }
 
@@ -210,6 +254,7 @@ $disputeController = new \App\Controllers\DisputeController($stripeService);
 $chargeController = new \App\Controllers\ChargeController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
+$swaggerController = new \App\Controllers\SwaggerController();
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -246,6 +291,10 @@ $app->route('GET /', function() use ($app) {
         'documentation' => 'Consulte o README.md para mais informações'
     ]);
 });
+
+// Rotas de documentação Swagger/OpenAPI (públicas)
+$app->route('GET /api-docs', [$swaggerController, 'getSpec']);
+$app->route('GET /api-docs/ui', [$swaggerController, 'getUI']);
 
 // Rotas de Health Check
 $app->route('GET /health', [$healthCheckController, 'basic']);
@@ -317,6 +366,7 @@ $app->route('GET /v1/prices/@id', [$priceController, 'get']);
 $app->route('PUT /v1/prices/@id', [$priceController, 'update']);
 
 // Rotas de produtos
+$app->route('GET /v1/products', [$productController, 'list']);
 $app->route('POST /v1/products', [$productController, 'create']);
 $app->route('GET /v1/products/@id', [$productController, 'get']);
 $app->route('PUT /v1/products/@id', [$productController, 'update']);

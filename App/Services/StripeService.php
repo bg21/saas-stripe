@@ -1260,6 +1260,44 @@ class StripeService
     }
 
     /**
+     * Lista produtos do Stripe
+     * 
+     * @param array $options Opções de listagem:
+     *   - limit (opcional): Número máximo de resultados
+     *   - starting_after (opcional): ID do produto para paginação
+     *   - ending_before (opcional): ID do produto para paginação reversa
+     *   - active (opcional): true/false para filtrar apenas produtos ativos/inativos
+     * @return \Stripe\Collection
+     */
+    public function listProducts(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [];
+            
+            if (isset($options['limit'])) {
+                $params['limit'] = (int)$options['limit'];
+            }
+            
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+            
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+            
+            if (isset($options['active'])) {
+                $params['active'] = filter_var($options['active'], FILTER_VALIDATE_BOOLEAN);
+            }
+            
+            return $this->client->products->all($params);
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar produtos", ['error' => $e->getMessage()]);
+            throw $e;
+        }
+    }
+
+    /**
      * Atualiza produto no Stripe
      * 
      * @param string $productId ID do produto no Stripe

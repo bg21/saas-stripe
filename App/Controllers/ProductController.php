@@ -108,6 +108,99 @@ class ProductController
     }
 
     /**
+     * Lista produtos disponíveis
+     * GET /v1/products
+     * 
+     * Query params opcionais:
+     *   - limit: Número máximo de resultados (padrão: 10)
+     *   - starting_after: ID do produto para paginação
+     *   - ending_before: ID do produto para paginação reversa
+     *   - active: true/false para filtrar apenas produtos ativos/inativos
+     */
+    public function list(): void
+    {
+        try {
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                Flight::json(['error' => 'Não autenticado'], 401);
+                return;
+            }
+
+            $queryParams = Flight::request()->query;
+            
+            $options = [];
+            
+            if (isset($queryParams['limit'])) {
+                $options['limit'] = (int)$queryParams['limit'];
+            }
+            
+            if (!empty($queryParams['starting_after'])) {
+                $options['starting_after'] = $queryParams['starting_after'];
+            }
+            
+            if (!empty($queryParams['ending_before'])) {
+                $options['ending_before'] = $queryParams['ending_before'];
+            }
+            
+            if (isset($queryParams['active'])) {
+                $options['active'] = filter_var($queryParams['active'], FILTER_VALIDATE_BOOLEAN);
+            }
+            
+            $products = $this->stripeService->listProducts($options);
+            
+            // Formata resposta e filtra por tenant_id (via metadata)
+            $formattedProducts = [];
+            foreach ($products->data as $product) {
+                // Filtra produtos do tenant atual (se tiver metadata tenant_id)
+                if (isset($product->metadata->tenant_id)) {
+                    if ((string)$product->metadata->tenant_id !== (string)$tenantId) {
+                        continue; // Pula produtos de outros tenants
+                    }
+                }
+                
+                $formattedProducts[] = [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'description' => $product->description ?? null,
+                    'active' => $product->active,
+                    'images' => $product->images ?? [],
+                    'statement_descriptor' => $product->statement_descriptor ?? null,
+                    'unit_label' => $product->unit_label ?? null,
+                    'created' => date('Y-m-d H:i:s', $product->created),
+                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                    'metadata' => $product->metadata->toArray()
+                ];
+            }
+            
+            Flight::json([
+                'success' => true,
+                'data' => $formattedProducts,
+                'has_more' => $products->has_more,
+                'count' => count($formattedProducts)
+            ]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            Logger::error("Erro ao listar produtos", [
+                'error' => $e->getMessage(),
+                'tenant_id' => $tenantId ?? null
+            ]);
+            Flight::json([
+                'error' => 'Erro ao listar produtos',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 400);
+        } catch (\Exception $e) {
+            Logger::error("Erro ao listar produtos", [
+                'error' => $e->getMessage(),
+                'tenant_id' => $tenantId ?? null
+            ]);
+            Flight::json([
+                'error' => 'Erro interno do servidor',
+                'message' => Config::isDevelopment() ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
      * Obtém produto específico
      * GET /v1/products/:id
      */

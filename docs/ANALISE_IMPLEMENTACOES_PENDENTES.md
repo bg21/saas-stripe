@@ -59,21 +59,23 @@
 ### 🟡 Prioridade MÉDIA (Importante para Operação)
 
 #### 2. **Documentação de API (Swagger/OpenAPI)**
-**Status:** ❌ Não implementado  
+**Status:** ✅ **IMPLEMENTADO**  
 **Impacto:** Médio - Facilita integração e onboarding  
 **Esforço:** Médio  
 **Por quê?** Facilita integração de desenvolvedores externos e documenta todos os endpoints de forma interativa.
 
-**O que implementar:**
-- Especificação OpenAPI 3.0
-- Documentação interativa (Swagger UI)
-- Exemplos de requisições/respostas
-- Descrição de todos os endpoints
-- Autenticação documentada
+**O que foi implementado:**
+- ✅ Biblioteca `zircote/swagger-php` instalada
+- ✅ SwaggerController criado
+- ✅ Rotas `/api-docs` e `/api-docs/ui` configuradas
+- ✅ Interface Swagger UI integrada (via CDN)
+- ✅ Especificação OpenAPI 3.0 básica
+- ✅ Esquema de autenticação Bearer Token
+- ✅ Documentação em `docs/SWAGGER_OPENAPI.md`
 
-**Bibliotecas sugeridas:**
-- `zircote/swagger-php` para anotações
-- `swagger-api/swagger-ui` para interface
+**Próximos passos (opcional):**
+- Adicionar anotações Swagger nos controllers principais
+- Expandir especificação com todos os endpoints
 
 ---
 

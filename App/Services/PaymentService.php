@@ -350,22 +350,63 @@ class PaymentService
 
         // Se for modo subscription, cria/atualiza assinatura no banco
         if ($fullSession->mode === 'subscription' && $fullSession->subscription) {
+            Logger::info("Processando subscription do checkout", [
+                'mode' => $fullSession->mode,
+                'has_subscription' => !empty($fullSession->subscription),
+                'subscription_id' => is_string($fullSession->subscription) 
+                    ? $fullSession->subscription 
+                    : ($fullSession->subscription->id ?? 'N/A'),
+                'customer_id' => $customer['id'],
+                'tenant_id' => $customer['tenant_id']
+            ]);
+            
             $subscription = is_string($fullSession->subscription)
                 ? $this->stripeService->getSubscription($fullSession->subscription)
                 : $fullSession->subscription;
 
             if ($subscription) {
-                $this->subscriptionModel->createOrUpdate(
-                    $customer['tenant_id'],
-                    $customer['id'],
-                    $subscription->toArray()
-                );
-
-                Logger::info("Assinatura criada/atualizada após checkout", [
-                    'subscription_id' => $subscription->id,
+                Logger::info("Subscription obtida do Stripe", [
+                    'stripe_subscription_id' => $subscription->id,
+                    'status' => $subscription->status ?? 'N/A',
                     'customer_id' => $customer['id']
                 ]);
+                
+                try {
+                    $subscriptionId = $this->subscriptionModel->createOrUpdate(
+                        $customer['tenant_id'],
+                        $customer['id'],
+                        $subscription->toArray()
+                    );
+
+                    Logger::info("Assinatura criada/atualizada após checkout", [
+                        'subscription_id' => $subscriptionId,
+                        'stripe_subscription_id' => $subscription->id,
+                        'customer_id' => $customer['id'],
+                        'tenant_id' => $customer['tenant_id']
+                    ]);
+                } catch (\Exception $e) {
+                    Logger::error("Erro ao salvar subscription no banco", [
+                        'error' => $e->getMessage(),
+                        'stripe_subscription_id' => $subscription->id,
+                        'customer_id' => $customer['id'],
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    throw $e;
+                }
+            } else {
+                Logger::error("Subscription não encontrada no Stripe", [
+                    'subscription_id' => is_string($fullSession->subscription) 
+                        ? $fullSession->subscription 
+                        : 'N/A',
+                    'session_id' => $session->id
+                ]);
             }
+        } else {
+            Logger::warning("Checkout não é modo subscription ou não tem subscription", [
+                'mode' => $fullSession->mode ?? 'N/A',
+                'has_subscription' => !empty($fullSession->subscription),
+                'session_id' => $session->id
+            ]);
         }
 
         Logger::info("Checkout completado e processado", [

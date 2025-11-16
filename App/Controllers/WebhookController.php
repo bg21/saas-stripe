@@ -30,6 +30,14 @@ class WebhookController
     {
         try {
             $payload = file_get_contents('php://input');
+            $payloadSize = strlen($payload);
+            
+            Logger::info("=== WEBHOOK RECEBIDO ===", [
+                'method' => $_SERVER['REQUEST_METHOD'] ?? 'N/A',
+                'payload_size' => $payloadSize,
+                'content_type' => $_SERVER['CONTENT_TYPE'] ?? 'N/A',
+                'request_uri' => $_SERVER['REQUEST_URI'] ?? 'N/A'
+            ]);
             
             // Obtém header Stripe-Signature
             $signature = null;
@@ -54,21 +62,35 @@ class WebhookController
                         null;
 
             if (empty($signature)) {
-                Logger::error("Webhook sem signature");
+                Logger::error("Webhook sem signature", [
+                    'headers_available' => array_keys($headers),
+                    'has_stripe_signature' => isset($headers['Stripe-Signature']) || isset($headers['stripe-signature'])
+                ]);
                 Flight::json(['error' => 'Signature não fornecida'], 400);
                 return;
             }
 
+            Logger::info("Validando signature do webhook", [
+                'signature_length' => strlen($signature),
+                'signature_prefix' => substr($signature, 0, 10) . '...'
+            ]);
+
             // Valida signature
             $event = $this->stripeService->validateWebhook($payload, $signature);
 
-            Logger::info("Webhook recebido", [
+            Logger::info("Webhook validado e recebido", [
                 'event_id' => $event->id,
-                'event_type' => $event->type
+                'event_type' => $event->type,
+                'event_created' => $event->created ?? 'N/A'
             ]);
 
             // Processa webhook
             $this->paymentService->processWebhook($event);
+
+            Logger::info("Webhook processado com sucesso", [
+                'event_id' => $event->id,
+                'event_type' => $event->type
+            ]);
 
             Flight::json(['success' => true, 'received' => true]);
         } catch (\Stripe\Exception\SignatureVerificationException $e) {
