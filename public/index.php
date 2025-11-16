@@ -252,6 +252,7 @@ $invoiceItemController = new \App\Controllers\InvoiceItemController($stripeServi
 $balanceTransactionController = new \App\Controllers\BalanceTransactionController($stripeService);
 $disputeController = new \App\Controllers\DisputeController($stripeService);
 $chargeController = new \App\Controllers\ChargeController($stripeService);
+$reportController = new \App\Controllers\ReportController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
 $swaggerController = new \App\Controllers\SwaggerController();
@@ -284,6 +285,7 @@ $app->route('GET /', function() use ($app) {
             'balance-transactions' => '/v1/balance-transactions',
             'disputes' => '/v1/disputes',
             'audit-logs' => '/v1/audit-logs',
+            'reports' => '/v1/reports',
             'auth' => '/v1/auth',
             'users' => '/v1/users',
             'permissions' => '/v1/permissions'
@@ -383,6 +385,7 @@ $app->route('GET /v1/stats', [$statsController, 'get']);
 $app->route('POST /v1/coupons', [$couponController, 'create']);
 $app->route('GET /v1/coupons', [$couponController, 'list']);
 $app->route('GET /v1/coupons/@id', [$couponController, 'get']);
+$app->route('PUT /v1/coupons/@id', [$couponController, 'update']);
 $app->route('DELETE /v1/coupons/@id', [$couponController, 'delete']);
 
 // Rotas de códigos promocionais
@@ -433,6 +436,15 @@ $app->route('PUT /v1/charges/@id', [$chargeController, 'update']);
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
 $app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
+
+// Rotas de Relatórios e Analytics
+$app->route('GET /v1/reports/revenue', [$reportController, 'revenue']);
+$app->route('GET /v1/reports/subscriptions', [$reportController, 'subscriptions']);
+$app->route('GET /v1/reports/churn', [$reportController, 'churn']);
+$app->route('GET /v1/reports/customers', [$reportController, 'customers']);
+$app->route('GET /v1/reports/payments', [$reportController, 'payments']);
+$app->route('GET /v1/reports/mrr', [$reportController, 'mrr']);
+$app->route('GET /v1/reports/arr', [$reportController, 'arr']);
 
 // Rotas de Autenticação (públicas - não precisam de autenticação)
 $authController = new \App\Controllers\AuthController();

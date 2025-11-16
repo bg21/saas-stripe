@@ -141,8 +141,15 @@ class BalanceTransactionController
     }
 
     /**
-     * Obtém Balance Transaction por ID
+     * Obtém Balance Transaction por ID com detalhes expandidos
      * GET /v1/balance-transactions/:id
+     * 
+     * Retorna informações detalhadas da transação, incluindo:
+     * - Informações básicas da transação
+     * - Detalhes do source (charge, refund, etc.) se disponível
+     * - Informações de payout se houver
+     * - Detalhes de taxas
+     * - Informações do customer se aplicável
      */
     public function get(string $id): void
     {
@@ -157,25 +164,175 @@ class BalanceTransactionController
 
             $balanceTransaction = $this->stripeService->getBalanceTransaction($id);
             
+            // Prepara dados básicos
+            $data = [
+                'id' => $balanceTransaction->id,
+                'object' => $balanceTransaction->object,
+                'amount' => $balanceTransaction->amount,
+                'amount_formatted' => number_format(abs($balanceTransaction->amount) / 100, 2, ',', '.'),
+                'currency' => strtoupper($balanceTransaction->currency),
+                'net' => $balanceTransaction->net,
+                'net_formatted' => number_format(abs($balanceTransaction->net) / 100, 2, ',', '.'),
+                'type' => $balanceTransaction->type,
+                'status' => $balanceTransaction->status,
+                'description' => $balanceTransaction->description ?? null,
+                'fee' => $balanceTransaction->fee,
+                'fee_formatted' => number_format(abs($balanceTransaction->fee) / 100, 2, ',', '.'),
+                'fee_details' => [],
+                'created' => date('Y-m-d H:i:s', $balanceTransaction->created),
+                'created_timestamp' => $balanceTransaction->created,
+                'available_on' => $balanceTransaction->available_on ? date('Y-m-d H:i:s', $balanceTransaction->available_on) : null,
+                'available_on_timestamp' => $balanceTransaction->available_on ?? null,
+                'exchange_rate' => $balanceTransaction->exchange_rate ?? null,
+                'source' => null,
+                'source_details' => null,
+                'reporting_category' => $balanceTransaction->reporting_category ?? null,
+                'payout' => $balanceTransaction->payout ?? null,
+                'payout_details' => null
+            ];
+
+            // Processa fee_details
+            if (!empty($balanceTransaction->fee_details) && is_array($balanceTransaction->fee_details)) {
+                foreach ($balanceTransaction->fee_details as $feeDetail) {
+                    $data['fee_details'][] = [
+                        'amount' => $feeDetail->amount ?? null,
+                        'amount_formatted' => isset($feeDetail->amount) ? number_format(abs($feeDetail->amount) / 100, 2, ',', '.') : null,
+                        'currency' => isset($feeDetail->currency) ? strtoupper($feeDetail->currency) : null,
+                        'description' => $feeDetail->description ?? null,
+                        'type' => $feeDetail->type ?? null
+                    ];
+                }
+            }
+
+            // Tenta obter detalhes do source (charge, refund, etc.)
+            if (!empty($balanceTransaction->source)) {
+                $sourceId = is_string($balanceTransaction->source) 
+                    ? $balanceTransaction->source 
+                    : $balanceTransaction->source->id ?? null;
+                
+                $data['source'] = $sourceId;
+
+                if ($sourceId) {
+                    try {
+                        // Determina o tipo do source baseado no ID ou type
+                        $sourceType = $balanceTransaction->type ?? 'unknown';
+                        
+                        // Se for uma charge, busca detalhes
+                        if (strpos($sourceId, 'ch_') === 0 || $sourceType === 'charge') {
+                            try {
+                                $charge = $this->stripeService->getCharge($sourceId);
+                                $data['source_details'] = [
+                                    'type' => 'charge',
+                                    'id' => $charge->id,
+                                    'amount' => $charge->amount,
+                                    'amount_formatted' => number_format($charge->amount / 100, 2, ',', '.'),
+                                    'currency' => strtoupper($charge->currency),
+                                    'status' => $charge->status,
+                                    'paid' => $charge->paid,
+                                    'refunded' => $charge->refunded,
+                                    'amount_refunded' => $charge->amount_refunded,
+                                    'amount_refunded_formatted' => number_format($charge->amount_refunded / 100, 2, ',', '.'),
+                                    'description' => $charge->description,
+                                    'customer' => $charge->customer,
+                                    'payment_method' => $charge->payment_method,
+                                    'payment_intent' => $charge->payment_intent,
+                                    'receipt_url' => $charge->receipt_url,
+                                    'created' => date('Y-m-d H:i:s', $charge->created),
+                                    'billing_details' => $charge->billing_details ? [
+                                        'name' => $charge->billing_details->name ?? null,
+                                        'email' => $charge->billing_details->email ?? null,
+                                        'phone' => $charge->billing_details->phone ?? null,
+                                        'address' => $charge->billing_details->address ? [
+                                            'line1' => $charge->billing_details->address->line1 ?? null,
+                                            'line2' => $charge->billing_details->address->line2 ?? null,
+                                            'city' => $charge->billing_details->address->city ?? null,
+                                            'state' => $charge->billing_details->address->state ?? null,
+                                            'postal_code' => $charge->billing_details->address->postal_code ?? null,
+                                            'country' => $charge->billing_details->address->country ?? null
+                                        ] : null
+                                    ] : null,
+                                    'outcome' => $charge->outcome ? [
+                                        'type' => $charge->outcome->type ?? null,
+                                        'network_status' => $charge->outcome->network_status ?? null,
+                                        'reason' => $charge->outcome->reason ?? null,
+                                        'risk_level' => $charge->outcome->risk_level ?? null,
+                                        'risk_score' => $charge->outcome->risk_score ?? null,
+                                        'seller_message' => $charge->outcome->seller_message ?? null
+                                    ] : null
+                                ];
+                            } catch (\Exception $e) {
+                                Logger::warning("Não foi possível obter detalhes da charge", [
+                                    'charge_id' => $sourceId,
+                                    'error' => $e->getMessage()
+                                ]);
+                            }
+                        }
+                        // Se for um refund, busca detalhes
+                        elseif (strpos($sourceId, 're_') === 0 || $sourceType === 'refund') {
+                            try {
+                                $refund = $this->stripeService->getRefund($sourceId);
+                                $data['source_details'] = [
+                                    'type' => 'refund',
+                                    'id' => $refund->id,
+                                    'amount' => $refund->amount,
+                                    'amount_formatted' => number_format($refund->amount / 100, 2, ',', '.'),
+                                    'currency' => strtoupper($refund->currency),
+                                    'status' => $refund->status,
+                                    'reason' => $refund->reason,
+                                    'charge' => $refund->charge,
+                                    'payment_intent' => $refund->payment_intent,
+                                    'created' => date('Y-m-d H:i:s', $refund->created)
+                                ];
+                            } catch (\Exception $e) {
+                                Logger::warning("Não foi possível obter detalhes do refund", [
+                                    'refund_id' => $sourceId,
+                                    'error' => $e->getMessage()
+                                ]);
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        Logger::warning("Erro ao obter detalhes do source", [
+                            'source_id' => $sourceId,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+
+            // Tenta obter detalhes do payout se houver
+            if (!empty($balanceTransaction->payout)) {
+                $payoutId = is_string($balanceTransaction->payout) 
+                    ? $balanceTransaction->payout 
+                    : $balanceTransaction->payout->id ?? null;
+                
+                if ($payoutId) {
+                    try {
+                        $payout = $this->stripeService->getPayout($payoutId);
+                        $data['payout_details'] = [
+                            'id' => $payout->id,
+                            'amount' => $payout->amount,
+                            'amount_formatted' => number_format($payout->amount / 100, 2, ',', '.'),
+                            'currency' => strtoupper($payout->currency),
+                            'status' => $payout->status,
+                            'arrival_date' => $payout->arrival_date ? date('Y-m-d H:i:s', $payout->arrival_date) : null,
+                            'created' => date('Y-m-d H:i:s', $payout->created),
+                            'description' => $payout->description,
+                            'destination' => $payout->destination,
+                            'method' => $payout->method,
+                            'type' => $payout->type
+                        ];
+                    } catch (\Exception $e) {
+                        Logger::warning("Não foi possível obter detalhes do payout", [
+                            'payout_id' => $payoutId,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+            }
+            
             Flight::json([
                 'success' => true,
-                'data' => [
-                    'id' => $balanceTransaction->id,
-                    'object' => $balanceTransaction->object,
-                    'amount' => $balanceTransaction->amount,
-                    'currency' => strtoupper($balanceTransaction->currency),
-                    'net' => $balanceTransaction->net,
-                    'type' => $balanceTransaction->type,
-                    'status' => $balanceTransaction->status,
-                    'description' => $balanceTransaction->description ?? null,
-                    'fee' => $balanceTransaction->fee,
-                    'fee_details' => $balanceTransaction->fee_details ?? [],
-                    'created' => date('Y-m-d H:i:s', $balanceTransaction->created),
-                    'available_on' => $balanceTransaction->available_on ? date('Y-m-d H:i:s', $balanceTransaction->available_on) : null,
-                    'exchange_rate' => $balanceTransaction->exchange_rate ?? null,
-                    'source' => $balanceTransaction->source ?? null,
-                    'reporting_category' => $balanceTransaction->reporting_category ?? null
-                ]
+                'data' => $data
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             Logger::error("Erro ao obter balance transaction", [

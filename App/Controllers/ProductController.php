@@ -131,8 +131,11 @@ class ProductController
             
             $options = [];
             
+            // Define limite padrão de 50 se não fornecido (melhora performance)
             if (isset($queryParams['limit'])) {
-                $options['limit'] = (int)$queryParams['limit'];
+                $options['limit'] = min((int)$queryParams['limit'], 100); // Máximo 100
+            } else {
+                $options['limit'] = 50; // Padrão: 50 itens
             }
             
             if (!empty($queryParams['starting_after'])) {
@@ -147,17 +150,31 @@ class ProductController
                 $options['active'] = filter_var($queryParams['active'], FILTER_VALIDATE_BOOLEAN);
             }
             
+            // Opção para ignorar filtro de tenant (útil para formulários de criação)
+            $ignoreTenantFilter = isset($queryParams['all_tenants']) && filter_var($queryParams['all_tenants'], FILTER_VALIDATE_BOOLEAN);
+            
             $products = $this->stripeService->listProducts($options);
             
             // Formata resposta e filtra por tenant_id (via metadata)
+            // Otimização: Filtra apenas produtos do tenant atual (exceto se all_tenants=true)
             $formattedProducts = [];
             foreach ($products->data as $product) {
-                // Filtra produtos do tenant atual (se tiver metadata tenant_id)
-                if (isset($product->metadata->tenant_id)) {
-                    if ((string)$product->metadata->tenant_id !== (string)$tenantId) {
-                        continue; // Pula produtos de outros tenants
+                // Se all_tenants=true, não filtra por tenant
+                if (!$ignoreTenantFilter) {
+                    // Filtra produtos do tenant atual (se tiver metadata tenant_id)
+                    // Se não tiver metadata tenant_id ou for vazio, inclui (produtos antigos ou sem tenant)
+                    $metadata = $product->metadata->toArray();
+                    if (!empty($metadata) && isset($metadata['tenant_id']) && $metadata['tenant_id'] !== null && $metadata['tenant_id'] !== '') {
+                        // Só filtra se tiver tenant_id definido e for diferente
+                        if ((string)$metadata['tenant_id'] !== (string)$tenantId) {
+                            continue; // Pula produtos de outros tenants
+                        }
                     }
+                    // Se não tiver tenant_id nos metadados, inclui o produto (produtos antigos ou compartilhados)
                 }
+                
+                // Converte metadata para array para uso consistente
+                $metadata = $product->metadata->toArray();
                 
                 $formattedProducts[] = [
                     'id' => $product->id,
@@ -169,8 +186,59 @@ class ProductController
                     'unit_label' => $product->unit_label ?? null,
                     'created' => date('Y-m-d H:i:s', $product->created),
                     'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
-                    'metadata' => $product->metadata->toArray()
+                    'metadata' => $metadata
                 ];
+            }
+            
+            // Se não encontrou produtos suficientes e há mais páginas, busca mais
+            // (apenas se não foi especificado um limite específico)
+            if (count($formattedProducts) < $options['limit'] && $products->has_more && !isset($queryParams['limit'])) {
+                // Busca mais produtos até atingir o limite ou não houver mais
+                $remaining = $options['limit'] - count($formattedProducts);
+                $lastProduct = end($products->data);
+                
+                while ($remaining > 0 && $products->has_more) {
+                    $options['starting_after'] = $lastProduct->id;
+                    $options['limit'] = min($remaining, 50);
+                    $moreProducts = $this->stripeService->listProducts($options);
+                    
+                    foreach ($moreProducts->data as $product) {
+                        // Aplica o mesmo filtro de tenant_id (exceto se all_tenants=true)
+                        if (!$ignoreTenantFilter) {
+                            $metadata = $product->metadata->toArray();
+                            if (!empty($metadata) && isset($metadata['tenant_id']) && $metadata['tenant_id'] !== null && $metadata['tenant_id'] !== '') {
+                                if ((string)$metadata['tenant_id'] !== (string)$tenantId) {
+                                    continue;
+                                }
+                            }
+                            // Se não tiver tenant_id, inclui
+                        }
+                        
+                        // Converte metadata para array
+                        $metadata = $product->metadata->toArray();
+                        
+                        $formattedProducts[] = [
+                            'id' => $product->id,
+                            'name' => $product->name,
+                            'description' => $product->description ?? null,
+                            'active' => $product->active,
+                            'images' => $product->images ?? [],
+                            'statement_descriptor' => $product->statement_descriptor ?? null,
+                            'unit_label' => $product->unit_label ?? null,
+                            'created' => date('Y-m-d H:i:s', $product->created),
+                            'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                            'metadata' => $metadata
+                        ];
+                        
+                        $remaining--;
+                        if ($remaining <= 0) break;
+                    }
+                    
+                    $products->has_more = $moreProducts->has_more;
+                    if (!empty($moreProducts->data)) {
+                        $lastProduct = end($moreProducts->data);
+                    }
+                }
             }
             
             Flight::json([

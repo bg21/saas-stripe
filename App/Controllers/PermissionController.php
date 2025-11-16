@@ -114,6 +114,25 @@ class PermissionController
                     'category' => 'finance'
                 ],
                 
+                // Permissões de Charges
+                'view_charges' => [
+                    'name' => 'view_charges',
+                    'description' => 'Visualizar cobranças',
+                    'category' => 'finance'
+                ],
+                'manage_charges' => [
+                    'name' => 'manage_charges',
+                    'description' => 'Gerenciar cobranças (atualizar metadata)',
+                    'category' => 'finance'
+                ],
+                
+                // Permissões de Relatórios e Analytics
+                'view_reports' => [
+                    'name' => 'view_reports',
+                    'description' => 'Visualizar relatórios e analytics',
+                    'category' => 'reports'
+                ],
+                
                 // Permissões Administrativas
                 'manage_users' => [
                     'name' => 'manage_users',
@@ -137,6 +156,7 @@ class PermissionController
                     'audit' => 'Permissões de Auditoria',
                     'disputes' => 'Permissões de Disputas',
                     'finance' => 'Permissões Financeiras',
+                    'reports' => 'Permissões de Relatórios',
                     'admin' => 'Permissões Administrativas'
                 ]
             ]);

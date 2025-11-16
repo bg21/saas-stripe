@@ -367,7 +367,7 @@ class StripeService
 
             // Reembolso parcial
             if (isset($options['amount'])) {
-                $refundParams['amount'] = (int)$options['amount'];
+$refundParams['amount'] = (int)$options['amount'];
             }
 
             // Motivo do reembolso
@@ -393,6 +393,31 @@ class StripeService
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao reembolsar pagamento", [
                 'payment_intent_id' => $paymentIntentId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Obtém Refund por ID
+     * 
+     * @param string $refundId ID do refund no Stripe
+     * @return \Stripe\Refund
+     */
+    public function getRefund(string $refundId): \Stripe\Refund
+    {
+        try {
+            $refund = $this->client->refunds->retrieve($refundId);
+
+            Logger::info("Refund obtido", [
+                'refund_id' => $refundId
+            ]);
+
+            return $refund;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter refund", [
+                'refund_id' => $refundId,
                 'error' => $e->getMessage()
             ]);
             throw $e;
@@ -813,8 +838,28 @@ class StripeService
     public function listPrices(array $options = []): \Stripe\Collection
     {
         try {
+            // Define limite padrão se não fornecido
+            $limit = isset($options['limit']) ? (int)$options['limit'] : 50;
+            $limit = min($limit, 100); // Máximo 100 por requisição
+            
+            // Gera chave de cache baseada nos parâmetros
+            $cacheKey = 'stripe:prices:' . md5(json_encode($options));
+            
+            // Tenta obter do cache (TTL de 5 minutos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::info("Preços obtidos do cache", ['cache_key' => $cacheKey]);
+                // Reconstrói Collection do cache
+                $collection = new \Stripe\Collection();
+                $collection->data = array_map(function($item) {
+                    return \Stripe\Price::constructFrom($item, null);
+                }, $cached['data']);
+                $collection->has_more = $cached['has_more'] ?? false;
+                return $collection;
+            }
+            
             $params = [
-                'limit' => $options['limit'] ?? 10
+                'limit' => $limit
             ];
 
             if (!empty($options['starting_after'])) {
@@ -842,10 +887,19 @@ class StripeService
             }
 
             $prices = $this->client->prices->all($params);
+            
+            // Salva no cache (5 minutos)
+            $cacheData = [
+                'data' => array_map(function($price) {
+                    return $price->toArray();
+                }, $prices->data),
+                'has_more' => $prices->has_more
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 300); // 5 minutos
 
-            Logger::info("Preços listados", [
+            Logger::info("Preços listados do Stripe", [
                 'count' => count($prices->data),
-                'filters' => array_keys($options)
+                'cached' => true
             ]);
 
             return $prices;
@@ -929,6 +983,9 @@ class StripeService
 
             $coupon = $this->client->coupons->create($params);
 
+            // Invalida cache de cupons
+            $this->invalidateCouponsCache();
+
             Logger::info("Cupom criado", [
                 'coupon_id' => $coupon->id,
                 'percent_off' => $coupon->percent_off ?? null,
@@ -967,8 +1024,28 @@ class StripeService
     public function listCoupons(array $options = []): \Stripe\Collection
     {
         try {
+            // Define limite padrão se não fornecido
+            $limit = isset($options['limit']) ? (int)$options['limit'] : 50;
+            $limit = min($limit, 100); // Máximo 100 por requisição
+            
+            // Gera chave de cache baseada nos parâmetros
+            $cacheKey = 'stripe:coupons:' . md5(json_encode($options));
+            
+            // Tenta obter do cache (TTL de 5 minutos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::info("Cupons obtidos do cache", ['cache_key' => $cacheKey]);
+                // Reconstrói Collection do cache
+                $collection = new \Stripe\Collection();
+                $collection->data = array_map(function($item) {
+                    return \Stripe\Coupon::constructFrom($item, null);
+                }, $cached['data']);
+                $collection->has_more = $cached['has_more'] ?? false;
+                return $collection;
+            }
+            
             $params = [
-                'limit' => $options['limit'] ?? 10
+                'limit' => $limit
             ];
 
             if (!empty($options['starting_after'])) {
@@ -980,10 +1057,19 @@ class StripeService
             }
 
             $coupons = $this->client->coupons->all($params);
+            
+            // Salva no cache (5 minutos)
+            $cacheData = [
+                'data' => array_map(function($coupon) {
+                    return $coupon->toArray();
+                }, $coupons->data),
+                'has_more' => $coupons->has_more
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 300); // 5 minutos
 
-            Logger::info("Cupons listados", [
+            Logger::info("Cupons listados do Stripe", [
                 'count' => count($coupons->data),
-                'filters' => array_keys($options)
+                'cached' => true
             ]);
 
             return $coupons;
@@ -991,6 +1077,56 @@ class StripeService
             Logger::error("Erro ao listar cupons", [
                 'error' => $e->getMessage(),
                 'filters' => $options
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Atualiza cupom no Stripe
+     * 
+     * Nota: O Stripe não permite alterar campos principais de um cupom (percent_off, amount_off, duration, etc.).
+     * Apenas é possível atualizar: metadata e name.
+     * Para alterar outros campos, crie um novo cupom.
+     * 
+     * @param string $couponId ID do cupom no Stripe
+     * @param array $data Dados para atualização:
+     *   - name (opcional): Nome do cupom
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\Coupon
+     */
+    public function updateCoupon(string $couponId, array $data): \Stripe\Coupon
+    {
+        try {
+            $params = [];
+
+            if (isset($data['name'])) {
+                $params['name'] = $data['name'];
+            }
+
+            if (isset($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+
+            if (empty($params)) {
+                throw new \InvalidArgumentException("Nenhum campo válido para atualização fornecido. Apenas 'name' e 'metadata' podem ser atualizados.");
+            }
+
+            $coupon = $this->client->coupons->update($couponId, $params);
+
+            // Invalida cache de cupons
+            $this->invalidateCouponsCache();
+
+            Logger::info("Cupom atualizado", [
+                'coupon_id' => $couponId,
+                'updated_fields' => array_keys($params)
+            ]);
+
+            return $coupon;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao atualizar cupom", [
+                'coupon_id' => $couponId,
+                'error' => $e->getMessage()
             ]);
             throw $e;
         }
@@ -1272,11 +1408,29 @@ class StripeService
     public function listProducts(array $options = []): \Stripe\Collection
     {
         try {
-            $params = [];
+            // Define limite padrão se não fornecido (evita buscar muitos itens)
+            $limit = isset($options['limit']) ? (int)$options['limit'] : 50;
+            $limit = min($limit, 100); // Máximo 100 por requisição
             
-            if (isset($options['limit'])) {
-                $params['limit'] = (int)$options['limit'];
+            // Gera chave de cache baseada nos parâmetros
+            $cacheKey = 'stripe:products:' . md5(json_encode($options));
+            
+            // Tenta obter do cache (TTL de 5 minutos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::info("Produtos obtidos do cache", ['cache_key' => $cacheKey]);
+                // Reconstrói Collection do cache
+                $collection = new \Stripe\Collection();
+                $collection->data = array_map(function($item) {
+                    return \Stripe\Product::constructFrom($item, null);
+                }, $cached['data']);
+                $collection->has_more = $cached['has_more'] ?? false;
+                return $collection;
             }
+            
+            $params = [
+                'limit' => $limit
+            ];
             
             if (!empty($options['starting_after'])) {
                 $params['starting_after'] = $options['starting_after'];
@@ -1290,7 +1444,23 @@ class StripeService
                 $params['active'] = filter_var($options['active'], FILTER_VALIDATE_BOOLEAN);
             }
             
-            return $this->client->products->all($params);
+            $products = $this->client->products->all($params);
+            
+            // Salva no cache (5 minutos)
+            $cacheData = [
+                'data' => array_map(function($product) {
+                    return $product->toArray();
+                }, $products->data),
+                'has_more' => $products->has_more
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 300); // 5 minutos
+            
+            Logger::info("Produtos listados do Stripe", [
+                'count' => count($products->data),
+                'cached' => true
+            ]);
+            
+            return $products;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao listar produtos", ['error' => $e->getMessage()]);
             throw $e;
@@ -1345,6 +1515,9 @@ class StripeService
             }
 
             $product = $this->client->products->update($productId, $params);
+
+            // Invalida cache de produtos
+            $this->invalidateProductsCache();
 
             Logger::info("Produto atualizado", [
                 'product_id' => $productId,
@@ -1502,6 +1675,9 @@ class StripeService
 
             $price = $this->client->prices->create($params);
 
+            // Invalida cache de preços
+            $this->invalidatePricesCache();
+
             Logger::info("Preço criado", [
                 'price_id' => $price->id,
                 'product_id' => $price->product,
@@ -1571,6 +1747,9 @@ class StripeService
             }
 
             $price = $this->client->prices->update($priceId, $params);
+
+            // Invalida cache de preços
+            $this->invalidatePricesCache();
 
             Logger::info("Preço atualizado", [
                 'price_id' => $priceId,
@@ -2644,6 +2823,31 @@ class StripeService
     }
 
     /**
+     * Obtém Payout por ID
+     * 
+     * @param string $payoutId ID do payout no Stripe
+     * @return \Stripe\Payout
+     */
+    public function getPayout(string $payoutId): \Stripe\Payout
+    {
+        try {
+            $payout = $this->client->payouts->retrieve($payoutId);
+
+            Logger::info("Payout obtido", [
+                'payout_id' => $payoutId
+            ]);
+
+            return $payout;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao obter payout", [
+                'payout_id' => $payoutId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Lista Disputes (disputas/chargebacks)
      * 
      * @param array $options Opções de listagem:
@@ -2941,6 +3145,67 @@ class StripeService
                 'error' => $e->getMessage()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Invalida cache de produtos
+     * Chamado quando produtos são criados, atualizados ou deletados
+     */
+    private function invalidateProductsCache(): void
+    {
+        try {
+            // Busca todas as chaves de cache de produtos
+            $redis = \App\Services\CacheService::getRedisClient();
+            if ($redis) {
+                $keys = $redis->keys('stripe:products:*');
+                foreach ($keys as $key) {
+                    \App\Services\CacheService::delete($key);
+                }
+                Logger::info("Cache de produtos invalidado", ['keys_count' => count($keys)]);
+            }
+        } catch (\Exception $e) {
+            Logger::warning("Erro ao invalidar cache de produtos", ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Invalida cache de preços
+     * Chamado quando preços são criados, atualizados ou deletados
+     */
+    private function invalidatePricesCache(): void
+    {
+        try {
+            $redis = \App\Services\CacheService::getRedisClient();
+            if ($redis) {
+                $keys = $redis->keys('stripe:prices:*');
+                foreach ($keys as $key) {
+                    \App\Services\CacheService::delete($key);
+                }
+                Logger::info("Cache de preços invalidado", ['keys_count' => count($keys)]);
+            }
+        } catch (\Exception $e) {
+            Logger::warning("Erro ao invalidar cache de preços", ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Invalida cache de cupons
+     * Chamado quando cupons são criados, atualizados ou deletados
+     */
+    private function invalidateCouponsCache(): void
+    {
+        try {
+            $redis = \App\Services\CacheService::getRedisClient();
+            if ($redis) {
+                $keys = $redis->keys('stripe:coupons:*');
+                foreach ($keys as $key) {
+                    \App\Services\CacheService::delete($key);
+                }
+                Logger::info("Cache de cupons invalidado", ['keys_count' => count($keys)]);
+            }
+        } catch (\Exception $e) {
+            Logger::warning("Erro ao invalidar cache de cupons", ['error' => $e->getMessage()]);
         }
     }
 }
