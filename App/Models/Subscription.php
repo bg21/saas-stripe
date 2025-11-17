@@ -18,11 +18,33 @@ class Subscription extends BaseModel
     }
 
     /**
-     * Busca assinaturas por tenant
+     * Busca assinaturas por tenant com paginação
      */
-    public function findByTenant(int $tenantId): array
+    public function findByTenant(int $tenantId, int $page = 1, int $limit = 20, array $filters = []): array
     {
-        return $this->findAll(['tenant_id' => $tenantId]);
+        $offset = ($page - 1) * $limit;
+        $conditions = ['tenant_id' => $tenantId];
+        
+        if (!empty($filters['status'])) {
+            $conditions['status'] = $filters['status'];
+        }
+        
+        if (!empty($filters['customer'])) {
+            $conditions['customer_id'] = (int)$filters['customer'];
+        }
+        
+        $orderBy = [['created_at' => 'DESC']];
+        
+        $subscriptions = $this->findAll($conditions, $orderBy, $limit, $offset);
+        $total = $this->count($conditions);
+        
+        return [
+            'data' => $subscriptions,
+            'total' => $total,
+            'page' => $page,
+            'limit' => $limit,
+            'total_pages' => ceil($total / $limit)
+        ];
     }
 
     /**

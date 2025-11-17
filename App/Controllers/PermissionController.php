@@ -133,6 +133,18 @@ class PermissionController
                     'category' => 'reports'
                 ],
                 
+                // Permissões de Payouts
+                'view_payouts' => [
+                    'name' => 'view_payouts',
+                    'description' => 'Visualizar saques/payouts',
+                    'category' => 'finance'
+                ],
+                'manage_payouts' => [
+                    'name' => 'manage_payouts',
+                    'description' => 'Gerenciar saques/payouts (criar, cancelar)',
+                    'category' => 'finance'
+                ],
+                
                 // Permissões Administrativas
                 'manage_users' => [
                     'name' => 'manage_users',

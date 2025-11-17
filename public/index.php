@@ -49,6 +49,27 @@ if (preg_match('/^\/app\//', $requestUri)) {
     exit;
 }
 
+// Servir arquivos CSS da pasta /css
+if (preg_match('/^\/css\//', $requestUri)) {
+    $filePath = __DIR__ . $requestUri;
+    
+    if (file_exists($filePath) && is_file($filePath)) {
+        $realPath = realpath($filePath);
+        $publicPath = realpath(__DIR__);
+        
+        // Verificar se o arquivo está dentro de public/css
+        if ($realPath && strpos($realPath, $publicPath . DIRECTORY_SEPARATOR . 'css') === 0) {
+            header('Content-Type: text/css; charset=utf-8');
+            header('Cache-Control: public, max-age=3600');
+            readfile($filePath);
+            exit;
+        }
+    }
+    
+    http_response_code(404);
+    exit;
+}
+
 require_once __DIR__ . '/../vendor/autoload.php';
 
 // Carrega configurações
@@ -66,11 +87,65 @@ $app->set('flight.log_errors', true);
 // Suprime warnings de compatibilidade do FlightPHP com PHP 8.2
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
-// Middleware de CORS (opcional, ajuste conforme necessário)
+// Middleware de CORS e Headers de Segurança
 $app->before('start', function() {
-    header('Access-Control-Allow-Origin: *');
+    // Headers de Segurança (sempre aplicados)
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('X-XSS-Protection: 1; mode=block');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    
+    // Content Security Policy
+    // Ajuste conforme necessário para permitir recursos externos específicos
+    $csp = "default-src 'self'; " .
+           "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " .
+           "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; " .
+           "img-src 'self' data: https:; " .
+           "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; " .
+           "connect-src 'self'; " .
+           "frame-ancestors 'none';";
+    header("Content-Security-Policy: {$csp}");
+    
+    // HSTS (apenas em HTTPS)
+    if ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
+        (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')) {
+        header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+    }
+    
+    // CORS - Configuração Segura
+    // Lista de origens permitidas (ajuste conforme necessário)
+    $allowedOrigins = Config::get('CORS_ALLOWED_ORIGINS', '');
+    $allowedOriginsArray = !empty($allowedOrigins) ? explode(',', $allowedOrigins) : [];
+    
+    $origin = $_SERVER['HTTP_ORIGIN'] ?? null;
+    
+    // Em desenvolvimento, permite localhost e origens configuradas
+    if (Config::isDevelopment()) {
+        if ($origin && (
+            strpos($origin, 'http://localhost') === 0 ||
+            strpos($origin, 'http://127.0.0.1') === 0 ||
+            in_array($origin, $allowedOriginsArray)
+        )) {
+            header("Access-Control-Allow-Origin: {$origin}");
+            header('Access-Control-Allow-Credentials: true');
+        } elseif (!$origin) {
+            // Se não há origem (requisição direta), permite
+            header('Access-Control-Allow-Origin: *');
+        }
+    } else {
+        // Em produção, apenas origens explicitamente permitidas
+        if ($origin && in_array($origin, $allowedOriginsArray)) {
+            header("Access-Control-Allow-Origin: {$origin}");
+            header('Access-Control-Allow-Credentials: true');
+        } else {
+            // Rejeita requisições de origens não permitidas
+            // (não define header, o que faz o navegador bloquear)
+        }
+    }
+    
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    header('Access-Control-Max-Age: 86400'); // Cache preflight por 24h
     
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         exit(0);
@@ -80,8 +155,23 @@ $app->before('start', function() {
 // Middleware de autenticação (suporta API Key e Session ID)
 $app->before('start', function() use ($app) {
     // Rotas públicas (sem autenticação)
-    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login', '/api-docs', '/api-docs/ui'];
+    $publicRoutes = [
+        '/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login', '/login', '/register',
+        '/index', '/checkout', '/success', '/cancel', '/api-docs', '/api-docs/ui',
+        // Rotas autenticadas (serão verificadas individualmente)
+        '/dashboard', '/customers', '/subscriptions', '/products', '/prices', '/reports',
+        '/users', '/permissions', '/audit-logs',
+        '/customer-details', '/customer-invoices', '/subscription-details', '/subscription-history',
+        '/invoices', '/refunds', '/coupons', '/promotion-codes', '/settings',
+        '/transactions', '/transaction-details', '/disputes', '/charges', '/payouts',
+        '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal'
+    ];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    
+    // Permite CSS e arquivos estáticos
+    if (strpos($requestUri, '/css/') === 0 || strpos($requestUri, '/app/') === 0) {
+        return;
+    }
     
     if (in_array($requestUri, $publicRoutes) || strpos($requestUri, '/api-docs') === 0) {
         return;
@@ -252,6 +342,7 @@ $invoiceItemController = new \App\Controllers\InvoiceItemController($stripeServi
 $balanceTransactionController = new \App\Controllers\BalanceTransactionController($stripeService);
 $disputeController = new \App\Controllers\DisputeController($stripeService);
 $chargeController = new \App\Controllers\ChargeController($stripeService);
+$payoutController = new \App\Controllers\PayoutController($stripeService);
 $reportController = new \App\Controllers\ReportController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
@@ -284,6 +375,7 @@ $app->route('GET /', function() use ($app) {
             'subscription-items' => '/v1/subscription-items',
             'balance-transactions' => '/v1/balance-transactions',
             'disputes' => '/v1/disputes',
+            'payouts' => '/v1/payouts',
             'audit-logs' => '/v1/audit-logs',
             'reports' => '/v1/reports',
             'auth' => '/v1/auth',
@@ -433,6 +525,12 @@ $app->route('GET /v1/charges', [$chargeController, 'list']);
 $app->route('GET /v1/charges/@id', [$chargeController, 'get']);
 $app->route('PUT /v1/charges/@id', [$chargeController, 'update']);
 
+// Rotas de Payouts
+$app->route('GET /v1/payouts', [$payoutController, 'list']);
+$app->route('GET /v1/payouts/@id', [$payoutController, 'get']);
+$app->route('POST /v1/payouts', [$payoutController, 'create']);
+$app->route('POST /v1/payouts/@id/cancel', [$payoutController, 'cancel']);
+
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
 $app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
@@ -445,6 +543,504 @@ $app->route('GET /v1/reports/customers', [$reportController, 'customers']);
 $app->route('GET /v1/reports/payments', [$reportController, 'payments']);
 $app->route('GET /v1/reports/mrr', [$reportController, 'mrr']);
 $app->route('GET /v1/reports/arr', [$reportController, 'arr']);
+
+// Rota de página de login (HTML)
+$app->route('GET /login', function() use ($app) {
+    // Detecta URL base automaticamente
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptName = dirname($_SERVER['SCRIPT_NAME']);
+    
+    // Remove query string e fragmentos da URL
+    $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    $basePath = dirname($requestUri);
+    
+    // Constrói URL base
+    if ($scriptName === '/' || $scriptName === '\\') {
+        $baseUrl = $protocol . '://' . $host;
+    } else {
+        $baseUrl = $protocol . '://' . $host . rtrim($scriptName, '/');
+    }
+    
+    $apiUrl = rtrim($baseUrl, '/');
+    
+    // Renderiza a view
+    \App\Utils\View::render('login', ['apiUrl' => $apiUrl]);
+});
+
+// Helper para obter dados do usuário autenticado
+function getAuthenticatedUserData() {
+    $sessionId = null;
+    $headers = [];
+    
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+    } else {
+        foreach ($_SERVER as $name => $value) {
+            if (substr($name, 0, 5) == 'HTTP_') {
+                $headerName = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
+                $headers[$headerName] = $value;
+            }
+        }
+    }
+    
+    // Tenta obter session_id do header Authorization
+    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? null;
+    
+    if ($authHeader && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        $sessionId = trim($matches[1]);
+    }
+    
+    // Fallback: tenta obter de cookie (se houver)
+    if (!$sessionId && isset($_COOKIE['session_id'])) {
+        $sessionId = $_COOKIE['session_id'];
+    }
+    
+    // Fallback: tenta obter de query string (para desenvolvimento)
+    if (!$sessionId && isset($_GET['session_id'])) {
+        $sessionId = $_GET['session_id'];
+    }
+    
+    $user = null;
+    $tenant = null;
+    
+    if ($sessionId) {
+        $userSessionModel = new \App\Models\UserSession();
+        $session = $userSessionModel->validate($sessionId);
+        
+        if ($session) {
+            $user = [
+                'id' => (int)$session['user_id'],
+                'email' => $session['email'],
+                'name' => $session['name'],
+                'role' => $session['role'] ?? 'viewer'
+            ];
+            $tenant = [
+                'id' => (int)$session['tenant_id'],
+                'name' => $session['tenant_name']
+            ];
+        }
+    }
+    
+    return [$user, $tenant, $sessionId];
+}
+
+// Helper para detectar URL base
+function getBaseUrl() {
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $scriptName = dirname($_SERVER['SCRIPT_NAME']);
+    
+    if ($scriptName === '/' || $scriptName === '\\') {
+        return $protocol . '://' . $host;
+    }
+    
+    return $protocol . '://' . $host . rtrim($scriptName, '/');
+}
+
+// Rota de dashboard (requer autenticação)
+$app->route('GET /dashboard', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    // Se não houver usuário autenticado, redireciona para login
+    // O JavaScript também fará essa verificação, mas isso garante no servidor
+    if (!$user) {
+        header('Location: /login');
+        exit;
+    }
+    
+    \App\Utils\View::render('dashboard', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Dashboard',
+        'currentPage' => 'dashboard'
+    ], true);
+});
+
+// Rota de clientes
+$app->route('GET /customers', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    \App\Utils\View::render('customers', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Clientes',
+        'currentPage' => 'customers'
+    ], true);
+});
+
+// Rota de assinaturas
+$app->route('GET /subscriptions', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    \App\Utils\View::render('subscriptions', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Assinaturas',
+        'currentPage' => 'subscriptions'
+    ], true);
+});
+
+// Rota de produtos
+$app->route('GET /products', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    \App\Utils\View::render('products', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Produtos',
+        'currentPage' => 'products'
+    ], true);
+});
+
+// Rota de preços
+$app->route('GET /prices', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    \App\Utils\View::render('prices', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Preços',
+        'currentPage' => 'prices'
+    ], true);
+});
+
+// Rota de relatórios
+$app->route('GET /reports', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    \App\Utils\View::render('reports', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Relatórios',
+        'currentPage' => 'reports'
+    ], true);
+});
+
+// Rota de usuários (apenas admin)
+$app->route('GET /users', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user || ($user['role'] ?? '') !== 'admin') {
+        $app->json(['error' => 'Acesso negado'], 403);
+        return;
+    }
+    
+    \App\Utils\View::render('users', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Usuários',
+        'currentPage' => 'users'
+    ], true);
+});
+
+// Rota de permissões (apenas admin)
+$app->route('GET /permissions', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user || ($user['role'] ?? '') !== 'admin') {
+        $app->json(['error' => 'Acesso negado'], 403);
+        return;
+    }
+    
+    \App\Utils\View::render('permissions', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Permissões',
+        'currentPage' => 'permissions'
+    ], true);
+});
+
+// Rota de logs de auditoria (apenas admin)
+$app->route('GET /audit-logs', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user || ($user['role'] ?? '') !== 'admin') {
+        $app->json(['error' => 'Acesso negado'], 403);
+        return;
+    }
+    
+    \App\Utils\View::render('audit-logs', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Logs de Auditoria',
+        'currentPage' => 'audit-logs'
+    ], true);
+});
+
+// Rota de registro (pública)
+$app->route('GET /register', function() use ($app) {
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('register', ['apiUrl' => $apiUrl]);
+});
+
+// Rota de index/planos (pública)
+$app->route('GET /index', function() use ($app) {
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('index', ['apiUrl' => $apiUrl]);
+});
+
+// Rota de checkout (pública)
+$app->route('GET /checkout', function() use ($app) {
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('checkout', ['apiUrl' => $apiUrl]);
+});
+
+// Rota de success (pública)
+$app->route('GET /success', function() use ($app) {
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('success', ['apiUrl' => $apiUrl]);
+});
+
+// Rota de cancel (pública)
+$app->route('GET /cancel', function() use ($app) {
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('cancel', ['apiUrl' => $apiUrl]);
+});
+
+// Rota de detalhes do cliente
+$app->route('GET /customer-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('customer-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Cliente', 'currentPage' => 'customers'
+    ], true);
+});
+
+// Rota de faturas do cliente
+$app->route('GET /customer-invoices', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('customer-invoices', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Faturas do Cliente', 'currentPage' => 'customers'
+    ], true);
+});
+
+// Rota de detalhes da assinatura
+$app->route('GET /subscription-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('subscription-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes da Assinatura', 'currentPage' => 'subscriptions'
+    ], true);
+});
+
+// Rota de detalhes do produto
+$app->route('GET /product-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('product-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Produto', 'currentPage' => 'products'
+    ], true);
+});
+
+// Rota de detalhes do preço
+$app->route('GET /price-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('price-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Preço', 'currentPage' => 'prices'
+    ], true);
+});
+
+// Rota de detalhes do usuário
+$app->route('GET /user-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user || ($user['role'] ?? '') !== 'admin') {
+        $app->json(['error' => 'Acesso negado'], 403);
+        return;
+    }
+    
+    \App\Utils\View::render('user-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Usuário', 'currentPage' => 'users'
+    ], true);
+});
+
+// Rota de detalhes da fatura
+$app->route('GET /invoice-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('invoice-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes da Fatura', 'currentPage' => 'invoices'
+    ], true);
+});
+
+// Rota de faturas
+$app->route('GET /invoices', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('invoices', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Faturas', 'currentPage' => 'invoices'
+    ], true);
+});
+
+// Rota de reembolsos
+$app->route('GET /refunds', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('refunds', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Reembolsos', 'currentPage' => 'refunds'
+    ], true);
+});
+
+// Rota de cupons
+$app->route('GET /coupons', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('coupons', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Cupons', 'currentPage' => 'coupons'
+    ], true);
+});
+
+// Rota de códigos promocionais
+$app->route('GET /promotion-codes', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('promotion-codes', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Códigos Promocionais', 'currentPage' => 'promotion-codes'
+    ], true);
+});
+
+// Rota de configurações
+$app->route('GET /settings', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('settings', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Configurações', 'currentPage' => 'settings'
+    ], true);
+});
+
+// Rota de histórico de assinaturas
+$app->route('GET /subscription-history', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('subscription-history', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Histórico de Assinaturas', 'currentPage' => 'subscriptions'
+    ], true);
+});
+
+// Rota de transações
+$app->route('GET /transactions', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('transactions', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Transações', 'currentPage' => 'transactions'
+    ], true);
+});
+
+// Rota de detalhes da transação
+$app->route('GET /transaction-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('transaction-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes da Transação', 'currentPage' => 'transactions'
+    ], true);
+});
+
+// Rota de disputas
+$app->route('GET /disputes', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('disputes', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Disputas', 'currentPage' => 'disputes'
+    ], true);
+});
+
+// Rota de cobranças
+$app->route('GET /charges', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('charges', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Cobranças', 'currentPage' => 'charges'
+    ], true);
+});
+
+// Rota de saques
+$app->route('GET /payouts', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('payouts', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Saques', 'currentPage' => 'payouts'
+    ], true);
+});
+
+// Rota de itens de fatura
+$app->route('GET /invoice-items', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('invoice-items', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Itens de Fatura', 'currentPage' => 'invoice-items'
+    ], true);
+});
+
+// Rota de taxas de imposto
+$app->route('GET /tax-rates', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('tax-rates', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Taxas de Imposto', 'currentPage' => 'tax-rates'
+    ], true);
+});
+
+// Rota de métodos de pagamento
+$app->route('GET /payment-methods', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('payment-methods', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Métodos de Pagamento', 'currentPage' => 'payment-methods'
+    ], true);
+});
+
+// Rota de portal de cobrança
+$app->route('GET /billing-portal', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('billing-portal', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Portal de Cobrança', 'currentPage' => 'billing-portal'
+    ], true);
+});
 
 // Rotas de Autenticação (públicas - não precisam de autenticação)
 $authController = new \App\Controllers\AuthController();

@@ -6,23 +6,31 @@ use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Tenant;
 use App\Services\Logger;
+use App\Middleware\LoginRateLimitMiddleware;
 use Flight;
 use Config;
 
 /**
  * Controller para autenticação de usuários
+ * 
+ * Gerencia login, logout e verificação de sessão
  */
 class AuthController
 {
     private User $userModel;
     private UserSession $sessionModel;
     private Tenant $tenantModel;
+    private LoginRateLimitMiddleware $loginRateLimit;
 
     public function __construct()
     {
         $this->userModel = new User();
         $this->sessionModel = new UserSession();
         $this->tenantModel = new Tenant();
+        
+        // Inicializa rate limiter para login
+        $rateLimiterService = new \App\Services\RateLimiterService();
+        $this->loginRateLimit = new LoginRateLimitMiddleware($rateLimiterService);
     }
 
     /**
@@ -33,17 +41,28 @@ class AuthController
     public function login(): void
     {
         try {
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
-
-            $email = $data['email'] ?? '';
+            // Verifica rate limit ANTES de processar qualquer coisa
+            if (!$this->loginRateLimit->check()) {
+                return; // Resposta já foi enviada pelo middleware
+            }
+            
+            // Obtém dados do request
+            $data = json_decode(file_get_contents('php://input'), true);
+            
+            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+                $this->sendError(400, 'Dados inválidos', 'JSON inválido no corpo da requisição');
+                return;
+            }
+            
+            $data = $data ?? [];
+            $email = trim($data['email'] ?? '');
             $password = $data['password'] ?? '';
             $tenantId = isset($data['tenant_id']) ? (int)$data['tenant_id'] : 0;
 
-            if (empty($email) || empty($password) || empty($tenantId)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Email, senha e tenant_id são obrigatórios'
-                ]));
+            // Validação robusta de entrada
+            $validationErrors = $this->validateLoginInput($email, $password, $tenantId);
+            if (!empty($validationErrors)) {
+                $this->sendError(400, 'Dados inválidos', 'Por favor, verifique os dados informados', ['errors' => $validationErrors]);
                 return;
             }
 
@@ -51,52 +70,63 @@ class AuthController
             $user = $this->userModel->findByEmailAndTenant($email, $tenantId);
 
             if (!$user) {
+                // Registra tentativa falha para rate limiting
+                $this->loginRateLimit->recordFailedAttempt($email);
+                
                 Logger::warning("Tentativa de login com email não encontrado", [
                     'email' => $email,
-                    'tenant_id' => $tenantId
+                    'tenant_id' => $tenantId,
+                    'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]);
-                Flight::halt(401, json_encode([
-                    'error' => 'Credenciais inválidas',
-                    'message' => 'Email ou senha incorretos'
-                ]));
+                
+                // Não revela se o email existe ou não (segurança)
+                $this->sendError(401, 'Credenciais inválidas', 'Email ou senha incorretos');
                 return;
             }
 
             // Verifica senha
             if (!$this->userModel->verifyPassword($password, $user['password_hash'])) {
+                // Registra tentativa falha para rate limiting
+                $this->loginRateLimit->recordFailedAttempt($email);
+                
                 Logger::warning("Tentativa de login com senha incorreta", [
                     'user_id' => $user['id'],
-                    'email' => $email
+                    'email' => $email,
+                    'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
                 ]);
-                Flight::halt(401, json_encode([
-                    'error' => 'Credenciais inválidas',
-                    'message' => 'Email ou senha incorretos'
-                ]));
+                
+                // Não revela se o email existe ou não (segurança)
+                $this->sendError(401, 'Credenciais inválidas', 'Email ou senha incorretos');
                 return;
             }
 
             // Verifica status do usuário
             if ($user['status'] !== 'active') {
                 Logger::warning("Tentativa de login com usuário inativo", [
-                    'user_id' => $user['id']
+                    'user_id' => $user['id'],
+                    'email' => $email
                 ]);
-                Flight::halt(403, json_encode([
-                    'error' => 'Usuário inativo',
-                    'message' => 'Sua conta está inativa. Entre em contato com o administrador.'
-                ]));
+                $this->sendError(403, 'Usuário inativo', 'Sua conta está inativa. Entre em contato com o administrador.');
                 return;
             }
 
             // Verifica tenant
             $tenant = $this->tenantModel->findById($tenantId);
-            if (!$tenant || $tenant['status'] !== 'active') {
-                Logger::warning("Tentativa de login com tenant inativo", [
-                    'tenant_id' => $tenantId
+            if (!$tenant) {
+                Logger::warning("Tentativa de login com tenant inexistente", [
+                    'tenant_id' => $tenantId,
+                    'email' => $email
                 ]);
-                Flight::halt(403, json_encode([
-                    'error' => 'Tenant inativo',
-                    'message' => 'O tenant está inativo. Entre em contato com o suporte.'
-                ]));
+                $this->sendError(403, 'Tenant inválido', 'O tenant informado não existe.');
+                return;
+            }
+            
+            if ($tenant['status'] !== 'active') {
+                Logger::warning("Tentativa de login com tenant inativo", [
+                    'tenant_id' => $tenantId,
+                    'email' => $email
+                ]);
+                $this->sendError(403, 'Tenant inativo', 'O tenant está inativo. Entre em contato com o suporte.');
                 return;
             }
 
@@ -108,7 +138,8 @@ class AuthController
             Logger::info("Login bem-sucedido", [
                 'user_id' => $user['id'],
                 'email' => $email,
-                'tenant_id' => $tenantId
+                'tenant_id' => $tenantId,
+                'ip' => $ipAddress
             ]);
 
             // Retorna dados do usuário e token
@@ -117,13 +148,13 @@ class AuthController
                 'data' => [
                     'session_id' => $sessionId,
                     'user' => [
-                        'id' => $user['id'],
+                        'id' => (int)$user['id'],
                         'email' => $user['email'],
                         'name' => $user['name'],
                         'role' => $user['role'] ?? 'viewer'
                     ],
                     'tenant' => [
-                        'id' => $tenant['id'],
+                        'id' => (int)$tenant['id'],
                         'name' => $tenant['name']
                     ]
                 ]
@@ -133,11 +164,7 @@ class AuthController
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro interno',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o login'
-            ], 500);
+            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o login');
         }
     }
 
@@ -151,8 +178,13 @@ class AuthController
             $sessionId = $this->getSessionId();
 
             if ($sessionId) {
-                $this->sessionModel->deleteSession($sessionId);
-                Logger::info("Logout realizado", ['session_id' => substr($sessionId, 0, 20) . '...']);
+                $deleted = $this->sessionModel->deleteSession($sessionId);
+                if ($deleted) {
+                    Logger::info("Logout realizado", [
+                        'session_id' => substr($sessionId, 0, 20) . '...',
+                        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                    ]);
+                }
             }
 
             Flight::json([
@@ -161,12 +193,10 @@ class AuthController
             ]);
         } catch (\Exception $e) {
             Logger::error("Erro ao fazer logout", [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro interno',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o logout'
-            ]));
+            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o logout');
         }
     }
 
@@ -180,20 +210,14 @@ class AuthController
             $sessionId = $this->getSessionId();
 
             if (!$sessionId) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de sessão não fornecido'
-                ]));
+                $this->sendError(401, 'Não autenticado', 'Token de sessão não fornecido');
                 return;
             }
 
             $session = $this->sessionModel->validate($sessionId);
 
             if (!$session) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Sessão inválida',
-                    'message' => 'Sessão inválida ou expirada. Faça login novamente.'
-                ]));
+                $this->sendError(401, 'Sessão inválida', 'Sessão inválida ou expirada. Faça login novamente.');
                 return;
             }
 
@@ -214,12 +238,10 @@ class AuthController
             ]);
         } catch (\Exception $e) {
             Logger::error("Erro ao verificar sessão", [
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro interno',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao verificar a sessão'
-            ]));
+            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao verificar a sessão');
         }
     }
 
@@ -256,5 +278,65 @@ class AuthController
 
         return trim($authHeader);
     }
+    
+    /**
+     * Valida dados de entrada do login
+     * 
+     * @param string $email Email do usuário
+     * @param string $password Senha do usuário
+     * @param int $tenantId ID do tenant
+     * @return array Array de erros (vazio se válido)
+     */
+    private function validateLoginInput(string $email, string $password, int $tenantId): array
+    {
+        $errors = [];
+        
+        // Valida email
+        if (empty($email)) {
+            $errors['email'] = 'Email é obrigatório';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Email inválido';
+        } elseif (strlen($email) > 255) {
+            $errors['email'] = 'Email muito longo (máximo 255 caracteres)';
+        }
+        
+        // Valida senha
+        if (empty($password)) {
+            $errors['password'] = 'Senha é obrigatória';
+        } elseif (strlen($password) < 6) {
+            $errors['password'] = 'Senha deve ter no mínimo 6 caracteres';
+        } elseif (strlen($password) > 128) {
+            $errors['password'] = 'Senha muito longa (máximo 128 caracteres)';
+        }
+        
+        // Valida tenant_id
+        if (empty($tenantId) || $tenantId <= 0) {
+            $errors['tenant_id'] = 'Tenant ID é obrigatório e deve ser um número positivo';
+        }
+        
+        return $errors;
+    }
+    
+    /**
+     * Envia resposta de erro padronizada
+     * 
+     * @param int $statusCode Código HTTP
+     * @param string $error Tipo do erro
+     * @param string $message Mensagem amigável
+     * @param array $extra Dados extras (opcional)
+     */
+    private function sendError(int $statusCode, string $error, string $message, array $extra = []): void
+    {
+        $response = [
+            'error' => $error,
+            'message' => $message
+        ];
+        
+        if (!empty($extra)) {
+            $response = array_merge($response, $extra);
+        }
+        
+        Flight::json($response, $statusCode);
+        Flight::stop();
+    }
 }
-

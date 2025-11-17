@@ -76,6 +76,13 @@ class CustomerController
     /**
      * Lista clientes do tenant
      * GET /v1/customers
+     * 
+     * Query params:
+     *   - page: Número da página (padrão: 1)
+     *   - limit: Itens por página (padrão: 20)
+     *   - search: Busca por email ou nome
+     *   - status: Filtrar por status
+     *   - sort: Campo para ordenação
      */
     public function list(): void
     {
@@ -90,13 +97,33 @@ class CustomerController
                 return;
             }
             
+            $queryParams = Flight::request()->query;
+            $page = isset($queryParams['page']) ? max(1, (int)$queryParams['page']) : 1;
+            $limit = isset($queryParams['limit']) ? min(100, max(1, (int)$queryParams['limit'])) : 20;
+            
+            $filters = [];
+            if (!empty($queryParams['search'])) {
+                $filters['search'] = $queryParams['search'];
+            }
+            if (!empty($queryParams['status'])) {
+                $filters['status'] = $queryParams['status'];
+            }
+            if (!empty($queryParams['sort'])) {
+                $filters['sort'] = $queryParams['sort'];
+            }
+            
             $customerModel = new \App\Models\Customer();
-            $customers = $customerModel->findByTenant($tenantId);
+            $result = $customerModel->findByTenant($tenantId, $page, $limit, $filters);
 
             Flight::json([
                 'success' => true,
-                'data' => $customers,
-                'count' => count($customers)
+                'data' => $result['data'],
+                'meta' => [
+                    'total' => $result['total'],
+                    'page' => $result['page'],
+                    'limit' => $result['limit'],
+                    'total_pages' => $result['total_pages']
+                ]
             ]);
         } catch (\Exception $e) {
             Logger::error("Erro ao listar clientes", ['error' => $e->getMessage()]);

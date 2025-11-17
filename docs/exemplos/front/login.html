@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Sistema SaaS</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .login-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+            max-width: 450px;
+            width: 100%;
+        }
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .login-header h1 {
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+        .form-label {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: transform 0.2s;
+        }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .alert {
+            border-radius: 10px;
+            border: none;
+        }
+        .loading-spinner {
+            display: none;
+        }
+        .loading-spinner.active {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1><i class="bi bi-shield-lock-fill text-primary"></i> Login</h1>
+            <p>Entre com suas credenciais para acessar o sistema</p>
+        </div>
+
+        <!-- Alert de erro -->
+        <div id="errorAlert" class="alert alert-danger d-none" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span id="errorMessage"></span>
+        </div>
+
+        <!-- Alert de sucesso -->
+        <div id="successAlert" class="alert alert-success d-none" role="alert">
+            <i class="bi bi-check-circle-fill"></i>
+            <span id="successMessage"></span>
+        </div>
+
+        <!-- Formulário de Login -->
+        <form id="loginForm">
+            <!-- Tenant ID (opcional - será detectado automaticamente se o email for único) -->
+            <div class="mb-3">
+                <label for="tenant_id" class="form-label">
+                    Tenant ID <span class="text-muted">(opcional)</span>
+                </label>
+                <input 
+                    type="number" 
+                    class="form-control" 
+                    id="tenant_id" 
+                    name="tenant_id" 
+                    placeholder="Deixe em branco para detecção automática"
+                >
+                <small class="form-text text-muted">
+                    Se você tiver acesso a múltiplos tenants, informe o ID. Caso contrário, deixe em branco.
+                </small>
+            </div>
+
+            <!-- Email -->
+            <div class="mb-3">
+                <label for="email" class="form-label">
+                    <i class="bi bi-envelope"></i> Email
+                </label>
+                <input 
+                    type="email" 
+                    class="form-control" 
+                    id="email" 
+                    name="email" 
+                    required
+                    placeholder="seu@email.com"
+                    autocomplete="email"
+                >
+            </div>
+
+            <!-- Senha -->
+            <div class="mb-4">
+                <label for="password" class="form-label">
+                    <i class="bi bi-lock"></i> Senha
+                </label>
+                <div class="input-group">
+                    <input 
+                        type="password" 
+                        class="form-control" 
+                        id="password" 
+                        name="password" 
+                        required
+                        placeholder="Digite sua senha"
+                        autocomplete="current-password"
+                    >
+                    <button 
+                        class="btn btn-outline-secondary" 
+                        type="button" 
+                        id="togglePassword"
+                        onclick="togglePasswordVisibility()"
+                    >
+                        <i class="bi bi-eye" id="eyeIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Botão de Login -->
+            <button type="submit" class="btn btn-primary btn-login w-100 mb-3" id="loginButton">
+                <span class="loading-spinner spinner-border spinner-border-sm me-2" id="loadingSpinner" role="status"></span>
+                <span id="loginButtonText">Entrar</span>
+            </button>
+
+            <!-- Links adicionais (opcional) -->
+            <div class="text-center">
+                <small class="text-muted">
+                    Esqueceu sua senha? <a href="#" class="text-decoration-none">Recuperar</a>
+                </small>
+            </div>
+        </form>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Configuração da API -->
+    <script src="auth-config.js"></script>
+    
+    <!-- Funções de autenticação -->
+    <script src="auth.js"></script>
+    
+    <!-- Script principal da página -->
+    <script>
+        // Configuração da API (pode ser sobrescrito por auth-config.js)
+        const API_CONFIG = window.API_CONFIG || {
+            baseUrl: 'http://localhost/saas-stripe',
+            tenantId: 1
+        };
+
+        // Toggle visibilidade da senha
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eyeIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.className = 'bi bi-eye-slash';
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.className = 'bi bi-eye';
+            }
+        }
+
+        // Quando a página carrega
+        document.addEventListener('DOMContentLoaded', () => {
+            // Verifica se já está logado
+            const sessionId = localStorage.getItem('session_id');
+            if (sessionId) {
+                // Verifica se a sessão ainda é válida
+                checkSession().then(isValid => {
+                    if (isValid) {
+                        // Redireciona para dashboard
+                        window.location.href = 'dashboard.html';
+                    } else {
+                        // Remove sessão inválida
+                        localStorage.removeItem('session_id');
+                        localStorage.removeItem('user');
+                        localStorage.removeItem('tenant');
+                    }
+                });
+            }
+
+            // Carrega tenant_id salvo (se existir)
+            const savedTenantId = localStorage.getItem('tenant_id');
+            if (savedTenantId) {
+                document.getElementById('tenant_id').value = savedTenantId;
+            }
+
+            // Carrega email salvo (se existir)
+            const savedEmail = localStorage.getItem('last_email');
+            if (savedEmail) {
+                document.getElementById('email').value = savedEmail;
+            }
+
+            // Foco no primeiro campo vazio
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+            
+            if (!emailInput.value) {
+                emailInput.focus();
+            } else if (!passwordInput.value) {
+                passwordInput.focus();
+            }
+        });
+
+        // Submit do formulário
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Limpa alerts anteriores
+            hideAlerts();
+
+            // Desabilita botão e mostra loading
+            const loginButton = document.getElementById('loginButton');
+            const loginButtonText = document.getElementById('loginButtonText');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            loginButton.disabled = true;
+            loginButtonText.textContent = 'Entrando...';
+            loadingSpinner.classList.add('active');
+
+            // Obtém dados do formulário
+            const tenantIdInput = document.getElementById('tenant_id').value.trim();
+            const tenantId = tenantIdInput ? parseInt(tenantIdInput) : null;
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            // Validações básicas
+            if (tenantId !== null && tenantId <= 0) {
+                showError('Por favor, informe um Tenant ID válido ou deixe em branco');
+                resetLoginButton();
+                return;
+            }
+
+            if (!email || !email.includes('@')) {
+                showError('Por favor, informe um email válido');
+                resetLoginButton();
+                document.getElementById('email').focus();
+                return;
+            }
+
+            if (!password || password.length < 3) {
+                showError('Por favor, informe uma senha válida');
+                resetLoginButton();
+                document.getElementById('password').focus();
+                return;
+            }
+
+            try {
+                // Faz login
+                const result = await login(email, password, tenantId);
+
+                if (result.success) {
+                    // Salva tenant_id para próximas vezes
+                    localStorage.setItem('tenant_id', tenantId.toString());
+                    localStorage.setItem('last_email', email);
+
+                    // Mostra mensagem de sucesso
+                    showSuccess('Login realizado com sucesso! Redirecionando...');
+
+                    // Aguarda um momento e redireciona
+                    setTimeout(() => {
+                        window.location.href = 'dashboard.html';
+                    }, 1000);
+                } else {
+                    showError(result.error || 'Erro ao fazer login. Verifique suas credenciais.');
+                    resetLoginButton();
+                    document.getElementById('password').focus();
+                    document.getElementById('password').select();
+                }
+            } catch (error) {
+                console.error('Erro no login:', error);
+                showError('Erro ao conectar com o servidor. Verifique sua conexão.');
+                resetLoginButton();
+            }
+        });
+
+        // Funções auxiliares
+        function showError(message) {
+            const errorAlert = document.getElementById('errorAlert');
+            const errorMessage = document.getElementById('errorMessage');
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('d-none');
+            
+            // Scroll para o topo
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showSuccess(message) {
+            const successAlert = document.getElementById('successAlert');
+            const successMessage = document.getElementById('successMessage');
+            successMessage.textContent = message;
+            successAlert.classList.remove('d-none');
+        }
+
+        function hideAlerts() {
+            document.getElementById('errorAlert').classList.add('d-none');
+            document.getElementById('successAlert').classList.add('d-none');
+        }
+
+        function resetLoginButton() {
+            const loginButton = document.getElementById('loginButton');
+            const loginButtonText = document.getElementById('loginButtonText');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            
+            loginButton.disabled = false;
+            loginButtonText.textContent = 'Entrar';
+            loadingSpinner.classList.remove('active');
+        }
+
+        // Enter no campo de senha também faz submit
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>
+

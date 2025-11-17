@@ -75,6 +75,12 @@ class SubscriptionController
     /**
      * Lista assinaturas do tenant
      * GET /v1/subscriptions
+     * 
+     * Query params:
+     *   - page: Número da página (padrão: 1)
+     *   - limit: Itens por página (padrão: 20)
+     *   - status: Filtrar por status
+     *   - customer: Filtrar por customer_id
      */
     public function list(): void
     {
@@ -83,13 +89,31 @@ class SubscriptionController
             PermissionHelper::require('view_subscriptions');
             
             $tenantId = Flight::get('tenant_id');
+            
+            $queryParams = Flight::request()->query;
+            $page = isset($queryParams['page']) ? max(1, (int)$queryParams['page']) : 1;
+            $limit = isset($queryParams['limit']) ? min(100, max(1, (int)$queryParams['limit'])) : 20;
+            
+            $filters = [];
+            if (!empty($queryParams['status'])) {
+                $filters['status'] = $queryParams['status'];
+            }
+            if (!empty($queryParams['customer'])) {
+                $filters['customer'] = $queryParams['customer'];
+            }
+            
             $subscriptionModel = new \App\Models\Subscription();
-            $subscriptions = $subscriptionModel->findByTenant($tenantId);
+            $result = $subscriptionModel->findByTenant($tenantId, $page, $limit, $filters);
 
             Flight::json([
                 'success' => true,
-                'data' => $subscriptions,
-                'count' => count($subscriptions)
+                'data' => $result['data'],
+                'meta' => [
+                    'total' => $result['total'],
+                    'page' => $result['page'],
+                    'limit' => $result['limit'],
+                    'total_pages' => $result['total_pages']
+                ]
             ]);
         } catch (\Exception $e) {
             Logger::error("Erro ao listar assinaturas", ['error' => $e->getMessage()]);

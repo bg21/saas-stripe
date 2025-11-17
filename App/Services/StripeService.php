@@ -35,6 +35,9 @@ class StripeService
                 'name' => $data['name'] ?? null,
                 'metadata' => $data['metadata'] ?? []
             ]);
+            
+            // Invalida cache de listas de customers
+            $this->invalidateCustomersListCache();
 
             Logger::info("Cliente Stripe criado", ['customer_id' => $customer->id]);
             return $customer;
@@ -539,7 +542,20 @@ $refundParams['amount'] = (int)$options['amount'];
     public function getCustomer(string $customerId): \Stripe\Customer
     {
         try {
-            return $this->client->customers->retrieve($customerId);
+            // Cache de 2 minutos para customers individuais
+            $cacheKey = 'stripe:customer:' . $customerId;
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::debug("Customer obtido do cache", ['customer_id' => $customerId]);
+                return \Stripe\Customer::constructFrom($cached, null);
+            }
+            
+            $customer = $this->client->customers->retrieve($customerId);
+            
+            // Salva no cache (2 minutos)
+            \App\Services\CacheService::setJson($cacheKey, $customer->toArray(), 120);
+            
+            return $customer;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter customer", ['error' => $e->getMessage()]);
             throw $e;
@@ -560,6 +576,19 @@ $refundParams['amount'] = (int)$options['amount'];
     public function listCustomers(array $options = []): \Stripe\Collection
     {
         try {
+            // Cache de 3 minutos para listas de customers
+            $cacheKey = 'stripe:customers:' . md5(json_encode($options));
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::debug("Customers obtidos do cache", ['cache_key' => $cacheKey]);
+                $collection = new \Stripe\Collection();
+                $collection->data = array_map(function($item) {
+                    return \Stripe\Customer::constructFrom($item, null);
+                }, $cached['data']);
+                $collection->has_more = $cached['has_more'] ?? false;
+                return $collection;
+            }
+            
             $params = [
                 'limit' => $options['limit'] ?? 10
             ];
@@ -581,10 +610,20 @@ $refundParams['amount'] = (int)$options['amount'];
             }
 
             $customers = $this->client->customers->all($params);
+            
+            // Salva no cache (3 minutos)
+            $cacheData = [
+                'data' => array_map(function($customer) {
+                    return $customer->toArray();
+                }, $customers->data),
+                'has_more' => $customers->has_more
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 180);
 
             Logger::info("Customers listados", [
                 'count' => count($customers->data),
-                'filters' => array_keys($options)
+                'filters' => array_keys($options),
+                'cached' => true
             ]);
 
             return $customers;
@@ -630,6 +669,11 @@ $refundParams['amount'] = (int)$options['amount'];
             }
 
             $customer = $this->client->customers->update($customerId, $updateParams);
+            
+            // Invalida cache do customer
+            \App\Services\CacheService::delete('stripe:customer:' . $customerId);
+            // Invalida cache de listas de customers
+            $this->invalidateCustomersListCache();
 
             Logger::info("Customer atualizado no Stripe", [
                 'customer_id' => $customerId,
@@ -649,7 +693,20 @@ $refundParams['amount'] = (int)$options['amount'];
     public function getSubscription(string $subscriptionId): \Stripe\Subscription
     {
         try {
-            return $this->client->subscriptions->retrieve($subscriptionId);
+            // Cache de 1 minuto para assinaturas (mudam mais frequentemente)
+            $cacheKey = 'stripe:subscription:' . $subscriptionId;
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::debug("Assinatura obtida do cache", ['subscription_id' => $subscriptionId]);
+                return \Stripe\Subscription::constructFrom($cached, null);
+            }
+            
+            $subscription = $this->client->subscriptions->retrieve($subscriptionId);
+            
+            // Salva no cache (1 minuto)
+            \App\Services\CacheService::setJson($cacheKey, $subscription->toArray(), 60);
+            
+            return $subscription;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter assinatura", ['error' => $e->getMessage()]);
             throw $e;
@@ -736,6 +793,9 @@ $refundParams['amount'] = (int)$options['amount'];
             }
 
             $subscription = $this->client->subscriptions->update($subscriptionId, $updateParams);
+            
+            // Invalida cache da assinatura
+            \App\Services\CacheService::delete('stripe:subscription:' . $subscriptionId);
 
             Logger::info("Assinatura atualizada", [
                 'subscription_id' => $subscriptionId,
@@ -1363,6 +1423,9 @@ $refundParams['amount'] = (int)$options['amount'];
             }
 
             $product = $this->client->products->create($params);
+            
+            // Invalida cache de produtos
+            $this->invalidateProductsCache();
 
             Logger::info("Produto criado", [
                 'product_id' => $product->id,
@@ -1385,7 +1448,20 @@ $refundParams['amount'] = (int)$options['amount'];
     public function getProduct(string $productId): \Stripe\Product
     {
         try {
-            return $this->client->products->retrieve($productId);
+            // Cache de 10 minutos para produtos individuais (mudam pouco)
+            $cacheKey = 'stripe:product:' . $productId;
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::debug("Produto obtido do cache", ['product_id' => $productId]);
+                return \Stripe\Product::constructFrom($cached, null);
+            }
+            
+            $product = $this->client->products->retrieve($productId);
+            
+            // Salva no cache (10 minutos)
+            \App\Services\CacheService::setJson($cacheKey, $product->toArray(), 600);
+            
+            return $product;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter produto", [
                 'product_id' => $productId,
@@ -1518,6 +1594,8 @@ $refundParams['amount'] = (int)$options['amount'];
 
             // Invalida cache de produtos
             $this->invalidateProductsCache();
+            // Invalida cache do produto específico
+            \App\Services\CacheService::delete('stripe:product:' . $productId);
 
             Logger::info("Produto atualizado", [
                 'product_id' => $productId,
@@ -1701,7 +1779,20 @@ $refundParams['amount'] = (int)$options['amount'];
     public function getPrice(string $priceId): \Stripe\Price
     {
         try {
-            return $this->client->prices->retrieve($priceId);
+            // Cache de 10 minutos para preços individuais (mudam pouco)
+            $cacheKey = 'stripe:price:' . $priceId;
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Logger::debug("Preço obtido do cache", ['price_id' => $priceId]);
+                return \Stripe\Price::constructFrom($cached, null);
+            }
+            
+            $price = $this->client->prices->retrieve($priceId);
+            
+            // Salva no cache (10 minutos)
+            \App\Services\CacheService::setJson($cacheKey, $price->toArray(), 600);
+            
+            return $price;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter preço", [
                 'price_id' => $priceId,
@@ -1750,6 +1841,8 @@ $refundParams['amount'] = (int)$options['amount'];
 
             // Invalida cache de preços
             $this->invalidatePricesCache();
+            // Invalida cache do preço específico
+            \App\Services\CacheService::delete('stripe:price:' . $priceId);
 
             Logger::info("Preço atualizado", [
                 'price_id' => $priceId,
@@ -2823,6 +2916,70 @@ $refundParams['amount'] = (int)$options['amount'];
     }
 
     /**
+     * Lista Payouts
+     * 
+     * @param array $options Opções de filtro:
+     *   - limit: Número máximo de resultados (padrão: 10, máximo: 100)
+     *   - starting_after: ID do payout para paginação
+     *   - ending_before: ID do payout para paginação reversa
+     *   - created: Array com gte, lte, gt, lt (timestamps Unix)
+     *   - status: Status do payout (pending, paid, failed, canceled)
+     *   - destination: ID da conta/bank account de destino
+     * @return \Stripe\Collection
+     */
+    public function listPayouts(array $options = []): \Stripe\Collection
+    {
+        try {
+            $params = [];
+            
+            // Define limite padrão se não fornecido
+            if (isset($options['limit'])) {
+                $params['limit'] = min((int)$options['limit'], 100);
+            } else {
+                $params['limit'] = 10;
+            }
+            
+            if (!empty($options['starting_after'])) {
+                $params['starting_after'] = $options['starting_after'];
+            }
+            
+            if (!empty($options['ending_before'])) {
+                $params['ending_before'] = $options['ending_before'];
+            }
+            
+            // Filtros de data (created)
+            if (!empty($options['created']) && is_array($options['created'])) {
+                $params['created'] = $options['created'];
+            }
+            
+            // Filtro por status
+            if (!empty($options['status'])) {
+                $params['status'] = $options['status'];
+            }
+            
+            // Filtro por destination
+            if (!empty($options['destination'])) {
+                $params['destination'] = $options['destination'];
+            }
+            
+            $payouts = $this->client->payouts->all($params);
+            
+            Logger::info("Payouts listados", [
+                'count' => count($payouts->data),
+                'filters' => $options
+            ]);
+            
+            return $payouts;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao listar payouts", [
+                'error' => $e->getMessage(),
+                'options' => $options
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
      * Obtém Payout por ID
      * 
      * @param string $payoutId ID do payout no Stripe
@@ -2840,6 +2997,103 @@ $refundParams['amount'] = (int)$options['amount'];
             return $payout;
         } catch (ApiErrorException $e) {
             Logger::error("Erro ao obter payout", [
+                'payout_id' => $payoutId,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cria um novo Payout
+     * 
+     * @param array $data Dados do payout:
+     *   - amount (obrigatório): Valor em centavos
+     *   - currency (obrigatório): Moeda (ex: 'brl', 'usd')
+     *   - destination (opcional): ID da conta/bank account de destino
+     *   - method (opcional): Método de transferência ('standard' ou 'instant')
+     *   - description (opcional): Descrição do saque
+     *   - metadata (opcional): Metadados
+     * @return \Stripe\Payout
+     */
+    public function createPayout(array $data): \Stripe\Payout
+    {
+        try {
+            // Validações obrigatórias
+            if (empty($data['amount']) || !is_numeric($data['amount'])) {
+                throw new \InvalidArgumentException("Campo 'amount' é obrigatório e deve ser numérico");
+            }
+            
+            if (empty($data['currency'])) {
+                throw new \InvalidArgumentException("Campo 'currency' é obrigatório");
+            }
+            
+            $params = [
+                'amount' => (int)$data['amount'],
+                'currency' => strtolower($data['currency'])
+            ];
+            
+            // Parâmetros opcionais
+            if (!empty($data['destination'])) {
+                $params['destination'] = $data['destination'];
+            }
+            
+            if (!empty($data['method'])) {
+                $params['method'] = $data['method'];
+            }
+            
+            if (!empty($data['description'])) {
+                $params['description'] = $data['description'];
+            }
+            
+            if (!empty($data['metadata']) && is_array($data['metadata'])) {
+                $params['metadata'] = $data['metadata'];
+            }
+            
+            $payout = $this->client->payouts->create($params);
+            
+            Logger::info("Payout criado", [
+                'payout_id' => $payout->id,
+                'amount' => $payout->amount,
+                'currency' => $payout->currency,
+                'status' => $payout->status
+            ]);
+            
+            return $payout;
+        } catch (\InvalidArgumentException $e) {
+            Logger::error("Erro de validação ao criar payout", [
+                'error' => $e->getMessage(),
+                'data' => $data
+            ]);
+            throw $e;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao criar payout", [
+                'error' => $e->getMessage(),
+                'data' => $data
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Cancela um Payout pendente
+     * 
+     * @param string $payoutId ID do payout no Stripe
+     * @return \Stripe\Payout
+     */
+    public function cancelPayout(string $payoutId): \Stripe\Payout
+    {
+        try {
+            $payout = $this->client->payouts->cancel($payoutId);
+            
+            Logger::info("Payout cancelado", [
+                'payout_id' => $payoutId,
+                'status' => $payout->status
+            ]);
+            
+            return $payout;
+        } catch (ApiErrorException $e) {
+            Logger::error("Erro ao cancelar payout", [
                 'payout_id' => $payoutId,
                 'error' => $e->getMessage()
             ]);
@@ -3206,6 +3460,26 @@ $refundParams['amount'] = (int)$options['amount'];
             }
         } catch (\Exception $e) {
             Logger::warning("Erro ao invalidar cache de cupons", ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Invalida cache de listas de customers
+     * Chamado quando customers são criados, atualizados ou deletados
+     */
+    private function invalidateCustomersListCache(): void
+    {
+        try {
+            $redis = \App\Services\CacheService::getRedisClient();
+            if ($redis) {
+                $keys = $redis->keys('stripe:customers:*');
+                foreach ($keys as $key) {
+                    \App\Services\CacheService::delete($key);
+                }
+                Logger::debug("Cache de listas de customers invalidado", ['keys_count' => count($keys)]);
+            }
+        } catch (\Exception $e) {
+            Logger::warning("Erro ao invalidar cache de customers", ['error' => $e->getMessage()]);
         }
     }
 }

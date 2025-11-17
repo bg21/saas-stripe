@@ -18,11 +18,44 @@ class Customer extends BaseModel
     }
 
     /**
-     * Busca clientes por tenant
+     * Busca clientes por tenant com paginação
      */
-    public function findByTenant(int $tenantId): array
+    public function findByTenant(int $tenantId, int $page = 1, int $limit = 20, array $filters = []): array
     {
-        return $this->findAll(['tenant_id' => $tenantId]);
+        $offset = ($page - 1) * $limit;
+        $conditions = ['tenant_id' => $tenantId];
+        
+        // Adiciona filtros
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $conditions['OR'] = [
+                'email LIKE' => "%{$search}%",
+                'name LIKE' => "%{$search}%"
+            ];
+        }
+        
+        if (isset($filters['status'])) {
+            // Se houver campo status no banco
+            $conditions['status'] = $filters['status'];
+        }
+        
+        $orderBy = [];
+        if (!empty($filters['sort'])) {
+            $orderBy[$filters['sort']] = 'DESC';
+        } else {
+            $orderBy['created_at'] = 'DESC';
+        }
+        
+        $customers = $this->findAll($conditions, $orderBy, $limit, $offset);
+        $total = $this->count($conditions);
+        
+        return [
+            'data' => $customers,
+            'total' => $total,
+            'page' => $page,
+            'limit' => $limit,
+            'total_pages' => ceil($total / $limit)
+        ];
     }
 
     /**
