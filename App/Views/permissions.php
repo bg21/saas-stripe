@@ -80,6 +80,7 @@
 let permissions = [];
 let users = [];
 let currentUserId = null;
+let currentUserPermissions = []; // ✅ CORREÇÃO: Armazena permissões do usuário atual
 
 document.addEventListener('DOMContentLoaded', () => {
     // Carrega dados após um pequeno delay para não bloquear a renderização
@@ -96,14 +97,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const permission = formData.get('permission');
         
         try {
-            await apiRequest(`/v1/users/${userId}/permissions`, {
+            const response = await apiRequest(`/v1/users/${userId}/permissions`, {
                 method: 'POST',
                 body: JSON.stringify({ permission })
             });
             
+            // ✅ CORREÇÃO: Verifica se é um aviso (usuário admin)
+            if (response.warning || !response.success) {
+                showAlert(response.message || 'Usuários admin já possuem todas as permissões automaticamente.', 'warning');
+                bootstrap.Modal.getInstance(document.getElementById('addPermissionModal')).hide();
+                return;
+            }
+            
+            // ✅ CORREÇÃO: Limpa cache de permissões deste usuário
+            cache.clear(`/v1/users/${userId}/permissions`);
+            
             showAlert('Permissão adicionada com sucesso!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('addPermissionModal')).hide();
-            loadUserPermissions();
+            
+            // ✅ CORREÇÃO: Recarrega permissões sem cache para mostrar atualização imediata
+            await loadUserPermissions(true);
         } catch (error) {
             showAlert(error.message, 'danger');
         }
@@ -113,7 +126,9 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadPermissions() {
     try {
         const response = await apiRequest('/v1/permissions');
-        permissions = response.data || [];
+        // ✅ CORREÇÃO: A API retorna um objeto, precisa converter para array
+        const permissionsObj = response.data || {};
+        permissions = Object.values(permissionsObj).map(p => p.name || p);
         
         renderPermissions();
     } catch (error) {
@@ -126,17 +141,21 @@ function renderPermissions() {
     document.getElementById('loadingPermissions').style.display = 'none';
     list.style.display = 'block';
     
-    if (permissions.length === 0) {
+    // ✅ CORREÇÃO: Garante que permissions seja um array
+    if (!Array.isArray(permissions) || permissions.length === 0) {
         list.innerHTML = '<li class="list-group-item text-muted">Nenhuma permissão disponível</li>';
         return;
     }
     
-    list.innerHTML = permissions.map(perm => `
+    list.innerHTML = permissions.map(perm => {
+        const permName = typeof perm === 'string' ? perm : (perm.name || perm);
+        return `
         <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span><code>${perm}</code></span>
+            <span><code>${permName}</code></span>
             <small class="text-muted">Permissão do sistema</small>
         </li>
-    `).join('');
+        `;
+    }).join('');
 }
 
 async function loadUsers() {
@@ -152,21 +171,37 @@ async function loadUsers() {
     }
 }
 
-async function loadUserPermissions() {
+async function loadUserPermissions(skipCache = false) {
     const userId = document.getElementById('userSelect').value;
     currentUserId = userId;
     const container = document.getElementById('userPermissionsContainer');
     
     if (!userId) {
         container.innerHTML = '<p class="text-muted text-center">Selecione um usuário para ver suas permissões</p>';
+        currentUserPermissions = []; // ✅ CORREÇÃO: Limpa permissões quando nenhum usuário está selecionado
         return;
     }
     
     try {
         container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>';
         
-        const response = await apiRequest(`/v1/users/${userId}/permissions`);
-        const userPermissions = response.data || [];
+        // ✅ CORREÇÃO: Permite pular cache ao recarregar após adicionar permissão
+        const response = await apiRequest(`/v1/users/${userId}/permissions`, {
+            skipCache: skipCache
+        });
+        
+        // ✅ CORREÇÃO: Simplifica tratamento de resposta - sempre usa response.data.permissions
+        const permissionsData = response.data?.permissions || [];
+        
+        // ✅ CORREÇÃO: Filtra apenas permissões concedidas e extrai os nomes
+        const userPermissions = Array.isArray(permissionsData) 
+            ? permissionsData
+                .filter(p => p.granted === true || p.granted === 1 || p.granted === '1')
+                .map(p => p.permission || p.name || p)
+            : [];
+        
+        // ✅ CORREÇÃO: Armazena permissões do usuário atual para uso no modal
+        currentUserPermissions = userPermissions;
         
         container.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -178,43 +213,79 @@ async function loadUserPermissions() {
             <div id="userPermissionsList">
                 ${userPermissions.length === 0 ? 
                     '<p class="text-muted">Nenhuma permissão atribuída</p>' :
-                    userPermissions.map(perm => `
+                    userPermissions.map(perm => {
+                        const permName = typeof perm === 'string' ? perm : (perm.permission || perm.name || perm);
+                        return `
                         <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
-                            <code>${perm}</code>
-                            <button class="btn btn-sm btn-outline-danger" onclick="removePermission(${userId}, '${perm}')">
+                            <code>${permName}</code>
+                            <button class="btn btn-sm btn-outline-danger" onclick="removePermission(${userId}, '${permName}')">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
-                    `).join('')
+                        `;
+                    }).join('')
                 }
             </div>
         `;
     } catch (error) {
-        container.innerHTML = `<div class="alert alert-danger">Erro ao carregar permissões: ${error.message}</div>`;
+        // ✅ CORREÇÃO: Tratamento de erro completo - atualiza UI com mensagem de erro
+        console.error('Erro ao carregar permissões:', error);
+        container.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> 
+                <strong>Erro ao carregar permissões:</strong> ${error.message || 'Erro desconhecido'}
+            </div>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadUserPermissions(true)">
+                <i class="bi bi-arrow-clockwise"></i> Tentar novamente
+            </button>
+        `;
     }
 }
 
 function openAddPermissionModal(userId) {
+    // ✅ CORREÇÃO: Filtra permissões já concedidas do select
+    // Usa a variável global currentUserPermissions que é atualizada ao carregar permissões
+    const availablePermissions = permissions.filter(p => {
+        const permName = typeof p === 'string' ? p : (p.name || p);
+        return !currentUserPermissions.includes(permName);
+    });
+    
     const select = document.getElementById('addPermissionSelect');
-    select.innerHTML = '<option value="">Selecione...</option>' +
-        permissions.map(p => `<option value="${p}">${p}</option>`).join('');
+    
+    if (availablePermissions.length === 0) {
+        select.innerHTML = '<option value="">Nenhuma permissão disponível para adicionar</option>';
+        select.disabled = true;
+    } else {
+        select.disabled = false;
+        select.innerHTML = '<option value="">Selecione...</option>' +
+            availablePermissions.map(p => {
+                const permName = typeof p === 'string' ? p : (p.name || p);
+                return `<option value="${permName}">${permName}</option>`;
+            }).join('');
+    }
     
     document.getElementById('addPermissionUserId').value = userId;
     new bootstrap.Modal(document.getElementById('addPermissionModal')).show();
 }
 
 async function removePermission(userId, permission) {
-    if (!confirm(`Tem certeza que deseja remover a permissão "${permission}"?`)) {
-        return;
-    }
+    const confirmed = await showConfirmModal(
+        `Tem certeza que deseja remover a permissão "${permission}"?`,
+        'Confirmar Exclusão',
+        'Remover Permissão'
+    );
+    if (!confirmed) return;
     
     try {
         await apiRequest(`/v1/users/${userId}/permissions/${permission}`, {
             method: 'DELETE'
         });
         
+        // ✅ CORREÇÃO: Limpa cache de permissões deste usuário
+        cache.clear(`/v1/users/${userId}/permissions`);
+        
         showAlert('Permissão removida com sucesso!', 'success');
-        loadUserPermissions();
+        await loadUserPermissions(true);
     } catch (error) {
         showAlert(error.message, 'danger');
     }

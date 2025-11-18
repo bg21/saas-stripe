@@ -97,13 +97,17 @@
             <form id="createPriceForm">
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Produto (Product ID) *</label>
-                        <input type="text" class="form-control" name="product" placeholder="prod_xxxxx" required>
+                        <label class="form-label">Produto *</label>
+                        <select class="form-select" name="product" id="productSelect" required>
+                            <option value="">Carregando produtos...</option>
+                        </select>
+                        <div class="invalid-feedback" id="productError"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Valor (em centavos) *</label>
-                        <input type="number" class="form-control" name="unit_amount" min="1" required>
-                        <small class="text-muted">Ex: 2999 = R$ 29,99</small>
+                        <input type="number" class="form-control" name="unit_amount" id="unitAmountInput" min="1" max="99999999" required>
+                        <div class="invalid-feedback" id="unitAmountError"></div>
+                        <small class="text-muted">Ex: 2999 = R$ 29,99 (mínimo: 1, máximo: 99.999.999)</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Moeda *</label>
@@ -122,12 +126,14 @@
                     </div>
                     <div class="mb-3" id="recurringOptions" style="display: none;">
                         <label class="form-label">Intervalo *</label>
-                        <select class="form-select" name="interval">
+                        <select class="form-select" name="interval" id="intervalSelect" required>
+                            <option value="">Selecione um intervalo</option>
                             <option value="day">Diário</option>
                             <option value="week">Semanal</option>
-                            <option value="month" selected>Mensal</option>
+                            <option value="month">Mensal</option>
                             <option value="year">Anual</option>
                         </select>
+                        <div class="invalid-feedback">Intervalo é obrigatório para preços recorrentes</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -151,21 +157,78 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 100);
     
     // Toggle campos recorrentes
-    document.getElementById('priceType').addEventListener('change', (e) => {
-        document.getElementById('recurringOptions').style.display = e.target.value === 'recurring' ? 'block' : 'none';
+    const priceTypeSelect = document.getElementById('priceType');
+    const recurringOptions = document.getElementById('recurringOptions');
+    const intervalSelect = document.getElementById('intervalSelect');
+    
+    priceTypeSelect.addEventListener('change', (e) => {
+        const isRecurring = e.target.value === 'recurring';
+        recurringOptions.style.display = isRecurring ? 'block' : 'none';
+        
+        // Torna interval obrigatório quando recurring é selecionado
+        if (isRecurring) {
+            intervalSelect.setAttribute('required', 'required');
+            intervalSelect.setAttribute('aria-required', 'true');
+            // Garante que há um valor selecionado (padrão: month)
+            if (!intervalSelect.value) {
+                intervalSelect.value = 'month';
+            }
+        } else {
+            intervalSelect.removeAttribute('required');
+            intervalSelect.removeAttribute('aria-required');
+            intervalSelect.value = '';
+        }
     });
+    
+    // Validação de unit_amount
+    const unitAmountInput = document.getElementById('unitAmountInput');
+    if (unitAmountInput) {
+        unitAmountInput.addEventListener('input', () => {
+            const value = parseInt(unitAmountInput.value);
+            if (value < 1) {
+                unitAmountInput.classList.add('is-invalid');
+                document.getElementById('unitAmountError').textContent = 'Valor mínimo é 1 centavo';
+            } else if (value > 99999999) {
+                unitAmountInput.classList.add('is-invalid');
+                document.getElementById('unitAmountError').textContent = 'Valor máximo é 99.999.999 centavos';
+            } else {
+                unitAmountInput.classList.remove('is-invalid');
+                document.getElementById('unitAmountError').textContent = '';
+            }
+        });
+    }
     
     // Form criar preço
     document.getElementById('createPriceForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
+        
+        // Valida unit_amount
+        const unitAmount = parseInt(formData.get('unit_amount'));
+        if (unitAmount < 1 || unitAmount > 99999999) {
+            showAlert('Valor deve estar entre 1 e 99.999.999 centavos', 'danger');
+            return;
+        }
+        
+        // Valida interval se recurring
+        const priceType = formData.get('price_type');
+        if (priceType === 'recurring') {
+            const interval = formData.get('interval');
+            if (!interval || interval.trim() === '') {
+                showAlert('Intervalo é obrigatório para preços recorrentes', 'danger');
+                intervalSelect.classList.add('is-invalid');
+                intervalSelect.focus();
+                return;
+            }
+            intervalSelect.classList.remove('is-invalid');
+        }
+        
         const data = {
             product: formData.get('product'),
-            unit_amount: parseInt(formData.get('unit_amount')),
+            unit_amount: unitAmount,
             currency: formData.get('currency')
         };
         
-        const priceType = formData.get('price_type');
         if (priceType === 'recurring') {
             data.recurring = {
                 interval: formData.get('interval')
@@ -178,10 +241,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(data)
             });
             
+            // Limpa cache após criar preço
+            if (typeof cache !== 'undefined' && cache.clear) {
+                cache.clear('/v1/prices');
+            }
+            
             showAlert('Preço criado com sucesso!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createPriceModal')).hide();
             e.target.reset();
-            document.getElementById('recurringOptions').style.display = 'none';
+            recurringOptions.style.display = 'none';
+            intervalSelect.removeAttribute('required');
+            unitAmountInput.classList.remove('is-invalid');
             loadPrices();
         } catch (error) {
             showAlert(error.message, 'danger');
@@ -190,11 +260,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadProducts() {
+    const select = document.getElementById('productSelect');
+    
     try {
         const response = await apiRequest('/v1/products');
         products = response.data || [];
+        
+        select.innerHTML = '<option value="">Selecione um produto</option>' +
+            products.map(p => {
+                const name = escapeHtml(p.name || p.id);
+                return `<option value="${p.id}">${name} (${p.id})</option>`;
+            }).join('');
     } catch (error) {
         console.error('Erro ao carregar produtos:', error);
+        select.innerHTML = '<option value="">Erro ao carregar produtos</option>';
+        select.classList.add('is-invalid');
+        document.getElementById('productError').textContent = 'Erro ao carregar lista de produtos';
     }
 }
 

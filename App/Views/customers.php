@@ -93,7 +93,11 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Email *</label>
-                        <input type="email" class="form-control" name="email" required>
+                        <input type="email" class="form-control" name="email" id="customerEmail" required>
+                        <div class="invalid-feedback" id="emailError"></div>
+                        <div class="valid-feedback" id="emailSuccess" style="display: none;">
+                            Email disponível
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Nome</label>
@@ -134,6 +138,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500));
     }
     
+    // Validação assíncrona de email duplicado
+    const emailInput = document.getElementById('customerEmail');
+    let emailCheckTimeout = null;
+    
+    if (emailInput) {
+        emailInput.addEventListener('blur', async () => {
+            const email = emailInput.value.trim();
+            if (!email || !emailInput.validity.valid) return;
+            
+            clearTimeout(emailCheckTimeout);
+            emailCheckTimeout = setTimeout(async () => {
+                try {
+                    const response = await apiRequest('/v1/customers?search=' + encodeURIComponent(email));
+                    const existingCustomers = response.data || [];
+                    const emailExists = existingCustomers.some(c => c.email.toLowerCase() === email.toLowerCase());
+                    
+                    if (emailExists) {
+                        emailInput.classList.add('is-invalid');
+                        emailInput.classList.remove('is-valid');
+                        document.getElementById('emailError').textContent = 'Este email já está cadastrado';
+                        document.getElementById('emailSuccess').style.display = 'none';
+                    } else {
+                        emailInput.classList.remove('is-invalid');
+                        emailInput.classList.add('is-valid');
+                        document.getElementById('emailError').textContent = '';
+                        document.getElementById('emailSuccess').style.display = 'block';
+                    }
+                } catch (error) {
+                    // Ignora erros na validação (não bloqueia o formulário)
+                    console.error('Erro ao validar email:', error);
+                }
+            }, 500);
+        });
+        
+        emailInput.addEventListener('input', () => {
+            emailInput.classList.remove('is-invalid', 'is-valid');
+            document.getElementById('emailError').textContent = '';
+            document.getElementById('emailSuccess').style.display = 'none';
+        });
+    }
+    
     // Form criar cliente
     document.getElementById('createCustomerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -146,9 +191,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(data)
             });
             
+            // Limpa cache após criar cliente
+            if (typeof cache !== 'undefined' && cache.clear) {
+                cache.clear('/v1/customers');
+            }
+            
             showAlert('Cliente criado com sucesso!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createCustomerModal')).hide();
             e.target.reset();
+            emailInput.classList.remove('is-invalid', 'is-valid');
+            document.getElementById('emailError').textContent = '';
+            document.getElementById('emailSuccess').style.display = 'none';
             loadCustomers();
         } catch (error) {
             showAlert(error.message, 'danger');

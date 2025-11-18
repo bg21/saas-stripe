@@ -1,5 +1,10 @@
 # 🔄 Fluxo de Checkout em Produção
 
+**Status:** ✅ Implementado  
+**Modo:** Stripe Checkout (Hosted)
+
+---
+
 ## 📋 Visão Geral
 
 Em produção, o fluxo de pagamento funciona da seguinte forma:
@@ -17,12 +22,14 @@ Em produção, o fluxo de pagamento funciona da seguinte forma:
 ## 🔐 Segurança: Dados do Cartão
 
 ### ✅ O que acontece:
+
 - Cliente insere dados do cartão **diretamente no Stripe**
 - Dados do cartão **NUNCA passam pelo seu servidor**
 - Seu servidor **NUNCA vê** número do cartão, CVV, etc.
 - Stripe retorna apenas um **Payment Method ID** (token seguro)
 
 ### 🛡️ Benefícios:
+
 - **PCI Compliance**: Você não precisa ser PCI compliant
 - **Segurança**: Dados sensíveis ficam apenas no Stripe
 - **Conformidade**: Stripe cuida de todas as regulamentações
@@ -113,7 +120,7 @@ return ['url' => $session->url];
     "object": {
       "id": "cs_test_xxx",
       "customer": "cus_xxx",
-      "payment_method": "pm_xxx", // Payment Method ID (token seguro)
+      "payment_method": "pm_xxx",
       "subscription": "sub_xxx",
       "mode": "subscription"
     }
@@ -169,6 +176,7 @@ private function handleCheckoutCompleted(\Stripe\Event $event): void
 ## 🎯 Resumo
 
 ### ✅ Em Produção:
+
 - Cliente insere cartão **no Stripe** (não no seu site)
 - Dados do cartão **nunca passam pelo seu servidor**
 - Stripe retorna apenas **Payment Method ID** (token seguro)
@@ -176,6 +184,7 @@ private function handleCheckoutCompleted(\Stripe\Event $event): void
 - Próximas cobranças usam o cartão salvo automaticamente
 
 ### ❌ NÃO em Produção:
+
 - Cliente **não** insere cartão no seu site
 - Seu servidor **não** recebe dados do cartão
 - Você **não** precisa ser PCI compliant
@@ -232,3 +241,6 @@ Isso garante que o Stripe salve o cartão para futuras cobranças.
 
 O método `handleCheckoutCompleted()` já faz tudo automaticamente quando o webhook chega.
 
+---
+
+**Última Atualização:** 2025-01-XX

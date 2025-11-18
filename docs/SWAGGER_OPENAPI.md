@@ -1,28 +1,39 @@
 # 📚 Documentação Swagger/OpenAPI
 
+**Versão:** 1.0.3  
+**Status:** ✅ Implementado
+
+---
+
 ## 🎯 Visão Geral
 
 O sistema possui documentação interativa da API usando **Swagger/OpenAPI 3.0**. A documentação é gerada automaticamente a partir de anotações nos controllers.
 
+---
+
 ## 🔗 Acessar Documentação
 
 ### Interface Swagger UI
+
 ```
 GET /api-docs/ui
 ```
 
-Acesse no navegador: `http://localhost:8080/api-docs/ui`
+**Acesse no navegador:** `http://localhost:8080/api-docs/ui`
 
 ### Especificação OpenAPI (JSON)
+
 ```
 GET /api-docs
 ```
 
 Retorna a especificação OpenAPI 3.0 em formato JSON.
 
+---
+
 ## 📝 Como Adicionar Anotações
 
-### Exemplo Básico
+### Exemplo Básico - POST
 
 ```php
 <?php
@@ -49,9 +60,22 @@ class CustomerController
                 schema: new OA\Schema(
                     required: ["email"],
                     properties: [
-                        "email" => new OA\Property(property: "email", type: "string", format: "email", example: "cliente@example.com"),
-                        "name" => new OA\Property(property: "name", type: "string", example: "João Silva"),
-                        "phone" => new OA\Property(property: "phone", type: "string", example: "+5511999999999")
+                        "email" => new OA\Property(
+                            property: "email", 
+                            type: "string", 
+                            format: "email", 
+                            example: "cliente@example.com"
+                        ),
+                        "name" => new OA\Property(
+                            property: "name", 
+                            type: "string", 
+                            example: "João Silva"
+                        ),
+                        "phone" => new OA\Property(
+                            property: "phone", 
+                            type: "string", 
+                            example: "+5511999999999"
+                        )
                     ]
                 )
             )
@@ -64,14 +88,30 @@ class CustomerController
                     mediaType: "application/json",
                     schema: new OA\Schema(
                         properties: [
-                            "success" => new OA\Property(property: "success", type: "boolean", example: true),
+                            "success" => new OA\Property(
+                                property: "success", 
+                                type: "boolean", 
+                                example: true
+                            ),
                             "data" => new OA\Property(
                                 property: "data",
                                 type: "object",
                                 properties: [
-                                    "id" => new OA\Property(property: "id", type: "integer", example: 1),
-                                    "stripe_id" => new OA\Property(property: "stripe_id", type: "string", example: "cus_xxx"),
-                                    "email" => new OA\Property(property: "email", type: "string", example: "cliente@example.com")
+                                    "id" => new OA\Property(
+                                        property: "id", 
+                                        type: "integer", 
+                                        example: 1
+                                    ),
+                                    "stripe_id" => new OA\Property(
+                                        property: "stripe_id", 
+                                        type: "string", 
+                                        example: "cus_xxx"
+                                    ),
+                                    "email" => new OA\Property(
+                                        property: "email", 
+                                        type: "string", 
+                                        example: "cliente@example.com"
+                                    )
                                 ]
                             )
                         ]
@@ -84,7 +124,7 @@ class CustomerController
     )]
     public function create(): void
     {
-        // ...
+        // Implementação...
     }
 }
 ```
@@ -120,7 +160,7 @@ class CustomerController
 )]
 public function get(string $id): void
 {
-    // ...
+    // Implementação...
 }
 ```
 
@@ -143,13 +183,30 @@ use OpenApi\Attributes as OA;
     properties: [
         new OA\Property(property: "id", type: "integer", example: 1),
         new OA\Property(property: "stripe_id", type: "string", example: "cus_xxx"),
-        new OA\Property(property: "email", type: "string", format: "email", example: "cliente@example.com"),
-        new OA\Property(property: "name", type: "string", nullable: true, example: "João Silva"),
-        new OA\Property(property: "created_at", type: "string", format: "date-time", example: "2025-01-16T10:00:00Z")
+        new OA\Property(
+            property: "email", 
+            type: "string", 
+            format: "email", 
+            example: "cliente@example.com"
+        ),
+        new OA\Property(
+            property: "name", 
+            type: "string", 
+            nullable: true, 
+            example: "João Silva"
+        ),
+        new OA\Property(
+            property: "created_at", 
+            type: "string", 
+            format: "date-time", 
+            example: "2025-01-16T10:00:00Z"
+        )
     ]
 )]
 class CustomerSchema {}
 ```
+
+---
 
 ## 🔧 Configuração
 
@@ -169,17 +226,25 @@ Para gerar um arquivo JSON estático:
 vendor/bin/openapi App/Controllers -o public/openapi.json
 ```
 
+---
+
 ## 📚 Recursos
 
-- [Documentação Swagger PHP](https://zircote.github.io/swagger-php/)
-- [OpenAPI Specification](https://swagger.io/specification/)
-- [Swagger UI](https://swagger.io/tools/swagger-ui/)
+| Recurso | Link |
+|---------|------|
+| **Documentação Swagger PHP** | https://zircote.github.io/swagger-php/ |
+| **OpenAPI Specification** | https://swagger.io/specification/ |
+| **Swagger UI** | https://swagger.io/tools/swagger-ui/ |
+
+---
 
 ## 🎨 Personalização
 
 Para personalizar a interface Swagger UI, edite o método `getUI()` em `App/Controllers/SwaggerController.php`.
 
-## ✅ Status
+---
+
+## ✅ Status de Implementação
 
 - ✅ Biblioteca instalada (`zircote/swagger-php`)
 - ✅ Controller criado (`SwaggerController`)
@@ -188,5 +253,21 @@ Para personalizar a interface Swagger UI, edite o método `getUI()` em `App/Cont
 
 ---
 
-**Última Atualização:** 2025-01-16
+## 📋 Checklist de Anotações
 
+### Controllers Principais
+
+- [ ] `CustomerController` - CRUD de clientes
+- [ ] `SubscriptionController` - CRUD de assinaturas
+- [ ] `CheckoutController` - Criação de checkout
+- [ ] `PaymentController` - Pagamentos e reembolsos
+- [ ] `WebhookController` - Processamento de webhooks
+- [ ] `AuthController` - Autenticação de usuários
+- [ ] `UserController` - Gerenciamento de usuários
+- [ ] `ProductController` - CRUD de produtos
+- [ ] `PriceController` - CRUD de preços
+- [ ] `InvoiceController` - Gerenciamento de faturas
+
+---
+
+**Última Atualização:** 2025-01-XX

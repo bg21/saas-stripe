@@ -24,6 +24,19 @@ class User extends BaseModel
     }
 
     /**
+     * ✅ CORREÇÃO: Verifica se email já existe no tenant
+     * 
+     * @param string $email Email a verificar
+     * @param int $tenantId ID do tenant
+     * @return bool True se email existe, false caso contrário
+     */
+    public function emailExists(string $email, int $tenantId): bool
+    {
+        $user = $this->findByEmailAndTenant($email, $tenantId);
+        return $user !== null;
+    }
+
+    /**
      * Cria hash de senha usando bcrypt
      */
     public function hashPassword(string $password): string

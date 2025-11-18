@@ -180,7 +180,12 @@ function viewItem(id) {
 }
 
 async function deleteItem(id) {
-    if (!confirm('Tem certeza que deseja remover este item?')) return;
+    const confirmed = await showConfirmModal(
+        'Tem certeza que deseja remover este item?',
+        'Confirmar Exclusão',
+        'Remover Item'
+    );
+    if (!confirmed) return;
     
     try {
         await apiRequest(`/v1/invoice-items/${id}`, { method: 'DELETE' });

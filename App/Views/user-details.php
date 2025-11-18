@@ -55,10 +55,10 @@
                                 name="name"
                                 required 
                                 minlength="2"
+                                maxlength="255"
                             >
-                            <div class="invalid-feedback">
-                                Por favor, insira um nome válido.
-                            </div>
+                            <div class="invalid-feedback"></div>
+                            <small class="form-text text-muted">Mínimo 2 caracteres, máximo 255 caracteres</small>
                         </div>
 
                         <div class="mb-3">
@@ -71,10 +71,10 @@
                                 id="editUserEmail" 
                                 name="email"
                                 required 
+                                maxlength="255"
                             >
-                            <div class="invalid-feedback">
-                                Por favor, insira um email válido.
-                            </div>
+                            <div class="invalid-feedback"></div>
+                            <small class="form-text text-muted">Máximo 255 caracteres</small>
                         </div>
 
                         <div class="mb-3">
@@ -157,12 +157,21 @@ async function loadUserDetails() {
     try {
         const [user, permissions] = await Promise.all([
             apiRequest(`/v1/users/${userId}`),
-            apiRequest(`/v1/users/${userId}/permissions`).catch(() => ({ data: [] }))
+            apiRequest(`/v1/users/${userId}/permissions`).catch(() => ({ data: { permissions: [] } }))
         ]);
 
         userData = user.data;
         renderUserInfo(userData);
-        renderPermissions(permissions.data || []);
+        
+        // ✅ CORREÇÃO: A API retorna data.permissions (array dentro de objeto)
+        // Garante que sempre seja um array
+        const permissionsList = Array.isArray(permissions.data?.permissions) 
+            ? permissions.data.permissions.map(p => p.permission || p)
+            : Array.isArray(permissions.data) 
+                ? permissions.data 
+                : [];
+        
+        renderPermissions(permissionsList);
 
         document.getElementById('loadingUser').style.display = 'none';
         document.getElementById('userDetails').style.display = 'block';
@@ -190,15 +199,24 @@ function renderUserInfo(user) {
 
 function renderPermissions(permissions) {
     const container = document.getElementById('permissionsList');
+    
+    // ✅ CORREÇÃO: Garante que permissions seja sempre um array
+    if (!Array.isArray(permissions)) {
+        permissions = [];
+    }
+    
     if (permissions.length === 0) {
         container.innerHTML = '<p class="text-muted">Nenhuma permissão específica atribuída</p>';
         return;
     }
+    
+    // ✅ CORREÇÃO: Suporta tanto string quanto objeto com propriedade 'permission'
     container.innerHTML = `
         <div class="d-flex flex-wrap gap-2">
-            ${permissions.map(perm => `
-                <span class="badge bg-primary">${perm}</span>
-            `).join('')}
+            ${permissions.map(perm => {
+                const permName = typeof perm === 'string' ? perm : (perm.permission || perm);
+                return `<span class="badge bg-primary">${permName}</span>`;
+            }).join('')}
         </div>
     `;
 }
@@ -229,9 +247,43 @@ function loadUserForEdit() {
     document.getElementById('editUserRole').value = userData.role || '';
 }
 
+// ✅ MELHORIA: Carrega script de validações
+const validationScript = document.createElement('script');
+validationScript.src = '/app/validations.js';
+document.head.appendChild(validationScript);
+
+// ✅ MELHORIA: Aplica validações em tempo real nos campos de edição
+validationScript.onload = function() {
+    const nameField = document.getElementById('editUserName');
+    const emailField = document.getElementById('editUserEmail');
+    
+    if (nameField) {
+        applyFieldValidation(nameField, (value) => validateName(value, true));
+    }
+    if (emailField) {
+        applyFieldValidation(emailField, validateEmail);
+    }
+};
+
 // Submissão do formulário de edição
 document.getElementById('editUserForm').addEventListener('submit', function(e) {
     e.preventDefault();
+    
+    // ✅ MELHORIA: Validação frontend antes de enviar
+    const validators = {
+        name: (value) => validateName(value, true),
+        email: validateEmail
+    };
+    
+    const validation = validateForm(e.target, validators);
+    if (!validation.valid) {
+        // Mostra primeiro erro encontrado
+        const firstError = Object.values(validation.errors)[0];
+        const errorDiv = document.getElementById('editUserError');
+        errorDiv.textContent = firstError;
+        errorDiv.classList.remove('d-none');
+        return;
+    }
     
     if (!this.checkValidity()) {
         this.classList.add('was-validated');
@@ -287,9 +339,13 @@ async function updateUserRole() {
         return;
     }
     
-    if (!confirm(`Tem certeza que deseja alterar o role deste usuário para "${role}"?`)) {
-        return;
-    }
+    const confirmed = await showConfirmModal(
+        `Tem certeza que deseja alterar o role deste usuário para "${role}"?`,
+        'Confirmar Alteração de Role',
+        'Alterar Role',
+        'btn-primary'
+    );
+    if (!confirmed) return;
     
     try {
         const data = await apiRequest(`/v1/users/${userId}/role`, {

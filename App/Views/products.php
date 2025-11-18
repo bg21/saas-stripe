@@ -76,7 +76,9 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Imagens (URLs, uma por linha)</label>
-                        <textarea class="form-control" name="images" rows="3" placeholder="https://exemplo.com/imagem1.jpg"></textarea>
+                        <textarea class="form-control" name="images" id="productImages" rows="3" placeholder="https://exemplo.com/imagem1.jpg"></textarea>
+                        <div class="invalid-feedback" id="imagesError"></div>
+                        <small class="text-muted">Digite uma URL por linha. URLs devem começar com http:// ou https://</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -108,6 +110,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500));
     }
     
+    // Validação de URLs de imagens
+    const imagesInput = document.getElementById('productImages');
+    if (imagesInput) {
+        imagesInput.addEventListener('blur', () => {
+            const imagesText = imagesInput.value.trim();
+            if (!imagesText) {
+                imagesInput.classList.remove('is-invalid');
+                document.getElementById('imagesError').textContent = '';
+                return;
+            }
+            
+            const urls = imagesText.split('\n').filter(url => url.trim());
+            const urlPattern = /^https?:\/\/.+/;
+            const invalidUrls = urls.filter(url => !urlPattern.test(url.trim()));
+            
+            if (invalidUrls.length > 0) {
+                imagesInput.classList.add('is-invalid');
+                document.getElementById('imagesError').textContent = `${invalidUrls.length} URL(s) inválida(s). URLs devem começar com http:// ou https://`;
+            } else {
+                imagesInput.classList.remove('is-invalid');
+                document.getElementById('imagesError').textContent = '';
+            }
+        });
+    }
+    
     // Form criar produto
     document.getElementById('createProductForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -116,7 +143,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Processa imagens
         if (data.images) {
-            data.images = data.images.split('\n').filter(url => url.trim());
+            const urls = data.images.split('\n').filter(url => url.trim());
+            const urlPattern = /^https?:\/\/.+/;
+            const invalidUrls = urls.filter(url => !urlPattern.test(url));
+            
+            if (invalidUrls.length > 0) {
+                showAlert(`URL(s) de imagem inválida(s). URLs devem começar com http:// ou https://`, 'danger');
+                return;
+            }
+            
+            data.images = urls;
         }
         
         // Processa active
@@ -128,9 +164,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(data)
             });
             
+            // Limpa cache após criar produto
+            if (typeof cache !== 'undefined' && cache.clear) {
+                cache.clear('/v1/products');
+            }
+            
             showAlert('Produto criado com sucesso!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createProductModal')).hide();
             e.target.reset();
+            imagesInput.classList.remove('is-invalid');
+            document.getElementById('imagesError').textContent = '';
             loadProducts();
         } catch (error) {
             showAlert(error.message, 'danger');
@@ -140,8 +183,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadProducts() {
+    const loadingEl = document.getElementById('loadingProducts');
+    const gridEl = document.getElementById('productsGrid');
+    
     try {
-        document.getElementById('loadingProducts').style.display = 'block';
+        loadingEl.style.display = 'block';
         
         const params = new URLSearchParams();
         params.append('page', currentPage);
@@ -166,9 +212,20 @@ async function loadProducts() {
         
         renderProducts();
     } catch (error) {
-        showAlert('Erro ao carregar produtos: ' + error.message, 'danger');
+        loadingEl.style.display = 'none';
+        gridEl.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Erro ao carregar produtos:</strong> ${escapeHtml(error.message)}
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="loadProducts()">
+                        <i class="bi bi-arrow-clockwise"></i> Tentar novamente
+                    </button>
+                </div>
+            </div>
+        `;
     } finally {
-        document.getElementById('loadingProducts').style.display = 'none';
+        loadingEl.style.display = 'none';
     }
 }
 
@@ -202,10 +259,13 @@ function renderProducts() {
                         <span class="badge bg-${product.active ? 'success' : 'secondary'}">
                             ${product.active ? 'Ativo' : 'Inativo'}
                         </span>
-                        <div>
+                        <div class="btn-group">
                             <a href="/product-details?id=${product.id}" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-eye"></i> Ver Detalhes
                             </a>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteProduct('${product.id}')">
+                                <i class="bi bi-trash"></i> Excluir
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -219,14 +279,22 @@ function renderProducts() {
 
 
 async function deleteProduct(productId) {
-    if (!confirm('Tem certeza que deseja remover este produto?')) {
-        return;
-    }
+    const confirmed = await showConfirmModal(
+        'Tem certeza que deseja remover este produto? Esta ação não pode ser desfeita.',
+        'Confirmar Exclusão',
+        'Remover Produto'
+    );
+    if (!confirmed) return;
     
     try {
         await apiRequest(`/v1/products/${productId}`, {
             method: 'DELETE'
         });
+        
+        // Limpa cache após deletar produto
+        if (typeof cache !== 'undefined' && cache.clear) {
+            cache.clear('/v1/products');
+        }
         
         showAlert('Produto removido com sucesso!', 'success');
         loadProducts();

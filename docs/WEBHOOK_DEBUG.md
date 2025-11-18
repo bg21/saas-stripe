@@ -1,10 +1,10 @@
-# Debug: Subscription não está sendo salva no banco
+# 🐛 Debug de Webhooks - Subscription não está sendo salva
 
-## Problema
+**Problema:** O checkout funciona e a subscription é criada no Stripe, mas não é salva no banco de dados local.
 
-O checkout funciona e a subscription é criada no Stripe, mas não é salva no banco de dados local.
+---
 
-## Causas Possíveis
+## 🔍 Causas Possíveis
 
 ### 1. Webhook não está configurado no Stripe
 
@@ -18,7 +18,9 @@ Mesmo configurado, o webhook pode não estar chegando ao servidor.
 
 O webhook pode estar chegando, mas há um erro ao processar.
 
-## Soluções
+---
+
+## ✅ Soluções
 
 ### Solução 1: Usar Stripe CLI (Recomendado para Desenvolvimento)
 
@@ -26,21 +28,21 @@ O Stripe CLI permite testar webhooks localmente sem precisar expor seu servidor 
 
 #### Instalação
 
-1. **Windows:**
-   ```powershell
-   # Via Scoop
-   scoop install stripe
-   
-   # Ou baixe de: https://github.com/stripe/stripe-cli/releases
-   ```
+**Windows:**
+```powershell
+# Via Scoop
+scoop install stripe
 
-2. **Linux/Mac:**
-   ```bash
-   # Via Homebrew (Mac)
-   brew install stripe/stripe-cli/stripe
-   
-   # Ou baixe de: https://github.com/stripe/stripe-cli/releases
-   ```
+# Ou baixe de: https://github.com/stripe/stripe-cli/releases
+```
+
+**Linux/Mac:**
+```bash
+# Via Homebrew (Mac)
+brew install stripe/stripe-cli/stripe
+
+# Ou baixe de: https://github.com/stripe/stripe-cli/releases
+```
 
 #### Configuração
 
@@ -68,6 +70,8 @@ O Stripe CLI permite testar webhooks localmente sem precisar expor seu servidor 
    ```bash
    stripe trigger checkout.session.completed
    ```
+
+---
 
 ### Solução 2: Usar ngrok (Para Testes Reais)
 
@@ -97,6 +101,8 @@ Se quiser testar com webhooks reais do Stripe:
    STRIPE_WEBHOOK_SECRET=whsec_xxxxx
    ```
 
+---
+
 ### Solução 3: Verificar Logs
 
 Verifique se o webhook está sendo recebido e processado:
@@ -121,6 +127,8 @@ Verifique se o webhook está sendo recebido e processado:
 
    Isso mostra se os eventos estão chegando e se foram processados.
 
+---
+
 ### Solução 4: Verificar Configuração do Webhook
 
 1. **Verifique se o endpoint está correto:**
@@ -137,7 +145,9 @@ Verifique se o webhook está sendo recebido e processado:
    - Veja os eventos recentes
    - Verifique se há erros (status 4xx ou 5xx)
 
-## Debug Passo a Passo
+---
+
+## 🔍 Debug Passo a Passo
 
 ### 1. Verificar se o webhook está sendo chamado
 
@@ -158,7 +168,7 @@ public function handle(): void
 
 ### 2. Verificar se o evento está sendo processado
 
-No `PaymentService.php`, linha 352-369, adicione logs:
+No `PaymentService.php`, adicione logs:
 
 ```php
 // Se for modo subscription, cria/atualiza assinatura no banco
@@ -171,35 +181,7 @@ if ($fullSession->mode === 'subscription' && $fullSession->subscription) {
             : $fullSession->subscription->id
     ]);
     
-    $subscription = is_string($fullSession->subscription)
-        ? $this->stripeService->getSubscription($fullSession->subscription)
-        : $fullSession->subscription;
-
-    if ($subscription) {
-        Logger::info("=== SALVANDO SUBSCRIPTION ===", [
-            'subscription_id' => $subscription->id,
-            'customer_id' => $customer['id'],
-            'tenant_id' => $customer['tenant_id']
-        ]);
-        
-        $subscriptionId = $this->subscriptionModel->createOrUpdate(
-            $customer['tenant_id'],
-            $customer['id'],
-            $subscription->toArray()
-        );
-        
-        Logger::info("=== SUBSCRIPTION SALVA ===", [
-            'subscription_id' => $subscriptionId,
-            'stripe_subscription_id' => $subscription->id
-        ]);
-    } else {
-        Logger::error("=== SUBSCRIPTION NÃO ENCONTRADA ===");
-    }
-} else {
-    Logger::warning("=== NÃO É MODO SUBSCRIPTION ===", [
-        'mode' => $fullSession->mode ?? 'null',
-        'has_subscription' => !empty($fullSession->subscription)
-    ]);
+    // ... resto do código
 }
 ```
 
@@ -222,7 +204,9 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-## Teste Manual
+---
+
+## 🧪 Teste Manual
 
 Você pode testar manualmente criando uma subscription diretamente:
 
@@ -262,7 +246,9 @@ $subscriptionId = $subscriptionModel->createOrUpdate(
 echo "Subscription salva com ID: $subscriptionId\n";
 ```
 
-## Checklist
+---
+
+## ✅ Checklist
 
 - [ ] Webhook configurado no Stripe (ou usando Stripe CLI)
 - [ ] `STRIPE_WEBHOOK_SECRET` configurado no `.env`
@@ -273,10 +259,15 @@ echo "Subscription salva com ID: $subscriptionId\n";
 - [ ] Tabela `subscriptions` tem registros
 - [ ] Tabela `stripe_events` tem eventos processados
 
-## Próximos Passos
+---
+
+## 🎯 Próximos Passos
 
 1. Use o Stripe CLI para testar localmente
 2. Verifique os logs para ver onde está falhando
 3. Se necessário, adicione os logs de debug mencionados acima
 4. Verifique se o customer existe no banco antes do checkout
 
+---
+
+**Última Atualização:** 2025-01-XX

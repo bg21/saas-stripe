@@ -454,6 +454,7 @@ abstract class BaseModel
 
     /**
      * Insere um novo registro
+     * ✅ CORREÇÃO: Garante que exceções sejam lançadas corretamente
      */
     public function insert(array $data): int
     {
@@ -469,8 +470,17 @@ abstract class BaseModel
             $stmt->bindValue(":{$key}", $value);
         }
 
+        // ✅ CORREÇÃO: Execute lança exceção se falhar (PDO::ERRMODE_EXCEPTION)
         $stmt->execute();
-        return (int) $this->db->lastInsertId();
+        
+        $insertId = (int) $this->db->lastInsertId();
+        
+        // ✅ CORREÇÃO: Valida se o insert foi bem-sucedido
+        if ($insertId <= 0) {
+            throw new \RuntimeException("Falha ao inserir registro: lastInsertId retornou {$insertId}");
+        }
+        
+        return $insertId;
     }
 
     /**

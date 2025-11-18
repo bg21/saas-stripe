@@ -22,6 +22,37 @@ class PermissionController
         $this->userModel = new User();
         $this->permissionModel = new UserPermission();
     }
+    
+    /**
+     * ✅ CORREÇÃO: Método centralizado para obter lista completa de permissões válidas
+     * Garante que grant() e revoke() sempre usem a mesma lista
+     * 
+     * @return array Lista de permissões válidas
+     */
+    private static function getValidPermissions(): array
+    {
+        return [
+            // Assinaturas
+            'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
+            'cancel_subscriptions', 'reactivate_subscriptions',
+            // Clientes
+            'view_customers', 'create_customers', 'update_customers',
+            // Auditoria
+            'view_audit_logs',
+            // Disputas
+            'view_disputes', 'manage_disputes',
+            // Transações de Saldo
+            'view_balance_transactions',
+            // Cobranças
+            'view_charges', 'manage_charges',
+            // Relatórios
+            'view_reports',
+            // Payouts
+            'view_payouts', 'manage_payouts',
+            // Administrativas
+            'manage_users', 'manage_permissions'
+        ];
+    }
 
     /**
      * Lista todas as permissões disponíveis no sistema
@@ -236,6 +267,14 @@ class PermissionController
             // Busca permissões do usuário
             $permissions = $this->permissionModel->findByUser((int)$id);
             
+            // ✅ CORREÇÃO: Filtra apenas permissões concedidas (granted = true)
+            // Aceita diferentes formatos: 1, '1', true, 'true'
+            $grantedPermissions = array_filter($permissions, function($perm) {
+                $granted = $perm['granted'] ?? false;
+                // Aceita: true, 1, '1', 'true'
+                return $granted === true || $granted === 1 || $granted === '1' || $granted === 'true';
+            });
+            
             // Formata resposta
             $formattedPermissions = array_map(function($perm) {
                 return [
@@ -244,7 +283,7 @@ class PermissionController
                     'granted' => (bool)$perm['granted'],
                     'created_at' => $perm['created_at']
                 ];
-            }, $permissions);
+            }, $grantedPermissions);
 
             Flight::json([
                 'success' => true,
@@ -329,13 +368,8 @@ class PermissionController
             
             $permission = $data['permission'];
             
-            // Valida se a permissão é válida
-            $validPermissions = [
-                'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
-                'cancel_subscriptions', 'reactivate_subscriptions',
-                'view_customers', 'create_customers', 'update_customers',
-                'view_audit_logs', 'manage_users', 'manage_permissions'
-            ];
+            // ✅ CORREÇÃO: Usa método centralizado para obter lista de permissões válidas
+            $validPermissions = self::getValidPermissions();
             
             if (!in_array($permission, $validPermissions)) {
                 Flight::halt(400, json_encode([
@@ -348,7 +382,19 @@ class PermissionController
             // Busca usuário
             $user = $this->userModel->findById((int)$id);
             
+            Logger::info("Tentando conceder permissão", [
+                'user_id' => $id,
+                'permission' => $permission,
+                'tenant_id' => $tenantId,
+                'user_found' => !empty($user)
+            ]);
+            
             if (!$user) {
+                Logger::error("Usuário não encontrado ao conceder permissão", [
+                    'user_id' => $id,
+                    'permission' => $permission,
+                    'tenant_id' => $tenantId
+                ]);
                 Flight::halt(404, json_encode([
                     'error' => 'Usuário não encontrado',
                     'message' => 'O usuário especificado não existe'
@@ -358,6 +404,12 @@ class PermissionController
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
+                Logger::error("Tentativa de conceder permissão a usuário de outro tenant", [
+                    'user_id' => $id,
+                    'user_tenant_id' => $user['tenant_id'],
+                    'request_tenant_id' => $tenantId,
+                    'permission' => $permission
+                ]);
                 Flight::halt(403, json_encode([
                     'error' => 'Acesso negado',
                     'message' => 'Você não tem permissão para acessar este usuário'
@@ -365,23 +417,45 @@ class PermissionController
                 return;
             }
             
-            // Admins já têm todas as permissões por padrão
+            // ✅ CORREÇÃO: Admins têm todas as permissões por padrão
+            // Não salvamos no banco, mas informamos claramente ao usuário
             if ($user['role'] === 'admin') {
+                Logger::info("Tentativa de conceder permissão a admin (ignorada, admin tem todas)", [
+                    'user_id' => $id,
+                    'permission' => $permission,
+                    'tenant_id' => $tenantId
+                ]);
                 Flight::json([
-                    'success' => true,
-                    'message' => 'Admin já possui todas as permissões por padrão',
+                    'success' => true,  // ✅ CORREÇÃO: Retorna true com warning para indicar que é um aviso, não erro
+                    'message' => 'Usuários com role "admin" já possuem todas as permissões automaticamente. A permissão não foi salva no banco de dados.',
+                    'warning' => true,  // ✅ CORREÇÃO: Indica que é um aviso, não um erro
+                    'skipped' => true,  // ✅ CORREÇÃO: Indica que a operação foi pulada (não salva no banco)
                     'data' => [
                         'user_id' => $user['id'],
+                        'user_email' => $user['email'],
+                        'user_role' => $user['role'],
                         'permission' => $permission,
                         'granted' => true,
-                        'note' => 'Admins têm todas as permissões automaticamente'
+                        'note' => 'Admins têm todas as permissões automaticamente. Não é necessário atribuir permissões específicas a usuários admin.'
                     ]
-                ]);
+                ], 200);
                 return;
             }
             
+            Logger::info("Chamando grant() para conceder permissão", [
+                'user_id' => $id,
+                'permission' => $permission,
+                'user_role' => $user['role']
+            ]);
+            
             // Concede permissão
             $success = $this->permissionModel->grant((int)$id, $permission);
+            
+            Logger::info("Resultado do grant()", [
+                'user_id' => $id,
+                'permission' => $permission,
+                'success' => $success
+            ]);
             
             if (!$success) {
                 Flight::halt(500, json_encode([
@@ -391,13 +465,27 @@ class PermissionController
                 return;
             }
             
-            // Busca permissão concedida
+            // Busca permissão concedida para confirmar
             $grantedPermission = $this->permissionModel->findByUserAndPermission((int)$id, $permission);
             
-            Logger::info("Permissão concedida", [
+            if (!$grantedPermission) {
+                Logger::error("Permissão não encontrada após conceder", [
+                    'user_id' => $id,
+                    'permission' => $permission,
+                    'tenant_id' => $tenantId
+                ]);
+                Flight::halt(500, json_encode([
+                    'error' => 'Erro ao conceder permissão',
+                    'message' => 'Permissão não foi salva corretamente no banco de dados'
+                ]));
+                return;
+            }
+            
+            Logger::info("Permissão concedida com sucesso", [
                 'user_id' => $id,
                 'permission' => $permission,
-                'tenant_id' => $tenantId
+                'tenant_id' => $tenantId,
+                'permission_id' => $grantedPermission['id']
             ]);
 
             Flight::json([
@@ -407,7 +495,7 @@ class PermissionController
                     'id' => $grantedPermission['id'],
                     'user_id' => (int)$id,
                     'permission' => $permission,
-                    'granted' => true,
+                    'granted' => (bool)($grantedPermission['granted'] ?? true),
                     'created_at' => $grantedPermission['created_at']
                 ]
             ], 201);
@@ -454,13 +542,8 @@ class PermissionController
                 return;
             }
 
-            // Valida se a permissão é válida
-            $validPermissions = [
-                'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
-                'cancel_subscriptions', 'reactivate_subscriptions',
-                'view_customers', 'create_customers', 'update_customers',
-                'view_audit_logs', 'manage_users', 'manage_permissions'
-            ];
+            // ✅ CORREÇÃO: Usa método centralizado para obter lista completa de permissões válidas
+            $validPermissions = self::getValidPermissions();
             
             if (!in_array($permission, $validPermissions)) {
                 Flight::halt(400, json_encode([

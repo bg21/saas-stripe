@@ -206,7 +206,86 @@ Esta auditoria identificou **15 vulnerabilidades críticas e 8 vulnerabilidades 
 
 ## ⚠️ VULNERABILIDADES DE MÉDIA SEVERIDADE
 
-### 11. **Ausência de CSRF Protection em Formulários**
+### 11. **IDOR em Métodos Auxiliares - A01:2021 Broken Access Control (OWASP Top 10)** ✅ **CORRIGIDO**
+
+**Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
+**CWE:** CWE-639  
+**Status:** ✅ **IMPLEMENTADO**
+
+**Problema:**
+Alguns métodos em `CustomerController` usam `findById()` diretamente antes de validar o tenant, criando uma janela de oportunidade para IDOR. Embora a validação seja feita posteriormente, a ordem de verificação não é ideal.
+
+**Correção Aplicada:**
+✅ Substituído `findById()` por `findByTenantAndId()` em todos os métodos do `CustomerController`:
+- `listInvoices()`
+- `listPaymentMethods()`
+- `updatePaymentMethod()`
+- `deletePaymentMethod()`
+- `setDefaultPaymentMethod()`
+
+✅ Também corrigido em `CheckoutController` e `BillingPortalController`.
+
+**Localização das Correções:**
+- `App/Controllers/CustomerController.php` - todos os métodos auxiliares
+- `App/Controllers/CheckoutController.php:73`
+- `App/Controllers/BillingPortalController.php:48`
+
+---
+
+### 12. **Falta de Validação de URLs em Checkout - A03:2021 Injection / SSRF (OWASP Top 10)** ✅ **CORRIGIDO**
+
+**Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
+**CWE:** CWE-918 (SSRF), CWE-601 (Open Redirect)  
+**Status:** ✅ **IMPLEMENTADO**
+
+**Problema:**
+O `CheckoutController` aceita `success_url` e `cancel_url` sem validação adequada, permitindo:
+- SSRF (Server-Side Request Forgery) se as URLs forem usadas em requisições HTTP
+- Open Redirect se as URLs forem usadas para redirecionamento
+- Phishing através de URLs maliciosas
+
+**Correção Aplicada:**
+✅ Implementado método `validateRedirectUrl()` em `CheckoutController` e `BillingPortalController` com:
+- Validação de esquema (apenas HTTPS em produção, HTTP apenas para localhost em desenvolvimento)
+- Bloqueio de esquemas perigosos (file, ftp, gopher, javascript, data, vbscript)
+- Proteção contra SSRF (bloqueia IPs privados e localhost em produção)
+- Validação de comprimento máximo (2048 caracteres)
+- Validação aplicada a `success_url`, `cancel_url` e `return_url`
+
+✅ Adicionada validação de tamanho máximo de `line_items` (máximo 100 itens) para prevenir DoS.
+
+**Localização das Correções:**
+- `App/Controllers/CheckoutController.php:42-51, 78-82, 211-259`
+- `App/Controllers/BillingPortalController.php:56-61, 143-191`
+
+---
+
+### 13. **Ausência de Proteção contra Timing Attacks - A07:2021 Identification and Authentication Failures (OWASP Top 10)** ✅ **CORRIGIDO**
+
+**Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
+**CWE:** CWE-208 (Timing Attack)  
+**Status:** ✅ **IMPLEMENTADO**
+
+**Problema:**
+A comparação de tokens e senhas não usa comparação de tempo constante, permitindo timing attacks que podem revelar informações sobre tokens válidos.
+
+**Correção Aplicada:**
+✅ Substituída comparação de master key usando `===` por `hash_equals()` em `public/index.php:333`:
+- Antes: `if ($masterKey && $token === $masterKey)`
+- Depois: `if ($masterKey && hash_equals($masterKey, $token))`
+
+✅ `password_verify()` já é usado no `User` model e é seguro contra timing attacks.
+
+✅ `hash_equals()` já é usado em `SecurityHelper` para tokens CSRF.
+
+**Localização da Correção:**
+- `public/index.php:333` - comparação de master key
+
+**Nota:** A comparação de API keys no banco de dados é feita via query SQL, que já é segura. A única comparação em memória era a master key, que foi corrigida.
+
+---
+
+### 14. **Ausência de CSRF Protection em Formulários**
 
 **Severidade:** 🟡 **MÉDIA**  
 **CWE:** CWE-352
@@ -217,9 +296,11 @@ Formulários HTML não implementam proteção CSRF.
 **Correção:**
 Implementar tokens CSRF para todas as ações que modificam estado.
 
+**Nota:** Não crítico para APIs REST que usam Bearer tokens.
+
 ---
 
-### 12. **Senhas Fracas Permitidas** ✅ **CORRIGIDO**
+### 15. **Senhas Fracas Permitidas** ✅ **CORRIGIDO**
 
 **Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
 **CWE:** CWE-521  
@@ -235,7 +316,7 @@ Implementar tokens CSRF para todas as ações que modificam estado.
 
 ---
 
-### 13. **Ausência de Logging de Tentativas de Ataque** ✅ **CORRIGIDO**
+### 16. **Ausência de Logging de Tentativas de Ataque** ✅ **CORRIGIDO**
 
 **Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
 **CWE:** CWE-778  
@@ -253,7 +334,7 @@ Implementar tokens CSRF para todas as ações que modificam estado.
 
 ---
 
-### 14. **Exposição de Versão/Stack em Headers** ✅ **CORRIGIDO**
+### 17. **Exposição de Versão/Stack em Headers** ✅ **CORRIGIDO**
 
 **Severidade:** 🟡 **MÉDIA** (RESOLVIDA)  
 **CWE:** CWE-200  
@@ -300,6 +381,82 @@ Implementar tokens CSRF para todas as ações que modificam estado.
 
 ---
 
+### 17. **Validação Insuficiente de Tipos JSON** ✅ **CORRIGIDO**
+
+**Severidade:** 🟢 **BAIXA** (RESOLVIDA)  
+**CWE:** CWE-20 (Input Validation)  
+**Status:** ✅ **IMPLEMENTADO**
+
+**Problema:**
+Alguns lugares usam `json_decode()` sem validar se o resultado é um array ou objeto, podendo causar erros de tipo.
+
+**Correção Aplicada:**
+✅ Melhorada validação de JSON em `App/Utils/RequestCache::getJsonInput()`:
+- Valida tamanho máximo do JSON (1MB) para prevenir DoS
+- Valida se houve erro no `json_decode()` usando `json_last_error()`
+- Valida se o resultado é um array (não objeto ou outro tipo)
+- Retorna `null` se qualquer validação falhar
+
+✅ Adicionado método `Validator::validateJsonDecode()` para validação reutilizável.
+
+✅ Validação aplicada em `AuthController` para garantir JSON válido.
+
+**Localização das Correções:**
+- `App/Utils/RequestCache.php:38-63` - validação melhorada
+- `App/Utils/Validator.php:660-678` - método de validação
+- `App/Controllers/AuthController.php:60-69` - validação no login
+
+---
+
+### 18. **Limites de Arrays Não Validados em Todos os Endpoints** ✅ **PARCIALMENTE CORRIGIDO**
+
+**Severidade:** 🟢 **BAIXA**  
+**CWE:** CWE-400 (Resource Exhaustion)  
+**Status:** ✅ **PARCIALMENTE IMPLEMENTADO**
+
+**Problema:**
+Embora `metadata` tenha validação de tamanho, outros arrays (como `line_items` em checkout) podem não ter limites adequados, permitindo DoS através de arrays muito grandes.
+
+**Correção Aplicada:**
+✅ Criado método `Validator::validateArraySize()` para validação reutilizável de tamanho de arrays.
+
+✅ Validação aplicada em:
+- `CheckoutController` - `line_items` (máximo 100 itens) ✅
+- `InvoiceItemController` - `tax_rates` (máximo 50 itens) ✅ (métodos create e update)
+
+✅ Metadata já tem validação de tamanho (máximo 50 chaves) via `Validator::validateMetadata()`.
+
+**Localização das Correções:**
+- `App/Utils/Validator.php:639-658` - método `validateArraySize()`
+- `App/Controllers/CheckoutController.php:79-82` - validação de line_items
+- `App/Controllers/InvoiceItemController.php:77-83, 401-407` - validação de tax_rates
+
+**Nota:** Outros arrays podem precisar de validação conforme novos endpoints forem adicionados. A estrutura está pronta para uso.
+
+---
+
+### 19. **Exposição de Informações em Mensagens de Erro de Desenvolvimento** ✅ **CORRIGIDO**
+
+**Severidade:** 🟢 **BAIXA** (RESOLVIDA)  
+**CWE:** CWE-209 (Information Exposure)  
+**Status:** ✅ **IMPLEMENTADO**
+
+**Problema:**
+Algumas mensagens de erro em modo desenvolvimento podem expor informações sensíveis mesmo quando não deveriam.
+
+**Correção Aplicada:**
+✅ Revisadas mensagens de erro em `public/index.php`:
+- Substituído `server_keys` por `server_keys_count` e `has_authorization` (não expõe nomes de variáveis)
+- Substituído `token_received` por `token_length` e `token_format_valid` (não expõe conteúdo do token)
+
+✅ Informações sensíveis não são mais expostas mesmo em modo desenvolvimento.
+
+**Localização das Correções:**
+- `public/index.php:254-259` - mensagem de erro de autenticação
+- `public/index.php:354-359` - mensagem de erro de token inválido
+
+---
+
 ## ✅ PONTOS POSITIVOS
 
 1. ✅ Uso de Prepared Statements (PDO) - protege contra SQL Injection básico
@@ -333,6 +490,8 @@ Implementar tokens CSRF para todas as ações que modificam estado.
 
 ### 📋 Pendências Restantes
 - **CSRF Protection**: Implementar tokens CSRF para formulários HTML (não crítico para APIs REST que usam Bearer tokens)
+- **Validação de Content-Type**: Validar que requisições POST/PUT/PATCH tenham `Content-Type: application/json`
+- **Validação de Tamanho de Query String**: Limitar tamanho de query strings para prevenir DoS
 
 ---
 

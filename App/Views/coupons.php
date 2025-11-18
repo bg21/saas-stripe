@@ -181,11 +181,17 @@ function renderCoupons(coupons) {
 }
 
 function viewCoupon(id) {
-    alert('Detalhes do cupom: ' + id);
+    // ✅ CORREÇÃO: Redireciona para página de detalhes ao invés de alert
+    window.location.href = `/coupon-details?id=${id}`;
 }
 
 async function deleteCoupon(id) {
-    if (!confirm('Tem certeza que deseja remover este cupom?')) return;
+    const confirmed = await showConfirmModal(
+        'Tem certeza que deseja remover este cupom? Esta ação não pode ser desfeita.',
+        'Confirmar Exclusão',
+        'Remover Cupom'
+    );
+    if (!confirmed) return;
     
     try {
         await apiRequest(`/v1/coupons/${id}`, { method: 'DELETE' });

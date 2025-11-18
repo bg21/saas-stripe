@@ -206,7 +206,7 @@
     --z-index-tooltip: 1070;
     
     /* Layout */
-    --sidebar-width: 16rem;       /* 256px */
+    --sidebar-width: 18rem;       /* 256px */
     --sidebar-width-collapsed: 4rem;  /* 64px */
     --header-height: 4rem;        /* 64px */
     --container-max-width: 1280px;

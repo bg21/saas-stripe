@@ -1,10 +1,21 @@
-# Sistema de Backup Automático
+# 💾 Sistema de Backup Automático
+
+**Status:** ✅ Implementado  
+**Biblioteca:** `ifsnop/mysqldump-php`
+
+---
 
 ## 📋 Visão Geral
 
 O sistema de backup automático permite criar, gerenciar e restaurar backups do banco de dados MySQL de forma simples e automatizada.
 
-**Biblioteca utilizada:** `ifsnop/mysqldump-php` - Uma biblioteca PHP pura que não requer `mysqldump` instalado no sistema, tornando o sistema mais portável e fácil de usar.
+**Vantagens da biblioteca:**
+- ✅ Não requer `mysqldump` instalado no sistema
+- ✅ Portável - funciona apenas com PHP e PDO
+- ✅ Mais seguro - não expõe senhas via linha de comando
+- ✅ Melhor tratamento de erros
+
+---
 
 ## 🚀 Funcionalidades
 
@@ -16,6 +27,8 @@ O sistema de backup automático permite criar, gerenciar e restaurar backups do 
 - ✅ Limpeza automática de backups antigos
 - ✅ Estatísticas de backups
 - ✅ Script CLI completo
+
+---
 
 ## ⚙️ Configuração
 
@@ -29,21 +42,26 @@ BACKUP_COMPRESS=true
 
 ### Parâmetros
 
-- **BACKUP_DIR**: Diretório onde os backups serão salvos (relativo à raiz do projeto)
-- **BACKUP_RETENTION_DAYS**: Número de dias para manter backups (padrão: 30)
-- **BACKUP_COMPRESS**: Se os backups devem ser comprimidos com gzip (true/false)
+| Parâmetro | Descrição | Padrão |
+|-----------|-----------|--------|
+| `BACKUP_DIR` | Diretório onde os backups serão salvos (relativo à raiz do projeto) | `backups` |
+| `BACKUP_RETENTION_DAYS` | Número de dias para manter backups | `30` |
+| `BACKUP_COMPRESS` | Se os backups devem ser comprimidos com gzip | `true` |
+
+---
 
 ## 📦 Instalação
 
 1. **Execute a migration** para criar a tabela `backup_logs`:
-
-```bash
-composer run migrate
-```
+   ```bash
+   composer run migrate
+   ```
 
 2. **Configure o `.env`** com as variáveis de backup (veja acima)
 
 3. **Pronto!** O sistema está configurado.
+
+---
 
 ## 🎯 Uso
 
@@ -89,6 +107,8 @@ php scripts/backup.php get 1
 php scripts/backup.php help
 ```
 
+---
+
 ## 📊 Exemplos de Uso
 
 ### Criar um Backup
@@ -97,7 +117,7 @@ php scripts/backup.php help
 composer run backup
 ```
 
-Saída:
+**Saída:**
 ```
 🔄 Criando backup...
 ✅ Backup criado com sucesso!
@@ -116,7 +136,7 @@ Criado em: 2025-01-16 14:30:45
 composer run backup:list
 ```
 
-Saída:
+**Saída:**
 ```
 📋 Listando backups (limite: 50)...
 
@@ -131,7 +151,7 @@ ID    Arquivo                          Tamanho     Status     Criado em         
 composer run backup:stats
 ```
 
-Saída:
+**Saída:**
 ```
 📊 Estatísticas de Backups
 ======================================================================
@@ -157,7 +177,11 @@ php scripts/backup.php restore 1
 
 O sistema pedirá confirmação antes de restaurar.
 
+---
+
 ## 🔄 Automação (Cron)
+
+### Linux/Mac
 
 Para criar backups automáticos, adicione ao crontab:
 
@@ -169,12 +193,14 @@ Para criar backups automáticos, adicione ao crontab:
 0 3 * * 0 cd /caminho/para/projeto && composer run backup:clean
 ```
 
-**Windows (Task Scheduler):**
+### Windows (Task Scheduler)
 
 Crie uma tarefa agendada que execute:
 ```
 php C:\caminho\para\projeto\scripts\backup.php create
 ```
+
+---
 
 ## 📁 Estrutura de Arquivos
 
@@ -196,6 +222,8 @@ projeto/
         └── 20250116000001_create_backup_logs_table.php
 ```
 
+---
+
 ## 🧪 Testes
 
 Execute o script de teste para validar o sistema:
@@ -203,6 +231,8 @@ Execute o script de teste para validar o sistema:
 ```bash
 php scripts/test_backup.php
 ```
+
+---
 
 ## ⚠️ Requisitos
 
@@ -213,10 +243,12 @@ php scripts/test_backup.php
 
 ### Vantagens da Biblioteca
 
-✅ **Não requer `mysqldump` instalado** - Funciona apenas com PHP e PDO  
-✅ **Portável** - Funciona em qualquer ambiente com PHP  
-✅ **Mais seguro** - Não expõe senhas via linha de comando  
-✅ **Mais confiável** - Melhor tratamento de erros
+- ✅ **Não requer `mysqldump` instalado** - Funciona apenas com PHP e PDO
+- ✅ **Portável** - Funciona em qualquer ambiente com PHP
+- ✅ **Mais seguro** - Não expõe senhas via linha de comando
+- ✅ **Mais confiável** - Melhor tratamento de erros
+
+---
 
 ## 🔒 Segurança
 
@@ -225,6 +257,8 @@ php scripts/test_backup.php
 - ⚠️ **Backup remoto**: Considere copiar backups para servidor remoto ou S3
 - ⚠️ **Senha do banco**: A senha é passada via linha de comando (visível em `ps`)
 
+---
+
 ## 📝 Notas
 
 - Os backups são salvos no formato: `backup_{DB_NAME}_{TIMESTAMP}.sql.gz`
@@ -232,12 +266,13 @@ php scripts/test_backup.php
 - A limpeza automática remove backups mais antigos que `BACKUP_RETENTION_DAYS`
 - O sistema registra todos os backups (sucesso e falha) na tabela `backup_logs`
 
+---
+
 ## 🐛 Troubleshooting
 
 ### Erro: "Biblioteca ifsnop/mysqldump-php não encontrada"
 
 **Solução**: Instale a biblioteca via Composer:
-
 ```bash
 composer require ifsnop/mysqldump-php
 ```
@@ -245,7 +280,6 @@ composer require ifsnop/mysqldump-php
 ### Erro: "Não foi possível criar diretório de backups"
 
 **Solução**: Verifique permissões do diretório pai ou crie manualmente:
-
 ```bash
 mkdir backups
 chmod 755 backups
@@ -258,6 +292,8 @@ chmod 755 backups
 2. Se o MySQL está rodando
 3. Se o usuário tem permissão de backup
 
+---
+
 ## 📚 API (Futuro)
 
 O sistema pode ser expandido para incluir endpoints REST:
@@ -268,3 +304,6 @@ O sistema pode ser expandido para incluir endpoints REST:
 - `POST /v1/backups/:id/restore` - Restaurar backup
 - `GET /v1/backups/stats` - Estatísticas
 
+---
+
+**Última Atualização:** 2025-01-XX

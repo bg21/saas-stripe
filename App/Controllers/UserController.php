@@ -202,6 +202,24 @@ class UserController
                 ]));
                 return;
             }
+            
+            // ✅ CORREÇÃO: Valida se o tenant existe e está ativo
+            $tenantModel = new \App\Models\Tenant();
+            $tenant = $tenantModel->findById($tenantId);
+            if (!$tenant) {
+                Flight::halt(404, json_encode([
+                    'error' => 'Tenant não encontrado',
+                    'message' => 'O tenant especificado não existe'
+                ]));
+                return;
+            }
+            if ($tenant['status'] !== 'active') {
+                Flight::halt(403, json_encode([
+                    'error' => 'Tenant inativo',
+                    'message' => 'O tenant está inativo. Não é possível criar usuários.'
+                ]));
+                return;
+            }
 
             // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
             // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
@@ -240,14 +258,51 @@ class UserController
                 return;
             }
             
-            // Cria usuário
-            $userId = $this->userModel->create(
-                $tenantId,
-                $data['email'],
-                $data['password'],
-                $data['name'] ?? null,
-                $role
-            );
+            // ✅ CORREÇÃO: Usa transação para prevenir race condition
+            // Se outro processo criar o mesmo email entre a verificação e a inserção,
+            // a constraint UNIQUE no banco ou a transação irá capturar o erro
+            try {
+                $this->userModel->db->beginTransaction();
+                
+                // Verifica novamente dentro da transação (double-check)
+                $existingUserInTransaction = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
+                if ($existingUserInTransaction) {
+                    $this->userModel->db->rollBack();
+                    Flight::halt(409, json_encode([
+                        'error' => 'Usuário já existe',
+                        'message' => 'Já existe um usuário com este email neste tenant'
+                    ]));
+                    return;
+                }
+                
+                // Cria usuário dentro da transação
+                $userId = $this->userModel->create(
+                    $tenantId,
+                    $data['email'],
+                    $data['password'],
+                    $data['name'] ?? null,
+                    $role
+                );
+                
+                $this->userModel->db->commit();
+            } catch (\PDOException $e) {
+                // ✅ CORREÇÃO: Captura erro de constraint única (race condition)
+                if ($this->userModel->db->inTransaction()) {
+                    $this->userModel->db->rollBack();
+                }
+                
+                // Verifica se é erro de constraint única (código 23000 = Integrity constraint violation)
+                if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false || strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
+                    Flight::halt(409, json_encode([
+                        'error' => 'Usuário já existe',
+                        'message' => 'Já existe um usuário com este email neste tenant'
+                    ]));
+                    return;
+                }
+                
+                // Re-lança exceção se não for constraint única
+                throw $e;
+            }
             
             // Busca usuário criado
             $user = $this->userModel->findById($userId);
@@ -382,12 +437,13 @@ class UserController
             }
             
             if (isset($data['password'])) {
-                // Valida força da senha
-                $passwordError = Validator::validatePasswordStrength($data['password']);
-                if ($passwordError) {
+                // ✅ CORREÇÃO: Usa validação completa de senha para update
+                $passwordErrors = Validator::validatePasswordUpdate(['password' => $data['password']]);
+                if (!empty($passwordErrors)) {
                     Flight::halt(400, json_encode([
                         'error' => 'Dados inválidos',
-                        'message' => $passwordError
+                        'message' => 'Por favor, verifique os dados informados',
+                        'errors' => $passwordErrors
                     ]));
                     return;
                 }

@@ -159,9 +159,9 @@ class Validator
         
         // metadata: mesma validação da criação
         if (isset($data['metadata'])) {
-            $metadataErrors = self::validateMetadata($data['metadata']);
-            if (!empty($metadataErrors)) {
-                $errors['metadata'] = $metadataErrors;
+            $metadataError = self::validateMetadataInternal($data['metadata']);
+            if ($metadataError !== null) {
+                $errors['metadata'] = $metadataError;
             }
         }
         
@@ -211,9 +211,9 @@ class Validator
         
         // metadata: mesma validação
         if (isset($data['metadata'])) {
-            $metadataErrors = self::validateMetadata($data['metadata']);
-            if (!empty($metadataErrors)) {
-                $errors['metadata'] = $metadataErrors;
+            $metadataError = self::validateMetadataInternal($data['metadata']);
+            if ($metadataError !== null) {
+                $errors['metadata'] = $metadataError;
             }
         }
         
@@ -261,9 +261,9 @@ class Validator
         
         // metadata: mesma validação
         if (isset($data['metadata'])) {
-            $metadataErrors = self::validateMetadata($data['metadata']);
-            if (!empty($metadataErrors)) {
-                $errors['metadata'] = $metadataErrors;
+            $metadataError = self::validateMetadataInternal($data['metadata']);
+            if ($metadataError !== null) {
+                $errors['metadata'] = $metadataError;
             }
         }
         
@@ -330,12 +330,13 @@ class Validator
     }
     
     /**
-     * Valida metadata (usado em múltiplos lugares)
+     * Valida metadata (usado internamente)
+     * ✅ CORREÇÃO: Renomeado para validateMetadataInternal para evitar conflito com validateMetadata() público
      * 
      * @param mixed $metadata Metadata a validar
      * @return string|null Mensagem de erro ou null se válido
      */
-    private static function validateMetadata($metadata): ?string
+    private static function validateMetadataInternal($metadata): ?string
     {
         if (!is_array($metadata)) {
             return 'Deve ser um objeto';
@@ -612,15 +613,15 @@ class Validator
     {
         $errors = [];
         
-        // password: obrigatório, deve ser forte
-        if (!isset($data['password'])) {
-            $errors['password'] = 'Obrigatório';
-        } elseif (!is_string($data['password'])) {
-            $errors['password'] = 'Deve ser uma string';
-        } else {
-            $passwordError = self::validatePasswordStrength($data['password']);
-            if ($passwordError) {
-                $errors['password'] = $passwordError;
+        // password: opcional no update (só valida se fornecido)
+        if (isset($data['password'])) {
+            if (!is_string($data['password'])) {
+                $errors['password'] = 'Deve ser uma string';
+            } else {
+                $passwordError = self::validatePasswordStrength($data['password']);
+                if ($passwordError) {
+                    $errors['password'] = $passwordError;
+                }
             }
         }
         

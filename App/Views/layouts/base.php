@@ -24,7 +24,8 @@
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
     <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSsOeHmED1vQZ1eYz3kqQ8AIwF6f9i0d8a3d5x5y5z5z5z5z5z5" crossorigin="anonymous">
+    <!-- ✅ CORREÇÃO: Removido integrity inválido (causava erro de bloqueio) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" crossorigin="anonymous">
     <!-- Dashboard CSS -->
     <link rel="stylesheet" href="/css/dashboard.css?v=<?php 
         $cssFile = __DIR__ . '/../../public/css/dashboard.css';
@@ -252,6 +253,25 @@
     <main class="main-content">
         <?php echo $content ?? ''; ?>
     </main>
+
+    <!-- ✅ Modal de Confirmação Reutilizável -->
+    <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="confirmModalLabel">Confirmar Ação</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body" id="confirmModalBody">
+                    Tem certeza que deseja realizar esta ação?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-danger" id="confirmModalButton">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ✅ OTIMIZAÇÃO: Bootstrap JS com defer e integrity (não bloqueia renderização) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>

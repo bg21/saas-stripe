@@ -144,6 +144,9 @@ class SubscriptionController
             $subscriptionModel = new \App\Models\Subscription();
             $result = $subscriptionModel->findByTenant($tenantId, $page, $limit, $filters);
 
+            // ✅ Calcula estatísticas precisas por status
+            $stats = $subscriptionModel->getStatsByTenant($tenantId, $filters);
+
             $response = [
                 'success' => true,
                 'data' => $result['data'],
@@ -151,7 +154,8 @@ class SubscriptionController
                     'total' => $result['total'],
                     'page' => $result['page'],
                     'limit' => $result['limit'],
-                    'total_pages' => $result['total_pages']
+                    'total_pages' => $result['total_pages'],
+                    'stats' => $stats // ✅ Estatísticas precisas por status
                 ]
             ];
             

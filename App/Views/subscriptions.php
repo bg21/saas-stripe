@@ -130,7 +130,9 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Preço (Price ID) *</label>
-                        <input type="text" class="form-control" name="price_id" placeholder="price_xxxxx" required>
+                        <input type="text" class="form-control" name="price_id" id="priceIdInput" placeholder="price_xxxxx" pattern="^price_[a-zA-Z0-9]+$" required>
+                        <div class="invalid-feedback" id="priceIdError"></div>
+                        <small class="text-muted">Formato: price_xxxxx</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Período de Trial (dias)</label>
@@ -162,11 +164,35 @@ document.addEventListener('DOMContentLoaded', () => {
         loadCustomers()
     ]);
     
+    // Validação de price_id no frontend
+    const priceIdInput = document.getElementById('priceIdInput');
+    if (priceIdInput) {
+        priceIdInput.addEventListener('input', () => {
+            const priceId = priceIdInput.value.trim();
+            const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+            
+            if (priceId && !priceIdPattern.test(priceId)) {
+                priceIdInput.classList.add('is-invalid');
+                document.getElementById('priceIdError').textContent = 'Formato inválido. Use: price_xxxxx';
+            } else {
+                priceIdInput.classList.remove('is-invalid');
+                document.getElementById('priceIdError').textContent = '';
+            }
+        });
+    }
+    
     // Form criar assinatura
     document.getElementById('createSubscriptionForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
+        
+        // Valida price_id antes de submeter
+        const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+        if (!priceIdPattern.test(data.price_id)) {
+            showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+            return;
+        }
         
         if (data.trial_period_days) {
             data.trial_period_days = parseInt(data.trial_period_days);
@@ -177,6 +203,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 body: JSON.stringify(data)
             });
+            
+            // Limpa cache após criar assinatura
+            if (typeof cache !== 'undefined' && cache.clear) {
+                cache.clear('/v1/subscriptions');
+            }
             
             showAlert('Assinatura criada com sucesso!', 'success');
             bootstrap.Modal.getInstance(document.getElementById('createSubscriptionModal')).hide();
@@ -190,11 +221,12 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function loadCustomers() {
+    const select = document.getElementById('customerSelect');
+    
     try {
         const response = await apiRequest('/v1/customers');
         customers = response.data || [];
         
-        const select = document.getElementById('customerSelect');
         select.innerHTML = '<option value="">Selecione um cliente</option>' +
             customers.map(c => {
                 const name = escapeHtml(c.name || c.email);
@@ -202,6 +234,27 @@ async function loadCustomers() {
             }).join('');
     } catch (error) {
         console.error('Erro ao carregar clientes:', error);
+        select.innerHTML = `
+            <option value="">Erro ao carregar clientes</option>
+        `;
+        select.classList.add('is-invalid');
+        
+        // Adiciona botão de tentar novamente
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger mt-2';
+        errorDiv.innerHTML = `
+            <i class="bi bi-exclamation-triangle"></i> Erro ao carregar clientes: ${escapeHtml(error.message)}
+            <button type="button" class="btn btn-sm btn-outline-danger ms-2" onclick="loadCustomers()">
+                <i class="bi bi-arrow-clockwise"></i> Tentar novamente
+            </button>
+        `;
+        select.parentElement.appendChild(errorDiv);
+        
+        // Remove mensagem de erro após 5 segundos
+        setTimeout(() => {
+            errorDiv.remove();
+            select.classList.remove('is-invalid');
+        }, 5000);
     }
 }
 
@@ -243,17 +296,27 @@ async function loadSubscriptions() {
 }
 
 function updateStats() {
-    // Conta apenas os itens da página atual (estatísticas aproximadas)
-    // Para estatísticas precisas, seria necessário uma requisição separada
+    // Usa estatísticas do meta quando disponível (precisas)
+    // Fallback para contagem da página atual se meta não tiver estatísticas
     const total = paginationMeta.total || subscriptions.length;
-    const active = subscriptions.filter(s => s.status === 'active').length;
-    const trialing = subscriptions.filter(s => s.status === 'trialing').length;
-    const canceled = subscriptions.filter(s => s.status === 'canceled').length;
     
-    document.getElementById('totalSubscriptions').textContent = total;
-    document.getElementById('activeSubscriptions').textContent = active;
-    document.getElementById('trialingSubscriptions').textContent = trialing;
-    document.getElementById('canceledSubscriptions').textContent = canceled;
+    // Se meta tiver estatísticas por status, usa elas (mais preciso)
+    if (paginationMeta.stats) {
+        document.getElementById('totalSubscriptions').textContent = paginationMeta.stats.total || total;
+        document.getElementById('activeSubscriptions').textContent = paginationMeta.stats.active || 0;
+        document.getElementById('trialingSubscriptions').textContent = paginationMeta.stats.trialing || 0;
+        document.getElementById('canceledSubscriptions').textContent = paginationMeta.stats.canceled || 0;
+    } else {
+        // Fallback: conta apenas da página atual (aproximado)
+        const active = subscriptions.filter(s => s.status === 'active').length;
+        const trialing = subscriptions.filter(s => s.status === 'trialing').length;
+        const canceled = subscriptions.filter(s => s.status === 'canceled').length;
+        
+        document.getElementById('totalSubscriptions').textContent = total;
+        document.getElementById('activeSubscriptions').textContent = active;
+        document.getElementById('trialingSubscriptions').textContent = trialing;
+        document.getElementById('canceledSubscriptions').textContent = canceled;
+    }
 }
 
 function renderSubscriptions() {

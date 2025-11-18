@@ -3,6 +3,36 @@
  * Isso permite cache do navegador e melhor performance
  */
 
+// ✅ Invalidação de cache em outras abas
+if (typeof BroadcastChannel !== 'undefined') {
+    const cacheChannel = new BroadcastChannel('cache_invalidation');
+    cacheChannel.addEventListener('message', (event) => {
+        if (event.data && event.data.action === 'clear') {
+            const pattern = event.data.pattern;
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('api_cache_') && key.includes(pattern)) {
+                    localStorage.removeItem(key);
+                }
+            });
+        }
+    });
+}
+
+// ✅ Listener para eventos de storage (fallback para navegadores sem BroadcastChannel)
+// Nota: storage event só é disparado quando mudanças vêm de OUTRAS abas
+window.addEventListener('storage', (event) => {
+    if (event.key && event.key.startsWith('cache_clear_') && event.newValue) {
+        const pattern = event.newValue;
+        const keys = Object.keys(localStorage);
+        keys.forEach(key => {
+            if (key.startsWith('api_cache_') && key.includes(pattern)) {
+                localStorage.removeItem(key);
+            }
+        });
+    }
+});
+
 // Aguarda DOM estar pronto
 document.addEventListener('DOMContentLoaded', () => {
     // Remove session_id da URL se estiver presente (segurança)
@@ -66,8 +96,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Funções globais
-function logout() {
-    if (confirm('Deseja realmente sair?')) {
+async function logout() {
+    const confirmed = await showConfirmModal('Deseja realmente sair?', 'Confirmar Logout', 'Sair', 'btn-primary');
+    if (confirmed) {
         fetch(API_URL + '/v1/auth/logout', {
             method: 'POST',
             headers: {
@@ -128,10 +159,32 @@ const cache = {
         try {
             const keys = Object.keys(localStorage);
             keys.forEach(key => {
-                if (key.startsWith('api_cache_' + pattern)) {
+                // ✅ CORREÇÃO: Procura por chaves que contenham o padrão (não apenas que comecem)
+                // A chave do cache é: api_cache_ + endpoint + method + body
+                if (key.startsWith('api_cache_') && key.includes(pattern)) {
                     localStorage.removeItem(key);
                 }
             });
+            
+            // ✅ Invalida cache em outras abas usando BroadcastChannel
+            if (typeof BroadcastChannel !== 'undefined') {
+                const channel = new BroadcastChannel('cache_invalidation');
+                channel.postMessage({ action: 'clear', pattern: pattern });
+            }
+            
+            // ✅ Fallback: usa localStorage para notificar outras abas
+            try {
+                const notificationKey = 'cache_clear_' + Date.now();
+                localStorage.setItem(notificationKey, pattern);
+                // Remove imediatamente para não poluir o localStorage
+                setTimeout(() => {
+                    try {
+                        localStorage.removeItem(notificationKey);
+                    } catch (e) {}
+                }, 100);
+            } catch (e) {
+                // Ignora se não suportado
+            }
         } catch (e) {}
     }
 };
@@ -217,9 +270,17 @@ function showAlert(message, type = 'info', containerId = 'alertContainer') {
     const container = document.getElementById(containerId);
     if (!container) return;
     
+    // ✅ CORREÇÃO: Mapeia ícones para cada tipo de alerta
+    const iconMap = {
+        'danger': 'exclamation-triangle',
+        'success': 'check-circle',
+        'warning': 'exclamation-triangle',
+        'info': 'info-circle'
+    };
+    
     const alert = document.createElement('div');
     alert.className = `alert alert-${type}`;
-    alert.innerHTML = `<i class="bi bi-${type === 'danger' ? 'exclamation-triangle' : type === 'success' ? 'check-circle' : 'info-circle'}-fill"></i> ${message}`;
+    alert.innerHTML = `<i class="bi bi-${iconMap[type] || 'info-circle'}-fill"></i> ${message}`;
     container.appendChild(alert);
     
     setTimeout(() => {
@@ -275,6 +336,43 @@ function updateSidebarForRole(role) {
                 adminSection.style.display = 'block';
             }
         }
+    });
+}
+
+// ✅ Modal de Confirmação Reutilizável (substitui confirm() nativo)
+function showConfirmModal(message, title = 'Confirmar Ação', confirmText = 'Confirmar', confirmClass = 'btn-danger') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('confirmModal');
+        const modalTitle = document.getElementById('confirmModalLabel');
+        const modalBody = document.getElementById('confirmModalBody');
+        const confirmButton = document.getElementById('confirmModalButton');
+        
+        // Configura o modal
+        modalTitle.textContent = title;
+        modalBody.textContent = message;
+        confirmButton.textContent = confirmText;
+        confirmButton.className = `btn ${confirmClass}`;
+        
+        // Remove listeners anteriores
+        const newConfirmButton = confirmButton.cloneNode(true);
+        confirmButton.parentNode.replaceChild(newConfirmButton, confirmButton);
+        
+        // Adiciona listener para confirmar
+        newConfirmButton.addEventListener('click', () => {
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            bsModal.hide();
+            resolve(true);
+        });
+        
+        // Adiciona listener para cancelar
+        modal.addEventListener('hidden.bs.modal', function onHidden() {
+            modal.removeEventListener('hidden.bs.modal', onHidden);
+            resolve(false);
+        }, { once: true });
+        
+        // Mostra o modal
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
     });
 }
 

@@ -78,7 +78,12 @@ class AuthController
             // Sanitiza após validação
             $email = trim($data['email']);
             $password = $data['password'];
-            $tenantId = (int)$data['tenant_id'];
+            // ✅ CORREÇÃO: Cast seguro de tenant_id usando filter_var
+            $tenantId = filter_var($data['tenant_id'], FILTER_VALIDATE_INT);
+            if ($tenantId === false || $tenantId <= 0) {
+                $this->sendError(400, 'Dados inválidos', 'tenant_id deve ser um número inteiro positivo');
+                return;
+            }
             
             // Identificador para detecção de anomalias (email + IP)
             $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';

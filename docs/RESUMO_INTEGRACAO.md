@@ -1,16 +1,23 @@
 # 📋 Resumo Rápido - Integração no Seu SaaS
 
+**Tempo estimado:** 5 minutos  
+**Nível:** Iniciante
+
+---
+
 ## 🎯 Passo a Passo Simplificado
 
-### 1️⃣ Criar seu Tenant (5 minutos)
+### 1️⃣ Criar seu Tenant (2 minutos)
 
 ```bash
 php scripts/setup_tenant.php "Nome do Seu SaaS"
 ```
 
-**Resultado:** Você receberá uma API Key única. **GUARDE ELA!**
+**Resultado:** Você receberá uma API Key única. **⚠️ GUARDE ELA!**
 
-### 2️⃣ Configurar no Seu SaaS
+---
+
+### 2️⃣ Configurar no Seu SaaS (2 minutos)
 
 #### Opção A: Usar SDK PHP (Recomendado)
 
@@ -44,6 +51,8 @@ curl_setopt_array($ch, [
 ]);
 $response = curl_exec($ch);
 ```
+
+---
 
 ### 3️⃣ Fluxo Básico de Integração
 
@@ -91,6 +100,8 @@ $response = curl_exec($ch);
 │   status)       │
 └─────────────────┘
 ```
+
+---
 
 ### 4️⃣ Exemplo Prático Completo
 
@@ -163,9 +174,12 @@ class SubscriptionController extends Controller
 }
 ```
 
+---
+
 ## 🔑 Pontos Importantes
 
 ### ✅ O que fazer:
+
 - ✅ Guarde a API Key em variável de ambiente
 - ✅ Use HTTPS em produção
 - ✅ Trate erros adequadamente
@@ -173,24 +187,44 @@ class SubscriptionController extends Controller
 - ✅ Monitore logs
 
 ### ❌ O que NÃO fazer:
+
 - ❌ Não exponha API Key no frontend
 - ❌ Não use HTTP em produção
 - ❌ Não ignore erros
 - ❌ Não processe webhooks sem validação
 
+---
+
 ## 📚 Documentação Completa
 
-- **Guia Completo:** [docs/GUIA_INTEGRACAO_SAAS.md](GUIA_INTEGRACAO_SAAS.md)
-- **SDK PHP:** [sdk/README.md](../sdk/README.md)
-- **Exemplos:** [sdk/exemplo_uso.php](../sdk/exemplo_uso.php)
-
-## 🆘 Precisa de Ajuda?
-
-1. Consulte os logs: `tail -f app.log`
-2. Teste endpoints: `tests/Manual/`
-3. Verifique documentação: `docs/`
+| Documento | Descrição | Tempo |
+|-----------|-----------|-------|
+| **[Guia Completo](GUIA_INTEGRACAO_SAAS.md)** | Guia detalhado passo a passo | 30 min |
+| **[SDK PHP](../sdk/README.md)** | Documentação do SDK | 10 min |
+| **[Exemplos](../sdk/exemplo_uso.php)** | Exemplos práticos de uso | 15 min |
+| **[Rotas da API](ROTAS_API.md)** | Todas as rotas disponíveis | 20 min |
 
 ---
 
-**Pronto para integrar!** 🚀
+## 🆘 Precisa de Ajuda?
 
+1. **Consulte os logs:** `tail -f app.log`
+2. **Teste endpoints:** `tests/Manual/`
+3. **Verifique documentação:** `docs/`
+4. **Swagger UI:** Acesse `/api-docs/ui` no seu servidor
+
+---
+
+## 🚀 Próximos Passos
+
+1. ✅ Criar tenant e obter API Key
+2. ✅ Configurar SDK no seu SaaS
+3. ✅ Implementar fluxo de checkout
+4. ✅ Configurar webhooks
+5. ✅ Testar em ambiente de desenvolvimento
+
+---
+
+**Pronto para integrar!** 🎉
+
+Para mais detalhes, consulte o [Guia Completo de Integração](GUIA_INTEGRACAO_SAAS.md).

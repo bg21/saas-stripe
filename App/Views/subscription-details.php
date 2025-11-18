@@ -297,15 +297,21 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
     });
 });
 
-function cancelSubscription() {
-    if (!confirm('Tem certeza que deseja cancelar esta assinatura?')) return;
+async function cancelSubscription() {
+    const confirmed = await showConfirmModal(
+        'Tem certeza que deseja cancelar esta assinatura? Esta ação não pode ser desfeita.',
+        'Confirmar Cancelamento',
+        'Cancelar Assinatura'
+    );
+    if (!confirmed) return;
     
-    apiRequest(`/v1/subscriptions/${subscriptionId}`, { method: 'DELETE' })
-        .then(() => {
-            showAlert('Assinatura cancelada com sucesso!', 'success');
-            setTimeout(() => window.location.href = '/subscriptions', 2000);
-        })
-        .catch(error => showAlert(error.message, 'danger'));
+    try {
+        await apiRequest(`/v1/subscriptions/${subscriptionId}`, { method: 'DELETE' });
+        showAlert('Assinatura cancelada com sucesso!', 'success');
+        setTimeout(() => window.location.href = '/subscriptions', 2000);
+    } catch (error) {
+        showAlert('Erro ao cancelar assinatura: ' + error.message, 'danger');
+    }
 }
 </script>
 

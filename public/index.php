@@ -130,13 +130,13 @@ $app->before('start', function() {
     header('Referrer-Policy: strict-origin-when-cross-origin');
     
     // Content Security Policy
-    // Ajuste conforme necessário para permitir recursos externos específicos
+    // ✅ CORREÇÃO: Adicionado cdn.jsdelivr.net em connect-src para permitir source maps
     $csp = "default-src 'self'; " .
            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; " .
            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com; " .
            "img-src 'self' data: https:; " .
            "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com; " .
-           "connect-src 'self'; " .
+           "connect-src 'self' https://cdn.jsdelivr.net; " .
            "frame-ancestors 'none';";
     header("Content-Security-Policy: {$csp}");
     
@@ -192,10 +192,11 @@ $app->before('start', function() use ($app) {
     $publicRoutes = [
         '/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login', '/login', '/register',
         '/index', '/checkout', '/success', '/cancel', '/api-docs', '/api-docs/ui',
-        // Rotas autenticadas (serão verificadas individualmente)
+        // Rotas autenticadas (serão verificadas individualmente via getAuthenticatedUserData())
         '/dashboard', '/customers', '/subscriptions', '/products', '/prices', '/reports',
         '/users', '/permissions', '/audit-logs',
         '/customer-details', '/customer-invoices', '/subscription-details', '/subscription-history',
+        '/product-details', '/price-details', '/user-details', '/invoice-details', '/coupon-details', // ✅ CORREÇÃO: Adicionadas rotas de detalhes
         '/invoices', '/refunds', '/coupons', '/promotion-codes', '/settings',
         '/transactions', '/transaction-details', '/disputes', '/charges', '/payouts',
         '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal'
@@ -1104,6 +1105,16 @@ $app->route('GET /price-details', function() use ($app) {
     \App\Utils\View::render('price-details', [
         'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
         'title' => 'Detalhes do Preço', 'currentPage' => 'prices'
+    ], true);
+});
+
+// Rota de detalhes do cupom
+$app->route('GET /coupon-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('coupon-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Cupom', 'currentPage' => 'coupons'
     ], true);
 });
 

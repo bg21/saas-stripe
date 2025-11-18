@@ -1,6 +1,9 @@
 # 📦 Sistema de Migrations
 
-Este projeto utiliza o **Phinx** para gerenciar migrations e seeds do banco de dados.
+**Ferramenta:** Phinx  
+**Status:** ✅ Implementado
+
+---
 
 ## 🎯 Por que Migrations?
 
@@ -10,14 +13,18 @@ Este projeto utiliza o **Phinx** para gerenciar migrations e seeds do banco de d
 - ✅ **Colaboração**: Facilita trabalho em equipe
 - ✅ **Produção**: Deploy seguro de mudanças no banco
 
+---
+
 ## 📋 Pré-requisitos
 
-1. Instalar dependências:
-```bash
-composer install
-```
+1. **Instalar dependências:**
+   ```bash
+   composer install
+   ```
 
-2. Configurar o arquivo `.env` com as credenciais do banco de dados.
+2. **Configurar o arquivo `.env`** com as credenciais do banco de dados.
+
+---
 
 ## 🚀 Comandos Básicos
 
@@ -61,6 +68,8 @@ vendor/bin/phinx seed:run
 vendor/bin/phinx seed:run -s InitialSeed
 ```
 
+---
+
 ## 📝 Criando uma Nova Migration
 
 ### Via Composer (Recomendado)
@@ -85,6 +94,8 @@ class NomeDaMigration extends AbstractMigration
         // Código para aplicar a migration
         $table = $this->table('nova_tabela');
         $table->addColumn('nome', 'string', ['limit' => 255])
+              ->addColumn('email', 'string', ['limit' => 255])
+              ->addColumn('created_at', 'datetime')
               ->create();
     }
 
@@ -95,6 +106,8 @@ class NomeDaMigration extends AbstractMigration
     }
 }
 ```
+
+---
 
 ## 🌱 Criando um Novo Seed
 
@@ -128,6 +141,8 @@ class NomeDoSeed extends AbstractSeed
     }
 }
 ```
+
+---
 
 ## 🔄 Fluxo de Trabalho
 
@@ -176,6 +191,8 @@ class NomeDoSeed extends AbstractSeed
    composer run migrate:rollback
    ```
 
+---
+
 ## 📂 Estrutura de Arquivos
 
 ```
@@ -188,6 +205,8 @@ db/
     └── NomeDoSeed.php
 ```
 
+---
+
 ## ⚠️ Importante
 
 ### Migration Inicial
@@ -197,14 +216,13 @@ A migration `20250115000001_initial_schema.php` reflete o schema atual do sistem
 **Se você já tem um banco de dados em uso:**
 
 1. **NÃO execute a migration inicial** - ela criará tabelas que já existem
-2. Marque a migration inicial como executada:
-   ```bash
-   # Conecte ao banco e insira manualmente:
+2. **Marque a migration inicial como executada:**
+   ```sql
+   -- Conecte ao banco e insira manualmente:
    INSERT INTO phinxlog (version, migration_name, start_time, end_time, breakpoint)
    VALUES ('20250115000001', 'initial_schema', NOW(), NOW(), 0);
    ```
-
-3. Ou crie uma migration vazia que apenas marca o estado atual
+3. **Ou crie uma migration vazia** que apenas marca o estado atual
 
 ### Boas Práticas
 
@@ -214,6 +232,8 @@ A migration `20250115000001_initial_schema.php` reflete o schema atual do sistem
 4. ✅ **Migrations devem ser reversíveis (método `down()`)**
 5. ✅ **Não modifique migrations já executadas em produção**
 6. ✅ **Use seeds apenas para dados de desenvolvimento/teste**
+
+---
 
 ## 🔍 Troubleshooting
 
@@ -237,10 +257,16 @@ Verifique o arquivo `.env` e certifique-se de que:
 - `DB_NAME` existe
 - `DB_USER` e `DB_PASS` estão corretos
 
+---
+
 ## 📚 Referências
 
-- [Documentação do Phinx](https://book.cakephp.org/phinx/0/en/index.html)
-- [Phinx no GitHub](https://github.com/cakephp/phinx)
+| Recurso | Link |
+|---------|------|
+| **Documentação do Phinx** | https://book.cakephp.org/phinx/0/en/index.html |
+| **Phinx no GitHub** | https://github.com/cakephp/phinx |
+
+---
 
 ## 🎯 Próximos Passos
 
@@ -250,3 +276,6 @@ Após implementar o sistema de migrations, considere:
 2. **Health Check Avançado** - Verificação de dependências
 3. **Backup Automático** - Sistema de backup do banco
 
+---
+
+**Última Atualização:** 2025-01-XX

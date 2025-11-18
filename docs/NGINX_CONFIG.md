@@ -1,4 +1,10 @@
-# Configuração Nginx para Ocultar Versão/Stack
+# ⚙️ Configuração Nginx
+
+**Objetivo:** Ocultar versão/stack e adicionar headers de segurança
+
+---
+
+## 📋 Configuração Completa
 
 Se você estiver usando Nginx, adicione as seguintes configurações no seu arquivo de configuração do site:
 
@@ -46,13 +52,47 @@ server {
 }
 ```
 
+---
+
+## 📦 Instalação do Módulo
+
 **Nota:** Para remover completamente o header "Server", você pode precisar do módulo `headers-more-nginx-module`:
 
-```bash
-# Ubuntu/Debian
-sudo apt-get install nginx-extras
+### Ubuntu/Debian
 
-# Ou compilar com o módulo
-# https://github.com/openresty/headers-more-nginx-module
+```bash
+sudo apt-get install nginx-extras
 ```
 
+### Compilar com o Módulo
+
+Siga as instruções em: https://github.com/openresty/headers-more-nginx-module
+
+---
+
+## 🔒 Headers de Segurança Explicados
+
+| Header | Descrição |
+|--------|-----------|
+| `X-Content-Type-Options: nosniff` | Previne MIME type sniffing |
+| `X-Frame-Options: DENY` | Previne clickjacking |
+| `X-XSS-Protection: 1; mode=block` | Ativa proteção XSS do navegador |
+| `Referrer-Policy: strict-origin-when-cross-origin` | Controla informações de referrer |
+
+---
+
+## ✅ Verificação
+
+Após aplicar a configuração, verifique os headers:
+
+```bash
+curl -I http://seu-dominio.com
+```
+
+Você não deve ver:
+- `Server: nginx/1.x.x`
+- `X-Powered-By: PHP/x.x.x`
+
+---
+
+**Última Atualização:** 2025-01-XX

@@ -57,6 +57,64 @@ class Subscription extends BaseModel
     }
 
     /**
+     * Obtém estatísticas de assinaturas por tenant e status
+     * 
+     * @param int $tenantId ID do tenant
+     * @param array $filters Filtros adicionais (customer)
+     * @return array Estatísticas por status
+     */
+    public function getStatsByTenant(int $tenantId, array $filters = []): array
+    {
+        $conditions = ['tenant_id' => $tenantId];
+        
+        if (!empty($filters['customer'])) {
+            $conditions['customer_id'] = (int)$filters['customer'];
+        }
+        
+        $sql = "SELECT 
+                    status,
+                    COUNT(*) as count
+                FROM {$this->table}
+                WHERE tenant_id = :tenant_id";
+        
+        $params = ['tenant_id' => $tenantId];
+        
+        if (!empty($filters['customer'])) {
+            $sql .= " AND customer_id = :customer_id";
+            $params['customer_id'] = (int)$filters['customer'];
+        }
+        
+        $sql .= " GROUP BY status";
+        
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        
+        // Inicializa estatísticas
+        $stats = [
+            'total' => 0,
+            'active' => 0,
+            'trialing' => 0,
+            'canceled' => 0,
+            'past_due' => 0,
+            'incomplete' => 0
+        ];
+        
+        // Preenche estatísticas
+        foreach ($results as $row) {
+            $status = $row['status'];
+            $count = (int)$row['count'];
+            $stats['total'] += $count;
+            
+            if (isset($stats[$status])) {
+                $stats[$status] = $count;
+            }
+        }
+        
+        return $stats;
+    }
+
+    /**
      * Busca assinaturas por customer
      */
     public function findByCustomer(int $customerId): array

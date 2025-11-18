@@ -147,7 +147,12 @@ async function setDefault(customerId, methodId) {
 }
 
 async function deleteMethod(customerId, methodId) {
-    if (!confirm('Tem certeza que deseja remover este método de pagamento?')) return;
+    const confirmed = await showConfirmModal(
+        'Tem certeza que deseja remover este método de pagamento?',
+        'Confirmar Exclusão',
+        'Remover Método'
+    );
+    if (!confirmed) return;
     
     try {
         await apiRequest(`/v1/customers/${customerId}/payment-methods/${methodId}`, {
