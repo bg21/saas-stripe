@@ -6,7 +6,10 @@ use App\Models\User;
 use App\Models\UserSession;
 use App\Models\Tenant;
 use App\Services\Logger;
+use App\Services\AnomalyDetectionService;
 use App\Middleware\LoginRateLimitMiddleware;
+use App\Utils\Validator;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -21,6 +24,7 @@ class AuthController
     private UserSession $sessionModel;
     private Tenant $tenantModel;
     private LoginRateLimitMiddleware $loginRateLimit;
+    private AnomalyDetectionService $anomalyDetection;
 
     public function __construct()
     {
@@ -31,6 +35,9 @@ class AuthController
         // Inicializa rate limiter para login
         $rateLimiterService = new \App\Services\RateLimiterService();
         $this->loginRateLimit = new LoginRateLimitMiddleware($rateLimiterService);
+        
+        // Inicializa detecção de anomalias
+        $this->anomalyDetection = new AnomalyDetectionService();
     }
 
     /**
@@ -47,22 +54,50 @@ class AuthController
             }
             
             // Obtém dados do request
-            $data = json_decode(file_get_contents('php://input'), true);
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
-            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
-                $this->sendError(400, 'Dados inválidos', 'JSON inválido no corpo da requisição');
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                // Verifica se houve erro no JSON (RequestCache já valida, mas verifica novamente)
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $this->sendError(400, 'Dados inválidos', 'JSON inválido no corpo da requisição: ' . json_last_error_msg());
+                    return;
+                }
+                // Se não há dados mas JSON é válido (corpo vazio), inicializa array vazio
+                $data = [];
+            }
+            
+            // Validação rigorosa usando Validator
+            $validationErrors = Validator::validateLogin($data);
+            if (!empty($validationErrors)) {
+                $this->sendError(400, 'Dados inválidos', 'Por favor, verifique os dados informados', ['errors' => $validationErrors]);
                 return;
             }
             
-            $data = $data ?? [];
-            $email = trim($data['email'] ?? '');
-            $password = $data['password'] ?? '';
-            $tenantId = isset($data['tenant_id']) ? (int)$data['tenant_id'] : 0;
-
-            // Validação robusta de entrada
-            $validationErrors = $this->validateLoginInput($email, $password, $tenantId);
-            if (!empty($validationErrors)) {
-                $this->sendError(400, 'Dados inválidos', 'Por favor, verifique os dados informados', ['errors' => $validationErrors]);
+            // Sanitiza após validação
+            $email = trim($data['email']);
+            $password = $data['password'];
+            $tenantId = (int)$data['tenant_id'];
+            
+            // Identificador para detecção de anomalias (email + IP)
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $identifier = $email . '_' . $ip;
+            
+            // Verifica se está bloqueado
+            $blockStatus = $this->anomalyDetection->isBlocked($identifier);
+            if ($blockStatus['blocked']) {
+                $blockedUntil = date('Y-m-d H:i:s', $blockStatus['blocked_until']);
+                Logger::warning("Tentativa de login bloqueada", [
+                    'email' => $email,
+                    'ip' => $ip,
+                    'blocked_until' => $blockedUntil,
+                    'reason' => $blockStatus['reason']
+                ]);
+                
+                $this->sendError(429, 'Acesso temporariamente bloqueado', 
+                    "Muitas tentativas falhadas. Acesso bloqueado até {$blockedUntil}. " .
+                    "Por favor, tente novamente mais tarde.");
                 return;
             }
 
@@ -73,14 +108,26 @@ class AuthController
                 // Registra tentativa falha para rate limiting
                 $this->loginRateLimit->recordFailedAttempt($email);
                 
+                // Registra tentativa falha para detecção de anomalias
+                $anomalyResult = $this->anomalyDetection->recordFailedAttempt($identifier, 'login_failed', [
+                    'email' => $email,
+                    'tenant_id' => $tenantId
+                ]);
+                
                 Logger::warning("Tentativa de login com email não encontrado", [
                     'email' => $email,
                     'tenant_id' => $tenantId,
-                    'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                    'ip' => $ip,
+                    'remaining_attempts' => $anomalyResult['remaining_attempts']
                 ]);
                 
                 // Não revela se o email existe ou não (segurança)
-                $this->sendError(401, 'Credenciais inválidas', 'Email ou senha incorretos');
+                $message = 'Email ou senha incorretos';
+                if ($anomalyResult['remaining_attempts'] < 3) {
+                    $message .= ". Restam {$anomalyResult['remaining_attempts']} tentativas antes do bloqueio.";
+                }
+                
+                $this->sendError(401, 'Credenciais inválidas', $message);
                 return;
             }
 
@@ -89,16 +136,31 @@ class AuthController
                 // Registra tentativa falha para rate limiting
                 $this->loginRateLimit->recordFailedAttempt($email);
                 
+                // Registra tentativa falha para detecção de anomalias
+                $anomalyResult = $this->anomalyDetection->recordFailedAttempt($identifier, 'login_failed', [
+                    'user_id' => $user['id'],
+                    'email' => $email
+                ]);
+                
                 Logger::warning("Tentativa de login com senha incorreta", [
                     'user_id' => $user['id'],
                     'email' => $email,
-                    'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                    'ip' => $ip,
+                    'remaining_attempts' => $anomalyResult['remaining_attempts']
                 ]);
                 
                 // Não revela se o email existe ou não (segurança)
-                $this->sendError(401, 'Credenciais inválidas', 'Email ou senha incorretos');
+                $message = 'Email ou senha incorretos';
+                if ($anomalyResult['remaining_attempts'] < 3) {
+                    $message .= ". Restam {$anomalyResult['remaining_attempts']} tentativas antes do bloqueio.";
+                }
+                
+                $this->sendError(401, 'Credenciais inválidas', $message);
                 return;
             }
+            
+            // Login bem-sucedido - registra sucesso e reseta contadores
+            $this->anomalyDetection->recordSuccessfulLogin($identifier);
 
             // Verifica status do usuário
             if ($user['status'] !== 'active') {
@@ -160,11 +222,8 @@ class AuthController
                 ]
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao fazer login", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o login');
+            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao processar o login', 'LOGIN_ERROR');
+            $this->sendError(500, 'Erro interno', $response['message'], $response);
         }
     }
 
@@ -192,11 +251,8 @@ class AuthController
                 'message' => 'Logout realizado com sucesso'
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao fazer logout", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao processar o logout');
+            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao processar o logout', 'LOGOUT_ERROR');
+            $this->sendError(500, 'Erro interno', $response['message'], $response);
         }
     }
 
@@ -237,11 +293,8 @@ class AuthController
                 ]
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao verificar sessão", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            $this->sendError(500, 'Erro interno', Config::isDevelopment() ? $e->getMessage() : 'Ocorreu um erro ao verificar a sessão');
+            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao verificar a sessão', 'SESSION_VERIFY_ERROR');
+            $this->sendError(500, 'Erro interno', $response['message'], $response);
         }
     }
 

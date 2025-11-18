@@ -30,12 +30,18 @@ class Database
                 // Constrói DSN
                 $dsn = "mysql:host={$host};dbname={$dbName};charset={$charset}";
 
-                self::$instance = new PDO($dsn, $user, $pass, [
+                // ✅ OTIMIZAÇÃO: Adiciona timeout de conexão no DSN (compatível com todas as versões)
+                // O timeout é configurado diretamente no DSN do MySQL
+                $dsn .= ";connect_timeout=2";
+                
+                $options = [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES => false,
                     PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES {$charset}"
-                ]);
+                ];
+                
+                self::$instance = new PDO($dsn, $user, $pass, $options);
                 
                 // Garante que o banco está selecionado
                 self::$instance->exec("USE `{$dbName}`");

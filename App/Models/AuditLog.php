@@ -72,7 +72,10 @@ class AuditLog extends BaseModel
             $params['date_to'] = $filters['date_to'];
         }
 
-        $sql = "SELECT * FROM {$this->table}";
+        // ✅ OTIMIZAÇÃO: SELECT específico (não precisa de request_body para listagem)
+        $sql = "SELECT id, tenant_id, user_id, endpoint, method, ip_address, user_agent, 
+                       response_status, response_time, created_at 
+                FROM {$this->table}";
         
         if (!empty($conditions)) {
             $sql .= " WHERE " . implode(' AND ', $conditions);
@@ -194,7 +197,10 @@ class AuditLog extends BaseModel
             $params['date_to'] = $filters['date_to'];
         }
 
-        $sql = "SELECT * FROM {$this->table}";
+        // ✅ OTIMIZAÇÃO: SELECT específico (não precisa de request_body para listagem)
+        $sql = "SELECT id, tenant_id, user_id, endpoint, method, ip_address, user_agent, 
+                       response_status, response_time, created_at 
+                FROM {$this->table}";
         
         if (!empty($conditions)) {
             $sql .= " WHERE " . implode(' AND ', $conditions);

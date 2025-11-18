@@ -42,22 +42,36 @@ class RateLimiterService
     
     /**
      * Verifica limite usando Redis
+     * ✅ OTIMIZAÇÃO: Timeout curto e fallback rápido
      */
     private function checkLimitRedis(string $key, int $limit, int $window): array
     {
         try {
             $redis = $this->getRedisClient();
             
-            // Usa INCR para incrementar contador
-            $current = $redis->incr($key);
+            // ✅ Se Redis não estiver disponível, usa fallback imediatamente
+            if ($redis === null) {
+                return $this->checkLimitDatabase($this->extractIdentifierFromKey($key), $limit, $window, null);
+            }
+            
+            // ✅ OTIMIZAÇÃO: Operações com timeout implícito (já configurado no cliente)
+            $startTime = microtime(true);
+            $current = @$redis->incr($key);
+            $elapsed = microtime(true) - $startTime;
+            
+            // ✅ Se operação demorou mais de 200ms, usa fallback
+            if ($elapsed > 0.2 || $current === false) {
+                Logger::warning("Redis lento, usando fallback para rate limit");
+                return $this->checkLimitDatabase($this->extractIdentifierFromKey($key), $limit, $window, null);
+            }
             
             // Se é a primeira requisição nesta janela, define TTL
             if ($current === 1) {
-                $redis->expire($key, $window);
+                @$redis->expire($key, $window);
             }
             
             $remaining = max(0, $limit - $current);
-            $ttl = $redis->ttl($key);
+            $ttl = @$redis->ttl($key);
             $resetAt = time() + ($ttl > 0 ? $ttl : $window);
             
             return [

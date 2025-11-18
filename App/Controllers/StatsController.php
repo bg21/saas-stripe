@@ -31,6 +31,9 @@ class StatsController
      * 
      * Query params opcionais:
      *   - period: 'today', 'week', 'month', 'year', 'all' (padrão: 'all')
+     * 
+     * ✅ OTIMIZAÇÃO: Usa queries SQL agregadas ao invés de carregar todos os registros em memória
+     * ✅ OTIMIZAÇÃO: Cache de 60 segundos para reduzir carga no banco
      */
     public function get(): void
     {
@@ -45,71 +48,71 @@ class StatsController
             $queryParams = Flight::request()->query;
             $period = $queryParams['period'] ?? 'all';
 
+            // ✅ OTIMIZAÇÃO: Cache de 60 segundos (stats mudam pouco)
+            $cacheKey = sprintf('stats:%d:%s', $tenantId, $period);
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Flight::json($cached);
+                return;
+            }
+
             // Calcula período
             $dateFilter = $this->getDateFilter($period);
 
-            // Estatísticas de Customers
-            $customers = $this->customerModel->findByTenant($tenantId);
-            $totalCustomers = count($customers);
+            // ✅ OTIMIZAÇÃO: Usa queries SQL agregadas (muito mais rápido que carregar tudo em memória)
+            $db = \App\Utils\Database::getInstance();
+
+            // Estatísticas de Customers (1 query ao invés de carregar todos)
+            $customerSql = "SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN created_at >= :start_date AND created_at <= :end_date THEN 1 ELSE 0 END) as new
+            FROM customers 
+            WHERE tenant_id = :tenant_id";
             
-            $newCustomers = 0;
-            if ($dateFilter) {
-                foreach ($customers as $customer) {
-                    $createdAt = strtotime($customer['created_at']);
-                    if ($createdAt >= $dateFilter['start'] && $createdAt <= $dateFilter['end']) {
-                        $newCustomers++;
-                    }
-                }
-            } else {
-                $newCustomers = $totalCustomers;
-            }
-
-            // Estatísticas de Assinaturas
-            $subscriptions = $this->subscriptionModel->findByTenant($tenantId);
-            $totalSubscriptions = count($subscriptions);
+            $customerParams = [
+                'tenant_id' => $tenantId,
+                'start_date' => $dateFilter ? date('Y-m-d H:i:s', $dateFilter['start']) : '1970-01-01 00:00:00',
+                'end_date' => $dateFilter ? date('Y-m-d H:i:s', $dateFilter['end']) : date('Y-m-d H:i:s', time())
+            ];
             
-            $activeSubscriptions = 0;
-            $canceledSubscriptions = 0;
-            $trialingSubscriptions = 0;
-            $newSubscriptions = 0;
-            $mrr = 0; // Monthly Recurring Revenue
+            $customerStmt = $db->prepare($customerSql);
+            $customerStmt->execute($customerParams);
+            $customerStats = $customerStmt->fetch(\PDO::FETCH_ASSOC);
+            
+            $totalCustomers = (int)($customerStats['total'] ?? 0);
+            $newCustomers = $dateFilter ? (int)($customerStats['new'] ?? 0) : $totalCustomers;
 
-            foreach ($subscriptions as $subscription) {
-                $status = strtolower($subscription['status'] ?? '');
-                
-                if ($status === 'active') {
-                    $activeSubscriptions++;
-                } elseif ($status === 'canceled') {
-                    $canceledSubscriptions++;
-                } elseif ($status === 'trialing') {
-                    $trialingSubscriptions++;
-                }
+            // ✅ OTIMIZAÇÃO: Estatísticas de Assinaturas em 1 query agregada (ao invés de loop PHP)
+            $subscriptionSql = "SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN LOWER(status) = 'active' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN LOWER(status) = 'canceled' THEN 1 ELSE 0 END) as canceled,
+                SUM(CASE WHEN LOWER(status) = 'trialing' THEN 1 ELSE 0 END) as trialing,
+                SUM(CASE WHEN created_at >= :start_date AND created_at <= :end_date THEN 1 ELSE 0 END) as new,
+                SUM(CASE WHEN LOWER(status) = 'active' THEN COALESCE(amount, 0) ELSE 0 END) as mrr
+            FROM subscriptions 
+            WHERE tenant_id = :tenant_id";
+            
+            $subscriptionParams = [
+                'tenant_id' => $tenantId,
+                'start_date' => $dateFilter ? date('Y-m-d H:i:s', $dateFilter['start']) : '1970-01-01 00:00:00',
+                'end_date' => $dateFilter ? date('Y-m-d H:i:s', $dateFilter['end']) : date('Y-m-d H:i:s', time())
+            ];
+            
+            $subscriptionStmt = $db->prepare($subscriptionSql);
+            $subscriptionStmt->execute($subscriptionParams);
+            $subscriptionStats = $subscriptionStmt->fetch(\PDO::FETCH_ASSOC);
+            
+            $totalSubscriptions = (int)($subscriptionStats['total'] ?? 0);
+            $activeSubscriptions = (int)($subscriptionStats['active'] ?? 0);
+            $canceledSubscriptions = (int)($subscriptionStats['canceled'] ?? 0);
+            $trialingSubscriptions = (int)($subscriptionStats['trialing'] ?? 0);
+            $newSubscriptions = $dateFilter ? (int)($subscriptionStats['new'] ?? 0) : $totalSubscriptions;
+            $mrr = round((float)($subscriptionStats['mrr'] ?? 0), 2);
 
-                // Calcula MRR (apenas assinaturas ativas)
-                // O amount já está em formato monetário (DECIMAL), não em centavos
-                if ($status === 'active' && isset($subscription['amount'])) {
-                    $amount = (float)($subscription['amount'] ?? 0);
-                    // Por padrão, assumimos mensal. Se houver campo interval no metadata, podemos ajustar
-                    // Por enquanto, consideramos todas como mensais
-                    $mrr += $amount;
-                }
-
-                // Conta novas assinaturas no período
-                if ($dateFilter) {
-                    $createdAt = strtotime($subscription['created_at']);
-                    if ($createdAt >= $dateFilter['start'] && $createdAt <= $dateFilter['end']) {
-                        $newSubscriptions++;
-                    }
-                } else {
-                    $newSubscriptions = $totalSubscriptions;
-                }
-            }
-
-            // Estatísticas de Receita (via Stripe - se necessário)
-            // Por enquanto, calculamos apenas MRR baseado nas assinaturas do banco
-            // O amount já está em formato monetário (não em centavos)
+            // Estatísticas de Receita
             $revenue = [
-                'mrr' => round($mrr, 2), // MRR (Monthly Recurring Revenue)
+                'mrr' => $mrr,
                 'currency' => 'BRL' // Pode ser ajustado baseado nas assinaturas
             ];
 
@@ -123,7 +126,7 @@ class StatsController
                 ? round(($canceledSubscriptions / $totalSubscriptions) * 100, 2) 
                 : 0;
 
-            Flight::json([
+            $response = [
                 'success' => true,
                 'period' => $period,
                 'data' => [
@@ -145,7 +148,12 @@ class StatsController
                     ]
                 ],
                 'timestamp' => date('Y-m-d H:i:s')
-            ]);
+            ];
+
+            // ✅ OTIMIZAÇÃO: Salva no cache (TTL: 60 segundos)
+            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+
+            Flight::json($response);
         } catch (\Exception $e) {
             Logger::error("Erro ao obter estatísticas", [
                 'error' => $e->getMessage(),

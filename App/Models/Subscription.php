@@ -33,17 +33,26 @@ class Subscription extends BaseModel
             $conditions['customer_id'] = (int)$filters['customer'];
         }
         
-        $orderBy = [['created_at' => 'DESC']];
+        $orderBy = ['created_at' => 'DESC'];
         
-        $subscriptions = $this->findAll($conditions, $orderBy, $limit, $offset);
-        $total = $this->count($conditions);
+        // ✅ OTIMIZAÇÃO: Usa método otimizado com COUNT em uma query (MySQL 8.0+)
+        // Fallback para método antigo se window function não suportado
+        try {
+            $result = $this->findAllWithCount($conditions, $orderBy, $limit, $offset);
+        } catch (\Exception $e) {
+            // Fallback: usa método antigo (2 queries) se window function não suportado
+            $result = [
+                'data' => $this->findAll($conditions, $orderBy, $limit, $offset),
+                'total' => $this->count($conditions)
+            ];
+        }
         
         return [
-            'data' => $subscriptions,
-            'total' => $total,
+            'data' => $result['data'],
+            'total' => $result['total'],
             'page' => $page,
             'limit' => $limit,
-            'total_pages' => ceil($total / $limit)
+            'total_pages' => ceil($result['total'] / $limit)
         ];
     }
 
@@ -53,6 +62,30 @@ class Subscription extends BaseModel
     public function findByCustomer(int $customerId): array
     {
         return $this->findAll(['customer_id' => $customerId]);
+    }
+
+    /**
+     * Busca assinatura por tenant e ID (proteção IDOR)
+     * 
+     * @param int $tenantId ID do tenant
+     * @param int $id ID da assinatura
+     * @return array|null Assinatura encontrada ou null
+     */
+    public function findByTenantAndId(int $tenantId, int $id): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM {$this->table} 
+             WHERE id = :id 
+             AND tenant_id = :tenant_id 
+             LIMIT 1"
+        );
+        $stmt->execute([
+            'id' => $id,
+            'tenant_id' => $tenantId
+        ]);
+        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+        
+        return $result ?: null;
     }
 
     /**

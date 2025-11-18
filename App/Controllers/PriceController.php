@@ -68,6 +68,25 @@ class PriceController
                 $options['currency'] = $queryParams['currency'];
             }
             
+            // ✅ CACHE: Gera chave única baseada em parâmetros
+            $cacheKey = sprintf(
+                'prices:list:%d:%s:%s:%s:%s:%s:%s',
+                $options['limit'] ?? 10,
+                md5($options['starting_after'] ?? ''),
+                md5($options['ending_before'] ?? ''),
+                ($options['active'] ?? '') === true ? '1' : (($options['active'] ?? '') === false ? '0' : ''),
+                $options['type'] ?? '',
+                $options['product'] ?? '',
+                $options['currency'] ?? ''
+            );
+            
+            // ✅ Tenta obter do cache (TTL: 60 segundos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Flight::json($cached);
+                return;
+            }
+            
             $prices = $this->stripeService->listPrices($options);
             
             // Formata resposta
@@ -109,12 +128,17 @@ class PriceController
                 $formattedPrices[] = $priceData;
             }
             
-            Flight::json([
+            $response = [
                 'success' => true,
                 'data' => $formattedPrices,
                 'has_more' => $prices->has_more,
                 'count' => count($formattedPrices)
-            ]);
+            ];
+            
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            
+            Flight::json($response);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Logger::error("Erro ao listar preços", [
                 'error' => $e->getMessage(),
@@ -161,9 +185,15 @@ class PriceController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
             }
 
@@ -370,9 +400,15 @@ class PriceController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
             }
 

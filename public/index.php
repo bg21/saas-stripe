@@ -5,6 +5,18 @@
  * Configura FlightPHP e rotas
  */
 
+// ✅ OTIMIZAÇÃO: Compressão de resposta (gzip/deflate)
+if (extension_loaded('zlib') && !ob_get_level()) {
+    $acceptEncoding = $_SERVER['HTTP_ACCEPT_ENCODING'] ?? '';
+    if (strpos($acceptEncoding, 'gzip') !== false) {
+        ob_start('ob_gzhandler');
+    } elseif (strpos($acceptEncoding, 'deflate') !== false) {
+        ob_start('ob_deflatehandler');
+    } else {
+        ob_start();
+    }
+}
+
 // Servir arquivos estáticos da pasta /app (front-end)
 $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
@@ -36,7 +48,11 @@ if (preg_match('/^\/app\//', $requestUri)) {
             ];
             
             header('Content-Type: ' . ($mimeTypes[$ext] ?? 'text/plain'));
-            header('Cache-Control: public, max-age=3600');
+            // ✅ OTIMIZAÇÃO: Cache agressivo para assets estáticos (1 ano)
+            header('Cache-Control: public, max-age=31536000, immutable');
+            header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
+            // Remove headers que expõem informações do servidor
+            header_remove('X-Powered-By');
             readfile($filePath);
             exit;
         }
@@ -60,7 +76,11 @@ if (preg_match('/^\/css\//', $requestUri)) {
         // Verificar se o arquivo está dentro de public/css
         if ($realPath && strpos($realPath, $publicPath . DIRECTORY_SEPARATOR . 'css') === 0) {
             header('Content-Type: text/css; charset=utf-8');
-            header('Cache-Control: public, max-age=3600');
+            // ✅ OTIMIZAÇÃO: Cache agressivo para CSS (1 ano)
+            header('Cache-Control: public, max-age=31536000, immutable');
+            header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 31536000) . ' GMT');
+            // Remove headers que expõem informações do servidor
+            header_remove('X-Powered-By');
             readfile($filePath);
             exit;
         }
@@ -89,6 +109,20 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
 
 // Middleware de CORS e Headers de Segurança
 $app->before('start', function() {
+    // Remove headers que expõem informações do servidor
+    // Ocultar versão do PHP
+    header_remove('X-Powered-By');
+    
+    // Ocultar informações do servidor web (se configurado no servidor)
+    // Nota: Para Apache, configure no .htaccess: ServerTokens Prod
+    // Para Nginx, configure: server_tokens off;
+    
+    // ✅ OTIMIZAÇÃO: Cache de headers para respostas JSON (5 minutos)
+    $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    if (strpos($requestUri, '/v1/') === 0 && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        header('Cache-Control: private, max-age=300'); // 5 minutos para APIs
+    }
+    
     // Headers de Segurança (sempre aplicados)
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
@@ -217,7 +251,12 @@ $app->before('start', function() use ($app) {
     
     // Se não tem header, retorna erro
     if (!$authHeader) {
-        $app->json(['error' => 'Token de autenticação não fornecido', 'debug' => Config::isDevelopment() ? ['server_keys' => array_keys($_SERVER)] : null], 401);
+        // ✅ SEGURANÇA: Não expõe informações sensíveis mesmo em desenvolvimento
+        $debug = Config::isDevelopment() ? [
+            'server_keys_count' => count(array_keys($_SERVER)),
+            'has_authorization' => isset($_SERVER['HTTP_AUTHORIZATION'])
+        ] : null;
+        $app->json(['error' => 'Token de autenticação não fornecido', 'debug' => $debug], 401);
         $app->stop();
         exit;
     }
@@ -231,20 +270,61 @@ $app->before('start', function() use ($app) {
     
     $token = trim($matches[1]);
     
+    // ✅ CACHE: Verifica cache de autenticação (TTL: 5 minutos)
+    $cacheKey = "auth:token:" . hash('sha256', $token);
+    $cachedAuth = \App\Services\CacheService::getJson($cacheKey);
+    
+    if ($cachedAuth !== null) {
+        // Usa dados do cache
+        if (isset($cachedAuth['user_id'])) {
+            // Autenticação via Session ID (usuário)
+            Flight::set('user_id', (int)$cachedAuth['user_id']);
+            Flight::set('user_role', $cachedAuth['user_role'] ?? 'viewer');
+            Flight::set('user_email', $cachedAuth['user_email']);
+            Flight::set('user_name', $cachedAuth['user_name']);
+            Flight::set('tenant_id', (int)$cachedAuth['tenant_id']);
+            Flight::set('tenant_name', $cachedAuth['tenant_name']);
+            Flight::set('is_user_auth', true);
+            Flight::set('is_master', false);
+        } else {
+            // Autenticação via API Key (tenant)
+            Flight::set('tenant_id', (int)$cachedAuth['tenant_id']);
+            Flight::set('tenant', $cachedAuth['tenant'] ?? null);
+            Flight::set('is_master', $cachedAuth['is_master'] ?? false);
+            Flight::set('is_user_auth', false);
+        }
+        return;
+    }
+    
+    // Se não há cache, valida normalmente
     // Tenta primeiro como Session ID (usuário autenticado)
     $userSessionModel = new \App\Models\UserSession();
     $session = $userSessionModel->validate($token);
     
     if ($session) {
         // Autenticação via Session ID (usuário)
-        Flight::set('user_id', (int)$session['user_id']);
-        Flight::set('user_role', $session['role'] ?? 'viewer');
-        Flight::set('user_email', $session['email']);
-        Flight::set('user_name', $session['name']);
-        Flight::set('tenant_id', (int)$session['tenant_id']);
-        Flight::set('tenant_name', $session['tenant_name']);
+        $authData = [
+            'user_id' => (int)$session['user_id'],
+            'user_role' => $session['role'] ?? 'viewer',
+            'user_email' => $session['email'],
+            'user_name' => $session['name'],
+            'tenant_id' => (int)$session['tenant_id'],
+            'tenant_name' => $session['tenant_name'],
+            'is_user_auth' => true,
+            'is_master' => false
+        ];
+        
+        Flight::set('user_id', $authData['user_id']);
+        Flight::set('user_role', $authData['user_role']);
+        Flight::set('user_email', $authData['user_email']);
+        Flight::set('user_name', $authData['user_name']);
+        Flight::set('tenant_id', $authData['tenant_id']);
+        Flight::set('tenant_name', $authData['tenant_name']);
         Flight::set('is_user_auth', true);
         Flight::set('is_master', false);
+        
+        // ✅ Salva no cache
+        \App\Services\CacheService::setJson($cacheKey, $authData, 300);
         return;
     }
     
@@ -253,16 +333,30 @@ $app->before('start', function() use ($app) {
     $tenant = $tenantModel->findByApiKey($token);
     
     if (!$tenant) {
-        // Verifica master key
+        // Verifica master key (usando hash_equals para prevenir timing attacks)
         $masterKey = Config::get('API_MASTER_KEY');
-        if ($masterKey && $token === $masterKey) {
+        if ($masterKey && hash_equals($masterKey, $token)) {
+            $authData = [
+                'tenant_id' => null,
+                'is_master' => true,
+                'is_user_auth' => false
+            ];
+            
             Flight::set('tenant_id', null);
             Flight::set('is_master', true);
             Flight::set('is_user_auth', false);
+            
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $authData, 300);
             return;
         }
         
-        $app->json(['error' => 'Token inválido', 'debug' => Config::isDevelopment() ? ['token_received' => substr($token, 0, 20) . '...', 'length' => strlen($token)] : null], 401);
+        // ✅ SEGURANÇA: Não expõe informações sensíveis sobre tokens mesmo em desenvolvimento
+        $debug = Config::isDevelopment() ? [
+            'token_length' => strlen($token),
+            'token_format_valid' => preg_match('/^[a-zA-Z0-9]+$/', $token) === 1
+        ] : null;
+        $app->json(['error' => 'Token inválido', 'debug' => $debug], 401);
         $app->stop();
         exit;
     }
@@ -274,31 +368,178 @@ $app->before('start', function() use ($app) {
     }
 
     // Autenticação via API Key (tenant)
+    $authData = [
+        'tenant_id' => (int)$tenant['id'],
+        'tenant' => $tenant,
+        'is_master' => false,
+        'is_user_auth' => false
+    ];
+    
     Flight::set('tenant_id', (int)$tenant['id']);
     Flight::set('tenant', $tenant);
     Flight::set('is_master', false);
     Flight::set('is_user_auth', false);
+    
+    // ✅ Salva no cache
+    \App\Services\CacheService::setJson($cacheKey, $authData, 300);
 });
 
 // Inicializa serviços (injeção de dependência)
 $rateLimiterService = new \App\Services\RateLimiterService();
 $rateLimitMiddleware = new \App\Middleware\RateLimitMiddleware($rateLimiterService);
 
+// Inicializa middleware de validação de tamanho de payload
+$payloadSizeMiddleware = new \App\Middleware\PayloadSizeMiddleware();
+
 // Inicializa middleware de auditoria
 $auditLogModel = new \App\Models\AuditLog();
 $auditMiddleware = new \App\Middleware\AuditMiddleware($auditLogModel);
 
+// Middleware de Validação de Tamanho de Payload (antes de processar requisições)
+$app->before('start', function() use ($payloadSizeMiddleware, $app) {
+    $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    
+    // Aplica apenas em métodos que podem ter payload
+    if (in_array($method, ['POST', 'PUT', 'PATCH'])) {
+        // Endpoints críticos têm limite mais restritivo (512KB)
+        $criticalEndpoints = [
+            '/v1/customers',
+            '/v1/subscriptions',
+            '/v1/products',
+            '/v1/prices',
+            '/v1/auth/login',
+            '/v1/users'
+        ];
+        
+        $isCritical = false;
+        foreach ($criticalEndpoints as $endpoint) {
+            if (strpos($requestUri, $endpoint) === 0) {
+                $isCritical = true;
+                break;
+            }
+        }
+        
+        if ($isCritical) {
+            $allowed = $payloadSizeMiddleware->checkStrict();
+        } else {
+            $allowed = $payloadSizeMiddleware->check();
+        }
+        
+        if (!$allowed) {
+            // Resposta já foi enviada pelo middleware
+            $app->stop();
+            exit;
+        }
+    }
+});
+
 // Middleware de Rate Limiting (após autenticação)
 $app->before('start', function() use ($rateLimitMiddleware, $app) {
-    // Rotas públicas não têm rate limiting
-    $publicRoutes = ['/', '/v1/webhook', '/health', '/health/detailed'];
     $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    
+    // Rotas públicas têm rate limiting mais restritivo (exceto webhook que tem limite maior)
+    $publicRoutes = ['/', '/health', '/health/detailed'];
     
     if (in_array($requestUri, $publicRoutes)) {
+        // Rate limit mais restritivo para rotas públicas
+        $allowed = $rateLimitMiddleware->check($requestUri, [
+            'limit' => 10,  // 10 requisições
+            'window' => 60  // por minuto
+        ]);
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
         return;
     }
     
-    // Verifica rate limit
+    // Webhook tem limite maior (200/min) mas ainda é controlado
+    if ($requestUri === '/v1/webhook' && $method === 'POST') {
+        // O middleware já aplica limite de 200/min para webhooks
+        $allowed = $rateLimitMiddleware->check($requestUri);
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
+        return;
+    }
+    
+    // Endpoints de criação têm limite mais baixo
+    $createEndpoints = [
+        '/v1/customers',
+        '/v1/subscriptions',
+        '/v1/products',
+        '/v1/prices',
+        '/v1/coupons',
+        '/v1/promotion-codes',
+        '/v1/payment-intents',
+        '/v1/refunds',
+        '/v1/invoice-items',
+        '/v1/tax-rates',
+        '/v1/setup-intents',
+        '/v1/payouts'
+    ];
+    
+    if ($method === 'POST' && in_array($requestUri, $createEndpoints)) {
+        // Limite diferenciado por endpoint (o middleware já aplica)
+        $allowed = $rateLimitMiddleware->check($requestUri);
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
+        return;
+    }
+    
+    // Endpoints de atualização também têm limites específicos
+    $updateEndpoints = [
+        '/v1/customers',
+        '/v1/subscriptions',
+        '/v1/products',
+        '/v1/prices',
+        '/v1/coupons',
+        '/v1/promotion-codes',
+        '/v1/invoice-items',
+        '/v1/tax-rates',
+        '/v1/charges',
+        '/v1/disputes'
+    ];
+    
+    if ($method === 'PUT' && in_array($requestUri, $updateEndpoints)) {
+        $allowed = $rateLimitMiddleware->check($requestUri);
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
+        return;
+    }
+    
+    // Endpoints de exclusão têm limite ainda mais restritivo
+    $deleteEndpoints = [
+        '/v1/subscriptions',
+        '/v1/products',
+        '/v1/coupons',
+        '/v1/invoice-items',
+        '/v1/subscription-items',
+        '/v1/customers/payment-methods'
+    ];
+    
+    if ($method === 'DELETE' && in_array($requestUri, $deleteEndpoints)) {
+        $allowed = $rateLimitMiddleware->check($requestUri);
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
+        return;
+    }
+    
+    // Rate limit padrão para outros endpoints
     $allowed = $rateLimitMiddleware->check($requestUri);
     
     if (!$allowed) {
@@ -1072,29 +1313,19 @@ $app->map('notFound', function() use ($app, $auditMiddleware) {
 
 $app->map('error', function(\Throwable $ex) use ($app, $auditMiddleware) {
     try {
-        \App\Services\Logger::error("Erro não tratado", [
-            'message' => $ex->getMessage(),
-            'trace' => $ex->getTraceAsString()
-        ]);
+        \App\Utils\ErrorHandler::logException($ex);
     } catch (\Exception $e) {
         // Ignora erros de log
     }
     
     $auditMiddleware->logResponse(500);
     
-    $app->json([
-        'error' => 'Erro interno do servidor',
-        'message' => Config::isDevelopment() ? $ex->getMessage() : null
-    ], 500);
+    $response = \App\Utils\ErrorHandler::prepareErrorResponse($ex, 'Erro interno do servidor', 'INTERNAL_SERVER_ERROR');
+    $app->json($response, 500);
 });
 
-// Middleware de Auditoria - Registra resposta após processamento
-// Usa register_shutdown_function para garantir que sempre execute
-register_shutdown_function(function() use ($auditMiddleware) {
-    // Obtém status HTTP da resposta
-    $statusCode = http_response_code() ?: 200;
-    $auditMiddleware->logResponse($statusCode);
-});
+// ✅ OTIMIZAÇÃO: AuditMiddleware já usa register_shutdown_function internamente
+// Não precisa de outro aqui (já foi otimizado para não bloquear resposta)
 
 // Inicia aplicação
 $app->start();

@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\User;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -202,52 +203,32 @@ class UserController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
-            // Validações obrigatórias
-            if (empty($data['email'])) {
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
+            
+            // Validação usando Validator
+            $errors = Validator::validateUserCreate($data);
+            if (!empty($errors)) {
                 Flight::halt(400, json_encode([
                     'error' => 'Dados inválidos',
-                    'message' => 'Email é obrigatório'
+                    'message' => 'Por favor, verifique os dados informados',
+                    'errors' => $errors
                 ]));
                 return;
             }
             
-            if (empty($data['password'])) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Senha é obrigatória'
-                ]));
-                return;
-            }
-            
-            // Valida formato de email
-            if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Email inválido'
-                ]));
-                return;
-            }
-            
-            // Valida senha (mínimo 6 caracteres)
-            if (strlen($data['password']) < 6) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Senha deve ter pelo menos 6 caracteres'
-                ]));
-                return;
-            }
-            
-            // Valida role
+            // Sanitiza após validação
             $role = $data['role'] ?? 'viewer';
-            if (!in_array($role, ['admin', 'editor', 'viewer'])) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Role inválida. Use: admin, editor ou viewer'
-                ]));
-                return;
-            }
             
             // Verifica se o email já existe no tenant
             $existingUser = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
@@ -337,7 +318,18 @@ class UserController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
             
             // Busca usuário
             $user = $this->userModel->findById((int)$id);
@@ -390,11 +382,12 @@ class UserController
             }
             
             if (isset($data['password'])) {
-                // Valida senha (mínimo 6 caracteres)
-                if (strlen($data['password']) < 6) {
+                // Valida força da senha
+                $passwordError = Validator::validatePasswordStrength($data['password']);
+                if ($passwordError) {
                     Flight::halt(400, json_encode([
                         'error' => 'Dados inválidos',
-                        'message' => 'Senha deve ter pelo menos 6 caracteres'
+                        'message' => $passwordError
                     ]));
                     return;
                 }
@@ -609,7 +602,18 @@ class UserController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
             
             // Valida role
             if (empty($data['role']) || !in_array($data['role'], ['admin', 'editor', 'viewer'])) {

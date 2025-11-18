@@ -48,9 +48,15 @@ class InvoiceItemController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
             }
 
@@ -68,6 +74,15 @@ class InvoiceItemController
                 }
                 if (empty($data['currency'])) {
                     Flight::json(['error' => 'Campo currency é obrigatório quando amount é fornecido'], 400);
+                    return;
+                }
+            }
+            
+            // ✅ SEGURANÇA: Valida tamanho máximo de arrays (prevenção de DoS)
+            if (isset($data['tax_rates']) && is_array($data['tax_rates'])) {
+                $taxRatesErrors = \App\Utils\Validator::validateArraySize($data['tax_rates'], 'tax_rates', 50);
+                if (!empty($taxRatesErrors)) {
+                    Flight::json(['error' => 'Dados inválidos', 'errors' => $taxRatesErrors], 400);
                     return;
                 }
             }
@@ -177,22 +192,46 @@ class InvoiceItemController
 
             $collection = $this->stripeService->listInvoiceItems($options);
 
+            // ✅ OTIMIZAÇÃO: Busca todos os customers de uma vez (elimina N+1)
+            $customerModel = new \App\Models\Customer();
+            $stripeCustomerIds = array_unique(array_filter(
+                array_map(function($item) {
+                    return $item->customer ?? null;
+                }, $collection->data)
+            ));
+            
+            // Busca todos os customers em uma única query
+            $customersByStripeId = [];
+            if (!empty($stripeCustomerIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($stripeCustomerIds), '?'));
+                $stmt = $db->prepare(
+                    "SELECT id, tenant_id, stripe_customer_id 
+                     FROM customers 
+                     WHERE stripe_customer_id IN ({$placeholders})"
+                );
+                $stmt->execute($stripeCustomerIds);
+                $customers = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                
+                foreach ($customers as $customer) {
+                    $customersByStripeId[$customer['stripe_customer_id']] = $customer;
+                }
+            }
+
             $invoiceItems = [];
             foreach ($collection->data as $item) {
                 // Filtra apenas invoice items do tenant (via metadata ou customer)
                 $isTenantItem = false;
                 
+                // Verifica metadata primeiro (mais rápido)
                 if (isset($item->metadata->tenant_id) && 
                     (string)$item->metadata->tenant_id === (string)$tenantId) {
                     $isTenantItem = true;
-                } else {
-                    // Fallback: verifica via customer
-                    if (!empty($item->customer)) {
-                        $customerModel = new \App\Models\Customer();
-                        $customer = $customerModel->findByStripeId($item->customer);
-                        if ($customer && $customer['tenant_id'] == $tenantId) {
-                            $isTenantItem = true;
-                        }
+                } elseif (!empty($item->customer)) {
+                    // ✅ Usa cache de customers já carregados (elimina N+1)
+                    $customer = $customersByStripeId[$item->customer] ?? null;
+                    if ($customer && $customer['tenant_id'] == $tenantId) {
+                        $isTenantItem = true;
                     }
                 }
                 
@@ -361,10 +400,25 @@ class InvoiceItemController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
+            }
+            
+            // ✅ SEGURANÇA: Valida tamanho máximo de arrays (prevenção de DoS)
+            if (isset($data['tax_rates']) && is_array($data['tax_rates'])) {
+                $taxRatesErrors = \App\Utils\Validator::validateArraySize($data['tax_rates'], 'tax_rates', 50);
+                if (!empty($taxRatesErrors)) {
+                    Flight::json(['error' => 'Dados inválidos', 'errors' => $taxRatesErrors], 400);
+                    return;
+                }
             }
 
             $invoiceItem = $this->stripeService->updateInvoiceItem($id, $data);

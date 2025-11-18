@@ -1,0 +1,57 @@
+# Configurações de segurança e performance para Apache
+
+# Ocultar versão do servidor
+ServerTokens Prod
+
+# Desabilitar listagem de diretórios
+Options -Indexes
+
+# Proteção contra acesso a arquivos sensíveis
+<FilesMatch "\.(htaccess|htpasswd|ini|log|sh|sql|conf)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Headers de segurança (se mod_headers estiver habilitado)
+<IfModule mod_headers.c>
+    # Remove X-Powered-By (PHP já remove via header_remove, mas garante aqui também)
+    Header unset X-Powered-By
+    
+    # Remove Server header (se possível)
+    Header unset Server
+    
+    # Headers de segurança adicionais
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Rewrite rules para FlightPHP
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Redireciona todas as requisições para index.php (exceto arquivos existentes)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Compressão GZIP (se mod_deflate estiver habilitado)
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Cache de arquivos estáticos
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType font/woff "access plus 1 year"
+    ExpiresByType font/woff2 "access plus 1 year"
+</IfModule>
+

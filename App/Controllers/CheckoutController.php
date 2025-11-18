@@ -30,12 +30,33 @@ class CheckoutController
     public function create(): void
     {
         try {
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
             $tenantId = Flight::get('tenant_id');
 
             // Validações básicas
             if (empty($data['success_url']) || empty($data['cancel_url'])) {
                 Flight::json(['error' => 'success_url e cancel_url são obrigatórios'], 400);
+                return;
+            }
+            
+            // Valida URLs para prevenir SSRF e Open Redirect
+            if (!$this->validateRedirectUrl($data['success_url'], $tenantId)) {
+                Flight::json(['error' => 'success_url inválida ou não permitida'], 400);
+                return;
+            }
+            
+            if (!$this->validateRedirectUrl($data['cancel_url'], $tenantId)) {
+                Flight::json(['error' => 'cancel_url inválida ou não permitida'], 400);
                 return;
             }
 
@@ -63,21 +84,33 @@ class CheckoutController
                 Flight::json(['error' => 'line_items ou price_id é obrigatório'], 400);
                 return;
             }
+            
+            // ✅ SEGURANÇA: Valida tamanho máximo de line_items (prevenção de DoS)
+            $lineItemsErrors = \App\Utils\Validator::validateArraySize($data['line_items'], 'line_items', 100);
+            if (!empty($lineItemsErrors)) {
+                Flight::json(['error' => 'Dados inválidos', 'errors' => $lineItemsErrors], 400);
+                return;
+            }
+            
+            // ✅ SEGURANÇA: Valida payment_method_types se fornecido
+            if (isset($data['payment_method_types']) && is_array($data['payment_method_types'])) {
+                $paymentMethodsErrors = \App\Utils\Validator::validateArraySize($data['payment_method_types'], 'payment_method_types', 10);
+                if (!empty($paymentMethodsErrors)) {
+                    Flight::json(['error' => 'Dados inválidos', 'errors' => $paymentMethodsErrors], 400);
+                    return;
+                }
+            }
 
             // Se tem customer_id mas é ID do nosso banco, precisa buscar o stripe_customer_id
             if (!empty($data['customer_id']) && is_numeric($data['customer_id'])) {
                 // É ID do nosso banco, precisa buscar o stripe_customer_id
                 $customerModel = new \App\Models\Customer();
-                $customer = $customerModel->findById((int)$data['customer_id']);
+                
+                // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+                $customer = $customerModel->findByTenantAndId($tenantId, (int)$data['customer_id']);
                 
                 if (!$customer) {
                     Flight::json(['error' => 'Cliente não encontrado'], 404);
-                    return;
-                }
-                
-                // Verifica se pertence ao tenant
-                if ($customer['tenant_id'] != $tenantId) {
-                    Flight::json(['error' => 'Cliente não pertence ao tenant'], 403);
                     return;
                 }
                 
@@ -186,6 +219,63 @@ class CheckoutController
                 'message' => Config::isDevelopment() ? $e->getMessage() : null
             ], 500);
         }
+    }
+    
+    /**
+     * Valida URL de redirecionamento para prevenir SSRF e Open Redirect
+     * 
+     * @param string $url URL a validar
+     * @param int $tenantId ID do tenant
+     * @return bool True se válida, false caso contrário
+     */
+    private function validateRedirectUrl(string $url, int $tenantId): bool
+    {
+        // Parse URL
+        $parsed = parse_url($url);
+        
+        if (!$parsed || !isset($parsed['scheme'])) {
+            return false;
+        }
+        
+        // Apenas HTTPS permitido (exceto em desenvolvimento)
+        if ($parsed['scheme'] !== 'https' && !Config::isDevelopment()) {
+            return false;
+        }
+        
+        // Em desenvolvimento, permite HTTP apenas para localhost
+        if (Config::isDevelopment() && $parsed['scheme'] === 'http') {
+            $host = $parsed['host'] ?? '';
+            if ($host !== 'localhost' && $host !== '127.0.0.1' && strpos($host, 'localhost:') !== 0) {
+                return false;
+            }
+        }
+        
+        // Bloqueia esquemas perigosos
+        $dangerousSchemes = ['file', 'ftp', 'gopher', 'javascript', 'data', 'vbscript'];
+        if (in_array(strtolower($parsed['scheme']), $dangerousSchemes, true)) {
+            return false;
+        }
+        
+        // Bloqueia IPs privados e localhost (SSRF protection) - exceto em desenvolvimento
+        $host = $parsed['host'] ?? '';
+        if (!Config::isDevelopment() && filter_var($host, FILTER_VALIDATE_IP)) {
+            // Bloqueia IPs privados e de loopback
+            if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+                return false;
+            }
+        }
+        
+        // Valida formato básico de URL
+        if (empty($host)) {
+            return false;
+        }
+        
+        // Valida comprimento máximo da URL
+        if (strlen($url) > 2048) {
+            return false;
+        }
+        
+        return true;
     }
 }
 

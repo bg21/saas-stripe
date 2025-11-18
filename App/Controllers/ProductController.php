@@ -42,9 +42,15 @@ class ProductController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
             }
 
@@ -54,6 +60,24 @@ class ProductController
                 return;
             }
 
+            // ✅ SEGURANÇA: Valida tamanho máximo de images (prevenção de DoS)
+            if (isset($data['images']) && is_array($data['images'])) {
+                $imagesErrors = \App\Utils\Validator::validateArraySize($data['images'], 'images', 20);
+                if (!empty($imagesErrors)) {
+                    Flight::json(['error' => 'Dados inválidos', 'errors' => $imagesErrors], 400);
+                    return;
+                }
+            }
+            
+            // ✅ SEGURANÇA: Valida metadata se fornecido (prevenção de DoS)
+            if (isset($data['metadata']) && is_array($data['metadata'])) {
+                $metadataErrors = \App\Utils\Validator::validateMetadata($data['metadata'], 'metadata', 50);
+                if (!empty($metadataErrors)) {
+                    Flight::json(['error' => 'Dados inválidos', 'errors' => $metadataErrors], 400);
+                    return;
+                }
+            }
+            
             // Adiciona tenant_id aos metadados se não existir
             if (!isset($data['metadata'])) {
                 $data['metadata'] = [];
@@ -153,6 +177,24 @@ class ProductController
             // Opção para ignorar filtro de tenant (útil para formulários de criação)
             $ignoreTenantFilter = isset($queryParams['all_tenants']) && filter_var($queryParams['all_tenants'], FILTER_VALIDATE_BOOLEAN);
             
+            // ✅ CACHE: Gera chave única baseada em parâmetros
+            $cacheKey = sprintf(
+                'products:list:%d:%d:%s:%s:%s:%s',
+                $tenantId,
+                $options['limit'] ?? 50,
+                md5($options['starting_after'] ?? ''),
+                md5($options['ending_before'] ?? ''),
+                ($options['active'] ?? '') === true ? '1' : (($options['active'] ?? '') === false ? '0' : ''),
+                $ignoreTenantFilter ? '1' : '0'
+            );
+            
+            // ✅ Tenta obter do cache (TTL: 60 segundos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Flight::json($cached);
+                return;
+            }
+            
             $products = $this->stripeService->listProducts($options);
             
             // Formata resposta e filtra por tenant_id (via metadata)
@@ -241,12 +283,17 @@ class ProductController
                 }
             }
             
-            Flight::json([
+            $response = [
                 'success' => true,
                 'data' => $formattedProducts,
                 'has_more' => $products->has_more,
                 'count' => count($formattedProducts)
-            ]);
+            ];
+            
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            
+            Flight::json($response);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             Logger::error("Erro ao listar produtos", [
                 'error' => $e->getMessage(),
@@ -355,9 +402,15 @@ class ProductController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
             
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
                 $data = [];
             }
 

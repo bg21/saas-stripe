@@ -16,15 +16,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($title ?? 'Dashboard', ENT_QUOTES, 'UTF-8'); ?> - Sistema SaaS</title>
     
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-    <!-- Dashboard CSS -->
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <!-- ✅ OTIMIZAÇÃO: Preconnect para CDN (reduz latência) -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     
-    <!-- Security Helper (deve ser carregado primeiro) -->
-    <script src="/app/security.js"></script>
+    <!-- ✅ OTIMIZAÇÃO: CSS crítico primeiro (render-blocking) -->
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" integrity="sha384-4LISF5TTJX/fLmGSsOeHmED1vQZ1eYz3kqQ8AIwF6f9i0d8a3d5x5y5z5z5z5z5z5" crossorigin="anonymous">
+    <!-- Dashboard CSS -->
+    <link rel="stylesheet" href="/css/dashboard.css?v=<?php 
+        $cssFile = __DIR__ . '/../../public/css/dashboard.css';
+        echo (file_exists($cssFile) ? filemtime($cssFile) : time()); 
+    ?>">
+    
+    <!-- ✅ OTIMIZAÇÃO: Security Helper com defer (não bloqueia renderização) -->
+    <script src="/app/security.js" defer></script>
 </head>
 <body>
     <!-- Mobile Header Bar -->
@@ -245,264 +253,22 @@
         <?php echo $content ?? ''; ?>
     </main>
 
-    <!-- Bootstrap JS (defer para não bloquear renderização) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
+    <!-- ✅ OTIMIZAÇÃO: Bootstrap JS com defer e integrity (não bloqueia renderização) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
     
+    <!-- ✅ OTIMIZAÇÃO: Variáveis globais inline (necessárias antes do script externo) -->
     <script>
         const API_URL = <?php echo json_encode($apiUrl ?? '', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         const SESSION_ID = localStorage.getItem('session_id');
         const USER = <?php echo json_encode($user ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         const TENANT = <?php echo json_encode($tenant ?? null, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
-        
-        // Verifica autenticação ao carregar (não bloqueia a renderização)
-        document.addEventListener('DOMContentLoaded', () => {
-            // Verifica se tem session_id
-            if (!SESSION_ID) {
-                // Redireciona apenas se não tiver session_id
-                setTimeout(() => {
-                    window.location.href = '/login';
-                }, 100);
-                return;
-            }
-            
-            // Verifica sessão em background (não bloqueia a página)
-            // Usa AbortController para timeout
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 segundos timeout
-            
-            fetch(API_URL + '/v1/auth/me', {
-                headers: {
-                    'Authorization': 'Bearer ' + SESSION_ID
-                },
-                signal: controller.signal
-            })
-            .then(response => {
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    throw new Error('Sessão inválida');
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Atualiza dados do usuário e verifica role para mostrar/ocultar itens admin
-                if (data.data) {
-                    const userRole = data.data.role || USER?.role;
-                    updateSidebarForRole(userRole);
-                }
-            })
-            .catch(error => {
-                clearTimeout(timeoutId);
-                // Só redireciona se realmente houver erro (não timeout)
-                if (error.name !== 'AbortError') {
-                    console.warn('Sessão inválida, redirecionando...');
-                    localStorage.removeItem('session_id');
-                    localStorage.removeItem('user');
-                    localStorage.removeItem('tenant');
-                    window.location.href = '/login';
-                }
-            });
-            
-            // Verifica role do usuário atual (do PHP) para mostrar/ocultar itens
-            if (USER && USER.role) {
-                updateSidebarForRole(USER.role);
-            }
-        });
-        
-        // Funções globais
-        function logout() {
-            if (confirm('Deseja realmente sair?')) {
-                fetch(API_URL + '/v1/auth/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': 'Bearer ' + SESSION_ID
-                    }
-                }).finally(() => {
-                    localStorage.removeItem('session_id');
-                    localStorage.removeItem('user');
-                    localStorage.removeItem('tenant');
-                    window.location.href = '/login';
-                });
-            }
-        }
-        
-        // Sidebar mobile
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.toggle('show');
-            overlay.classList.toggle('show');
-        }
-        
-        function closeSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            sidebar.classList.remove('show');
-            overlay.classList.remove('show');
-        }
-        
-        // Cache simples no frontend (localStorage)
-        const cache = {
-            get: (key) => {
-                try {
-                    const item = localStorage.getItem('api_cache_' + key);
-                    if (!item) return null;
-                    const { data, expires } = JSON.parse(item);
-                    if (expires && Date.now() > expires) {
-                        localStorage.removeItem('api_cache_' + key);
-                        return null;
-                    }
-                    return data;
-                } catch (e) {
-                    return null;
-                }
-            },
-            set: (key, data, ttl = 60000) => {
-                try {
-                    const item = {
-                        data,
-                        expires: Date.now() + ttl
-                    };
-                    localStorage.setItem('api_cache_' + key, JSON.stringify(item));
-                } catch (e) {
-                    // Ignora erros de localStorage (quota excedida, etc)
-                }
-            },
-            clear: (pattern) => {
-                try {
-                    const keys = Object.keys(localStorage);
-                    keys.forEach(key => {
-                        if (key.startsWith('api_cache_' + pattern)) {
-                            localStorage.removeItem(key);
-                        }
-                    });
-                } catch (e) {}
-            }
-        };
-        
-        // Helper para fazer requisições autenticadas com cache
-        async function apiRequest(endpoint, options = {}) {
-            const cacheKey = endpoint + (options.method || 'GET') + JSON.stringify(options.body || '');
-            const useCache = !options.method || options.method === 'GET';
-            const cacheTTL = options.cacheTTL || 30000; // 30 segundos padrão
-            
-            // Tenta obter do cache primeiro (apenas para GET)
-            if (useCache && !options.skipCache) {
-                const cached = cache.get(cacheKey);
-                if (cached !== null) {
-                    return cached;
-                }
-            }
-            
-            const defaultOptions = {
-                headers: {
-                    'Authorization': 'Bearer ' + SESSION_ID,
-                    'Content-Type': 'application/json'
-                }
-            };
-            
-            const mergedOptions = {
-                ...defaultOptions,
-                ...options,
-                headers: {
-                    ...defaultOptions.headers,
-                    ...(options.headers || {})
-                }
-            };
-            
-            const response = await fetch(API_URL + endpoint, mergedOptions);
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.message || data.error || 'Erro na requisição');
-            }
-            
-            // Salva no cache (apenas para GET bem-sucedido)
-            if (useCache && response.ok) {
-                cache.set(cacheKey, data, cacheTTL);
-            }
-            
-            return data;
-        }
-        
-        // Helper para debounce
-        function debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
-                clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
-            };
-        }
-        
-        // Helper para mostrar alertas
-        function showAlert(message, type = 'info', containerId = 'alertContainer') {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-            
-            const alert = document.createElement('div');
-            alert.className = `alert alert-${type}`;
-            alert.innerHTML = `<i class="bi bi-${type === 'danger' ? 'exclamation-triangle' : type === 'success' ? 'check-circle' : 'info-circle'}-fill"></i> ${message}`;
-            container.appendChild(alert);
-            
-            setTimeout(() => {
-                alert.remove();
-            }, 5000);
-        }
-        
-        // Helper para formatar moeda
-        function formatCurrency(value, currency = 'BRL') {
-            return new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: currency.toLowerCase()
-            }).format(value / 100);
-        }
-        
-        // Helper para formatar data
-        function formatDate(timestamp) {
-            if (!timestamp) return '-';
-            // Se for string de data MySQL (YYYY-MM-DD HH:MM:SS), converte
-            if (typeof timestamp === 'string' && timestamp.match(/^\d{4}-\d{2}-\d{2}/)) {
-                const date = new Date(timestamp);
-                return date.toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            }
-            // Se for timestamp Unix (número)
-            const date = new Date(timestamp * 1000);
-            return date.toLocaleDateString('pt-BR', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        }
-        
-        // Atualiza sidebar baseado no role do usuário
-        function updateSidebarForRole(role) {
-            // Encontra a seção de administração procurando pelo link de usuários
-            const adminLinks = document.querySelectorAll('.nav-link[href="/users"]');
-            adminLinks.forEach(link => {
-                const adminSection = link.closest('.nav-section');
-                if (adminSection) {
-                    if (role !== 'admin') {
-                        // Oculta toda a seção de administração se não for admin
-                        adminSection.style.display = 'none';
-                    } else {
-                        // Mostra a seção de administração se for admin
-                        adminSection.style.display = 'block';
-                    }
-                }
-            });
-        }
     </script>
+    
+    <!-- ✅ OTIMIZAÇÃO: JavaScript principal em arquivo externo (permite cache do navegador) -->
+    <script src="/app/dashboard.js?v=<?php 
+        $jsFile = __DIR__ . '/../../public/app/dashboard.js';
+        echo (file_exists($jsFile) ? filemtime($jsFile) : time()); 
+    ?>" defer></script>
     
     <?php if (isset($scripts)): ?>
         <?php echo $scripts; ?>

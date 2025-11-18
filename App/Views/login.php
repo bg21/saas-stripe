@@ -178,13 +178,21 @@
                 const data = await response.json();
                 
                 if (response.ok && data.success) {
-                    // Salva session_id
+                    // Salva session_id no localStorage
                     localStorage.setItem('session_id', data.data.session_id);
                     localStorage.setItem('user', JSON.stringify(data.data.user));
                     localStorage.setItem('tenant', JSON.stringify(data.data.tenant));
                     
-                    alert('Login realizado com sucesso!');
-                    window.location.href = '/dashboard';
+                    // Salva session_id em cookie também (para o servidor poder acessar)
+                    // Cookie válido por 7 dias, HttpOnly será definido pelo servidor se necessário
+                    const expires = new Date();
+                    expires.setTime(expires.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 dias
+                    document.cookie = `session_id=${data.data.session_id}; expires=${expires.toUTCString()}; path=/; SameSite=Lax`;
+                    
+                    // Redireciona incluindo session_id na query string como fallback
+                    // Isso garante que o servidor possa acessar mesmo se o cookie não funcionar
+                    // Remove o session_id da URL após o carregamento (será feito no layout base)
+                    window.location.href = '/dashboard?session_id=' + encodeURIComponent(data.data.session_id);
                 } else {
                     errorMessage.textContent = data.message || 'Erro ao fazer login';
                     errorAlert.classList.remove('d-none');

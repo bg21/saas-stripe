@@ -51,9 +51,9 @@ class AuthMiddleware
 
         $apiKey = $matches[1];
 
-        // Verifica API master key (para endpoints administrativos)
+        // ✅ SEGURANÇA: Verifica API master key usando hash_equals (prevenção de timing attacks)
         $masterKey = Config::get('API_MASTER_KEY');
-        if ($masterKey && $apiKey === $masterKey) {
+        if ($masterKey && hash_equals($masterKey, $apiKey)) {
             Logger::debug("Autenticação via master key");
             return ['tenant_id' => null, 'is_master' => true];
         }

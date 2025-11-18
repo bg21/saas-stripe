@@ -6,6 +6,7 @@ use App\Services\PaymentService;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -51,25 +52,44 @@ class CustomerController
                 return;
             }
             
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
-
-            if (empty($data['email'])) {
-                Flight::json(['error' => 'Email é obrigatório'], 400);
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
+            
+            // Validação rigorosa de inputs
+            $errors = \App\Utils\Validator::validateCustomerCreate($data);
+            if (!empty($errors)) {
+                Flight::json([
+                    'error' => 'Dados inválidos',
+                    'message' => 'Por favor, verifique os dados informados',
+                    'errors' => $errors
+                ], 400);
                 return;
             }
 
             $customer = $this->paymentService->createCustomer($tenantId, $data);
 
+            // ✅ Invalida cache de listagem
+            \App\Services\CacheService::invalidateCustomerCache($tenantId);
+
             Flight::json([
                 'success' => true,
                 'data' => $customer
             ], 201);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao criar cliente no Stripe');
+            Flight::json($response, 500);
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar cliente", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao criar cliente',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao criar cliente', 'CUSTOMER_CREATE_ERROR');
+            Flight::json($response, 500);
         }
     }
 
@@ -112,10 +132,28 @@ class CustomerController
                 $filters['sort'] = $queryParams['sort'];
             }
             
+            // ✅ CACHE: Gera chave única baseada em parâmetros
+            $cacheKey = sprintf(
+                'customers:list:%d:%d:%d:%s:%s:%s',
+                $tenantId,
+                $page,
+                $limit,
+                md5($filters['search'] ?? ''),
+                $filters['status'] ?? '',
+                $filters['sort'] ?? 'created_at'
+            );
+            
+            // ✅ Tenta obter do cache (TTL: 60 segundos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Flight::json($cached);
+                return;
+            }
+            
             $customerModel = new \App\Models\Customer();
             $result = $customerModel->findByTenant($tenantId, $page, $limit, $filters);
 
-            Flight::json([
+            $response = [
                 'success' => true,
                 'data' => $result['data'],
                 'meta' => [
@@ -124,10 +162,15 @@ class CustomerController
                     'limit' => $result['limit'],
                     'total_pages' => $result['total_pages']
                 ]
-            ]);
+            ];
+            
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            
+            Flight::json($response);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar clientes", ['error' => $e->getMessage()]);
-            Flight::json(['error' => 'Erro ao listar clientes'], 500);
+            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao listar clientes', 'CUSTOMER_LIST_ERROR');
+            Flight::json($response, 500);
         }
     }
 
@@ -150,40 +193,58 @@ class CustomerController
             }
 
             $customerModel = new \App\Models\Customer();
-            $customer = $customerModel->findById((int)$id);
+            
+            // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+            $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
-            // Valida se customer existe e pertence ao tenant
-            if (!$customer || $customer['tenant_id'] != $tenantId) {
-                http_response_code(404);
+            if (!$customer) {
                 Flight::json(['error' => 'Cliente não encontrado'], 404);
                 return;
             }
 
-            // Busca dados atualizados no Stripe para sincronização
+            // ✅ CACHE: Verifica se há cache válido (TTL: 5 minutos)
+            $cacheKey = "customers:get:{$tenantId}:{$id}";
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            
+            if ($cached !== null) {
+                Flight::json([
+                    'success' => true,
+                    'data' => $cached
+                ]);
+                return;
+            }
+
+            // ✅ Sincronização condicional: apenas se cache expirou
+            // Busca dados atualizados no Stripe
             $stripeCustomer = $this->stripeService->getCustomer($customer['stripe_customer_id']);
 
-            // Atualiza banco com dados do Stripe (sincronização)
-            $customerModel->createOrUpdate(
-                $tenantId,
-                $customer['stripe_customer_id'],
-                [
-                    'email' => $stripeCustomer->email,
-                    'name' => $stripeCustomer->name,
-                    'metadata' => $stripeCustomer->metadata->toArray()
-                ]
-            );
+            // Atualiza banco apenas se houver mudanças significativas
+            $needsUpdate = false;
+            if (($stripeCustomer->email ?? null) !== ($customer['email'] ?? null) || 
+                ($stripeCustomer->name ?? null) !== ($customer['name'] ?? null)) {
+                $needsUpdate = true;
+            }
 
-            // Busca customer atualizado no banco
-            $updatedCustomer = $customerModel->findById((int)$id);
+            if ($needsUpdate) {
+                $customerModel->createOrUpdate(
+                    $tenantId,
+                    $customer['stripe_customer_id'],
+                    [
+                        'email' => $stripeCustomer->email,
+                        'name' => $stripeCustomer->name,
+                        'metadata' => $stripeCustomer->metadata->toArray()
+                    ]
+                );
+            }
 
             // Prepara resposta com dados completos
             $responseData = [
-                'id' => $updatedCustomer['id'],
+                'id' => $customer['id'],
                 'stripe_customer_id' => $stripeCustomer->id,
-                'email' => $stripeCustomer->email,
-                'name' => $stripeCustomer->name,
-                'phone' => $stripeCustomer->phone,
-                'description' => $stripeCustomer->description,
+                'email' => $stripeCustomer->email ?? null,
+                'name' => $stripeCustomer->name ?? null,
+                'phone' => $stripeCustomer->phone ?? null,
+                'description' => $stripeCustomer->description ?? null,
                 'metadata' => $stripeCustomer->metadata->toArray(),
                 'created' => date('Y-m-d H:i:s', $stripeCustomer->created)
             ];
@@ -191,30 +252,28 @@ class CustomerController
             // Adiciona endereço se existir
             if ($stripeCustomer->address) {
                 $responseData['address'] = [
-                    'line1' => $stripeCustomer->address->line1,
-                    'line2' => $stripeCustomer->address->line2,
-                    'city' => $stripeCustomer->address->city,
-                    'state' => $stripeCustomer->address->state,
-                    'postal_code' => $stripeCustomer->address->postal_code,
-                    'country' => $stripeCustomer->address->country
+                    'line1' => $stripeCustomer->address->line1 ?? null,
+                    'line2' => $stripeCustomer->address->line2 ?? null,
+                    'city' => $stripeCustomer->address->city ?? null,
+                    'state' => $stripeCustomer->address->state ?? null,
+                    'postal_code' => $stripeCustomer->address->postal_code ?? null,
+                    'country' => $stripeCustomer->address->country ?? null
                 ];
             }
+
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $responseData, 300); // 5 minutos
 
             Flight::json([
                 'success' => true,
                 'data' => $responseData
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Cliente não encontrado no Stripe", ['customer_id' => $id]);
-            http_response_code(404);
+            Logger::warning("Cliente não encontrado no Stripe", ['customer_id' => (int)$id]);
             Flight::json(['error' => 'Cliente não encontrado'], 404);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter cliente", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao obter cliente',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao obter cliente', 'CUSTOMER_GET_ERROR');
+            Flight::json($response, 500);
         }
     }
 
@@ -245,7 +304,17 @@ class CustomerController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('update_customers');
             
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
@@ -255,11 +324,11 @@ class CustomerController
             }
 
             $customerModel = new \App\Models\Customer();
-            $customer = $customerModel->findById((int)$id);
+            
+            // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+            $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
-            // Valida se customer existe e pertence ao tenant
-            if (!$customer || $customer['tenant_id'] != $tenantId) {
-                http_response_code(404);
+            if (!$customer) {
                 Flight::json(['error' => 'Cliente não encontrado'], 404);
                 return;
             }
@@ -304,6 +373,9 @@ class CustomerController
             // Busca customer atualizado no banco
             $updatedCustomer = $customerModel->findById((int)$id);
 
+            // ✅ Invalida cache de listagem e cache específico
+            \App\Services\CacheService::invalidateCustomerCache($tenantId, (int)$id);
+
             // Prepara resposta
             $responseData = [
                 'id' => $updatedCustomer['id'],
@@ -333,19 +405,11 @@ class CustomerController
                 'data' => $responseData
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao atualizar cliente no Stripe", ['error' => $e->getMessage()]);
-            http_response_code(400);
-            Flight::json([
-                'error' => 'Erro ao atualizar cliente',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao atualizar cliente no Stripe');
+            Flight::json($response, 400);
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar cliente", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao atualizar cliente',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao atualizar cliente', 'CUSTOMER_UPDATE_ERROR');
+            Flight::json($response, 500);
         }
     }
 
@@ -372,10 +436,11 @@ class CustomerController
             }
 
             $customerModel = new \App\Models\Customer();
-            $customer = $customerModel->findById((int)$id);
+            
+            // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+            $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
-            // Valida se customer existe e pertence ao tenant
-            if (!$customer || $customer['tenant_id'] != $tenantId) {
+            if (!$customer) {
                 http_response_code(404);
                 Flight::json(['error' => 'Cliente não encontrado'], 404);
                 return;
@@ -472,10 +537,11 @@ class CustomerController
             }
 
             $customerModel = new \App\Models\Customer();
-            $customer = $customerModel->findById((int)$id);
+            
+            // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+            $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
-            // Valida se customer existe e pertence ao tenant
-            if (!$customer || $customer['tenant_id'] != $tenantId) {
+            if (!$customer) {
                 http_response_code(404);
                 Flight::json(['error' => 'Cliente não encontrado'], 404);
                 return;
@@ -501,6 +567,23 @@ class CustomerController
 
             if ($endingBefore) {
                 $options['ending_before'] = $endingBefore;
+            }
+
+            // ✅ CACHE: Gera chave única baseada em parâmetros
+            $cacheKey = sprintf(
+                'customers:payment-methods:%d:%d:%s:%s:%s',
+                $tenantId,
+                (int)$id,
+                $type ?? '',
+                $startingAfter ?? '',
+                $endingBefore ?? ''
+            );
+            
+            // ✅ Tenta obter do cache (TTL: 60 segundos)
+            $cached = \App\Services\CacheService::getJson($cacheKey);
+            if ($cached !== null) {
+                Flight::json($cached);
+                return;
             }
 
             // Lista métodos de pagamento do Stripe
@@ -531,12 +614,17 @@ class CustomerController
                 $paymentMethodsData[] = $paymentMethodData;
             }
 
-            Flight::json([
+            $response = [
                 'success' => true,
                 'data' => $paymentMethodsData,
                 'count' => count($paymentMethodsData),
                 'has_more' => $paymentMethods->has_more
-            ]);
+            ];
+            
+            // ✅ Salva no cache
+            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            
+            Flight::json($response);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Logger::error("Erro ao listar métodos de pagamento", ['error' => $e->getMessage()]);
             http_response_code(400);
@@ -584,7 +672,17 @@ class CustomerController
                 return;
             }
 
-            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    return;
+                }
+                $data = [];
+            }
             
             if ($data === null) {
                 $data = [];

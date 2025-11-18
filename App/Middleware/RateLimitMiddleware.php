@@ -17,14 +17,55 @@ class RateLimitMiddleware
 {
     private RateLimiterService $rateLimiter;
     
-    // Limites padrão (requests por minuto)
+    // Limites padrão (requests por minuto/hora)
     private const DEFAULT_LIMIT_PER_MINUTE = 60;
     private const DEFAULT_LIMIT_PER_HOUR = 1000;
     
-    // Limites por endpoint (requests por minuto)
+    // Limites por endpoint e método HTTP
+    // Formato: 'endpoint' => ['GET' => [per_minute, per_hour], 'POST' => [per_minute, per_hour], ...]
     private const ENDPOINT_LIMITS = [
-        '/v1/webhook' => 200, // Webhooks podem ter limite maior
-        '/v1/stats' => 30,     // Stats pode ser mais restritivo
+        '/v1/webhook' => [
+            'POST' => [200, 10000] // Webhooks podem ter limite maior
+        ],
+        '/v1/stats' => [
+            'GET' => [30, 500] // Stats pode ser mais restritivo
+        ],
+        '/v1/customers' => [
+            'POST' => [20, 200], // Criação: 20/min, 200/hora
+            'GET' => [60, 1000]  // Listagem: padrão
+        ],
+        '/v1/subscriptions' => [
+            'POST' => [15, 150], // Criação: 15/min, 150/hora
+            'PUT' => [20, 200],  // Atualização: 20/min, 200/hora
+            'DELETE' => [10, 100], // Cancelamento: 10/min, 100/hora
+            'GET' => [60, 1000]   // Listagem: padrão
+        ],
+        '/v1/products' => [
+            'POST' => [10, 100], // Criação: 10/min, 100/hora
+            'PUT' => [15, 150],  // Atualização: 15/min, 150/hora
+            'GET' => [60, 1000]  // Listagem: padrão
+        ],
+        '/v1/prices' => [
+            'POST' => [10, 100], // Criação: 10/min, 100/hora
+            'PUT' => [15, 150],  // Atualização: 15/min, 150/hora
+            'GET' => [60, 1000]  // Listagem: padrão
+        ],
+        '/v1/auth/login' => [
+            'POST' => [5, 20] // Login: muito restritivo (5/min, 20/hora) - já tem middleware específico
+        ],
+        '/v1/payment-intents' => [
+            'POST' => [30, 500] // Criação de payment intents: 30/min, 500/hora
+        ],
+        '/v1/refunds' => [
+            'POST' => [10, 100] // Reembolsos: 10/min, 100/hora
+        ],
+    ];
+    
+    // Limites para rotas públicas (mais restritivos)
+    private const PUBLIC_ROUTE_LIMITS = [
+        '/' => [10, 100],           // 10/min, 100/hora
+        '/health' => [30, 500],     // Health checks: 30/min, 500/hora
+        '/health/detailed' => [10, 100], // Health detalhado: 10/min, 100/hora
     ];
     
     public function __construct(RateLimiterService $rateLimiter)
@@ -36,17 +77,13 @@ class RateLimitMiddleware
      * Verifica rate limit e adiciona headers de resposta
      * 
      * @param string|null $endpoint Endpoint específico (opcional)
+     * @param array|null $customLimits Limites customizados ['limit' => int, 'window' => int] (opcional)
      * @return bool true se permitido, false se excedeu limite
      */
-    public function check(?string $endpoint = null): bool
+    public function check(?string $endpoint = null, ?array $customLimits = null): bool
     {
-        // Rotas públicas não têm rate limiting
-        $publicRoutes = ['/', '/v1/webhook', '/health'];
         $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
-        
-        if (in_array($requestUri, $publicRoutes)) {
-            return true;
-        }
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
         
         // Obtém identificador (API key ou IP)
         $identifier = $this->getIdentifier();
@@ -56,16 +93,53 @@ class RateLimitMiddleware
             return true;
         }
         
-        // Determina limite para este endpoint
-        $limitPerMinute = $this->getLimitForEndpoint($endpoint ?? $requestUri);
-        $limitPerHour = $limitPerMinute * 60; // Limite por hora é 60x o limite por minuto
+        // Se limites customizados foram fornecidos, usa eles
+        if ($customLimits !== null && isset($customLimits['limit']) && isset($customLimits['window'])) {
+            $limit = (int)$customLimits['limit'];
+            $window = (int)$customLimits['window'];
+            
+            $check = $this->rateLimiter->checkLimit(
+                $identifier,
+                $limit,
+                $window,
+                $endpoint ?? $requestUri
+            );
+            
+            $this->setRateLimitHeaders($check['limit'], $check['remaining'], $check['reset_at']);
+            
+            if (!$check['allowed']) {
+                Logger::warning("Rate limit excedido (customizado)", [
+                    'identifier' => substr($identifier, 0, 20) . '...',
+                    'endpoint' => $endpoint ?? $requestUri,
+                    'limit' => $limit,
+                    'window' => $window,
+                    'current' => $check['current'] ?? 0
+                ]);
+                
+                Flight::json([
+                    'error' => 'Rate limit excedido',
+                    'message' => 'Você excedeu o limite de requisições. Tente novamente mais tarde.',
+                    'retry_after' => $check['reset_at'] - time()
+                ], 429);
+                
+                Flight::stop();
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // Determina limite para este endpoint baseado no método e tipo
+        $limitConfig = $this->getLimitConfigForEndpoint($endpoint ?? $requestUri, $method);
+        $limitPerMinute = $limitConfig['per_minute'];
+        $limitPerHour = $limitConfig['per_hour'];
         
         // Verifica limite por minuto
         $minuteCheck = $this->rateLimiter->checkLimit(
             $identifier,
             $limitPerMinute,
             60, // 1 minuto
-            $endpoint
+            $endpoint ?? $requestUri
         );
         
         // Verifica limite por hora
@@ -73,7 +147,7 @@ class RateLimitMiddleware
             $identifier,
             $limitPerHour,
             3600, // 1 hora
-            $endpoint
+            $endpoint ?? $requestUri
         );
         
         // Usa o mais restritivo
@@ -89,6 +163,7 @@ class RateLimitMiddleware
             Logger::warning("Rate limit excedido", [
                 'identifier' => substr($identifier, 0, 20) . '...',
                 'endpoint' => $endpoint ?? $requestUri,
+                'method' => $method,
                 'limit' => $limit,
                 'current' => $minuteCheck['current'] ?? $hourCheck['current'] ?? 0
             ]);
@@ -168,27 +243,62 @@ class RateLimitMiddleware
     }
     
     /**
-     * Obtém limite para um endpoint específico
+     * Obtém configuração de limites para um endpoint específico
+     * 
+     * @param string $endpoint Endpoint
+     * @param string $method Método HTTP
+     * @return array ['per_minute' => int, 'per_hour' => int]
      */
-    private function getLimitForEndpoint(string $endpoint): int
+    private function getLimitConfigForEndpoint(string $endpoint, string $method): array
     {
         // Remove query string
         $endpoint = parse_url($endpoint, PHP_URL_PATH) ?? $endpoint;
         
-        // Verifica se há limite específico
-        if (isset(self::ENDPOINT_LIMITS[$endpoint])) {
-            return self::ENDPOINT_LIMITS[$endpoint];
+        // Verifica limites para rotas públicas
+        if (isset(self::PUBLIC_ROUTE_LIMITS[$endpoint])) {
+            $limits = self::PUBLIC_ROUTE_LIMITS[$endpoint];
+            return [
+                'per_minute' => $limits[0],
+                'per_hour' => $limits[1]
+            ];
+        }
+        
+        // Verifica se há limite específico para este endpoint e método
+        if (isset(self::ENDPOINT_LIMITS[$endpoint][$method])) {
+            $limits = self::ENDPOINT_LIMITS[$endpoint][$method];
+            return [
+                'per_minute' => $limits[0],
+                'per_hour' => $limits[1]
+            ];
         }
         
         // Verifica padrões (ex: /v1/customers/:id)
-        foreach (self::ENDPOINT_LIMITS as $pattern => $limit) {
+        foreach (self::ENDPOINT_LIMITS as $pattern => $methodLimits) {
             if ($this->matchesPattern($endpoint, $pattern)) {
-                return $limit;
+                if (isset($methodLimits[$method])) {
+                    $limits = $methodLimits[$method];
+                    return [
+                        'per_minute' => $limits[0],
+                        'per_hour' => $limits[1]
+                    ];
+                }
+                // Se não tem limite específico para o método, usa o primeiro disponível
+                if (!empty($methodLimits)) {
+                    $firstMethod = array_key_first($methodLimits);
+                    $limits = $methodLimits[$firstMethod];
+                    return [
+                        'per_minute' => $limits[0],
+                        'per_hour' => $limits[1]
+                    ];
+                }
             }
         }
         
         // Retorna limite padrão
-        return self::DEFAULT_LIMIT_PER_MINUTE;
+        return [
+            'per_minute' => self::DEFAULT_LIMIT_PER_MINUTE,
+            'per_hour' => self::DEFAULT_LIMIT_PER_HOUR
+        ];
     }
     
     /**

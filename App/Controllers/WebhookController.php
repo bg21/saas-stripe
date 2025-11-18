@@ -29,7 +29,8 @@ class WebhookController
     public function handle(): void
     {
         try {
-            $payload = file_get_contents('php://input');
+            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
+            $payload = \App\Utils\RequestCache::getInput();
             $payloadSize = strlen($payload);
             
             Logger::info("=== WEBHOOK RECEBIDO ===", [
@@ -83,6 +84,23 @@ class WebhookController
                 'event_type' => $event->type,
                 'event_created' => $event->created ?? 'N/A'
             ]);
+
+            // Verifica idempotência ANTES de processar (proteção contra replay attacks)
+            $eventModel = new \App\Models\StripeEvent();
+            if ($eventModel->isProcessed($event->id)) {
+                Logger::info("Webhook já processado anteriormente (idempotência)", [
+                    'event_id' => $event->id,
+                    'event_type' => $event->type
+                ]);
+                
+                // Retorna sucesso para evitar que o Stripe reenvie
+                Flight::json([
+                    'success' => true,
+                    'message' => 'Evento já processado anteriormente',
+                    'event_id' => $event->id
+                ], 200);
+                return;
+            }
 
             // Processa webhook
             $this->paymentService->processWebhook($event);

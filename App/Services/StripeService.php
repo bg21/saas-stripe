@@ -21,7 +21,11 @@ class StripeService
             throw new \RuntimeException("STRIPE_SECRET não configurado");
         }
 
-        $this->client = new StripeClient($secretKey);
+        // ✅ OTIMIZAÇÃO: Configura timeout para evitar travamento (10 segundos)
+        $this->client = new StripeClient($secretKey, [
+            'timeout' => 10,  // Timeout de 10 segundos para requisições Stripe
+            'connect_timeout' => 5  // Timeout de conexão de 5 segundos
+        ]);
     }
 
     /**

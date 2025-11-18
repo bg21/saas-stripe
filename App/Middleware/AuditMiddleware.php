@@ -67,6 +67,7 @@ class AuditMiddleware
 
     /**
      * Registra log após resposta
+     * ✅ OTIMIZAÇÃO: Usa register_shutdown_function para não bloquear resposta
      * Deve ser chamado no after('start') ou no tratamento de erros
      */
     public function logResponse(int $statusCode = 200): void
@@ -92,25 +93,33 @@ class AuditMiddleware
         $startTime = Flight::get('audit_start_time');
         $responseTime = $startTime ? (int) ((microtime(true) - $startTime) * 1000) : 0;
 
-        try {
-            $this->auditLogModel->createLog([
-                'tenant_id' => $requestData['tenant_id'],
-                'user_id' => $requestData['user_id'],
-                'endpoint' => $requestData['endpoint'],
-                'method' => $requestData['method'],
-                'ip_address' => $requestData['ip_address'],
-                'user_agent' => $requestData['user_agent'],
-                'request_body' => $this->sanitizeRequestBody($requestData['request_body']),
-                'response_status' => $statusCode,
-                'response_time' => $responseTime,
-            ]);
-        } catch (\Exception $e) {
-            // Não deve quebrar a aplicação se o log falhar
-            Logger::error("Erro ao registrar log de auditoria", [
-                'error' => $e->getMessage(),
-                'endpoint' => $requestData['endpoint']
-            ]);
-        }
+        // ✅ OTIMIZAÇÃO: Prepara dados para log assíncrono
+        $logData = [
+            'tenant_id' => $requestData['tenant_id'],
+            'user_id' => $requestData['user_id'],
+            'endpoint' => $requestData['endpoint'],
+            'method' => $requestData['method'],
+            'ip_address' => $requestData['ip_address'],
+            'user_agent' => $requestData['user_agent'],
+            'request_body' => $this->sanitizeRequestBody($requestData['request_body']),
+            'response_status' => $statusCode,
+            'response_time' => $responseTime,
+        ];
+        
+        // ✅ OTIMIZAÇÃO: Registra de forma assíncrona após enviar resposta
+        // Isso não bloqueia a resposta HTTP
+        $auditLogModel = $this->auditLogModel;
+        register_shutdown_function(function() use ($auditLogModel, $logData) {
+            try {
+                $auditLogModel->createLog($logData);
+            } catch (\Exception $e) {
+                // Não deve quebrar a aplicação se o log falhar
+                Logger::error("Erro ao registrar log de auditoria", [
+                    'error' => $e->getMessage(),
+                    'endpoint' => $logData['endpoint']
+                ]);
+            }
+        });
 
         // Limpa dados temporários (FlightPHP não tem clear, então apenas sobrescreve)
         Flight::set('audit_start_time', null);
@@ -151,6 +160,7 @@ class AuditMiddleware
 
     /**
      * Obtém corpo da requisição (apenas para métodos que enviam dados)
+     * ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
      */
     private function getRequestBody(): ?string
     {
@@ -161,8 +171,8 @@ class AuditMiddleware
             return null;
         }
 
-        // Lê do input stream
-        $input = file_get_contents('php://input');
+        // ✅ OTIMIZAÇÃO: Usa cache para evitar múltiplas leituras de php://input
+        $input = \App\Utils\RequestCache::getInput();
         
         if (empty($input)) {
             return null;
