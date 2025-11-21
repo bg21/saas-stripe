@@ -16,10 +16,17 @@ class RequestCache
     /**
      * Obtém o conteúdo de php://input (lê apenas uma vez)
      * 
+     * ✅ TESTES: Suporta mock via variável global para testes unitários
+     * 
      * @return string|null Conteúdo do input ou null se vazio
      */
     public static function getInput(): ?string
     {
+        // ✅ TESTES: Permite mockar input para testes unitários
+        if (defined('TESTING') && TESTING && isset($GLOBALS['__php_input_mock'])) {
+            return $GLOBALS['__php_input_mock'];
+        }
+        
         if (self::$inputRead) {
             return self::$inputCache;
         }

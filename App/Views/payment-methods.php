@@ -134,6 +134,22 @@ function renderPaymentMethods(methods, customerId) {
 }
 
 async function setDefault(customerId, methodId) {
+    // ✅ Valida formato de payment_method_id
+    if (typeof validateStripeId === 'function') {
+        const methodIdError = validateStripeId(methodId, 'payment_method_id', true);
+        if (methodIdError) {
+            showAlert('ID de método de pagamento inválido: ' + methodIdError, 'danger');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const methodIdPattern = /^pm_[a-zA-Z0-9]+$/;
+        if (!methodIdPattern.test(methodId)) {
+            showAlert('Formato de Payment Method ID inválido. Use: pm_xxxxx', 'danger');
+            return;
+        }
+    }
+    
     try {
         await apiRequest(`/v1/customers/${customerId}/payment-methods/${methodId}/set-default`, {
             method: 'POST'
@@ -147,6 +163,22 @@ async function setDefault(customerId, methodId) {
 }
 
 async function deleteMethod(customerId, methodId) {
+    // ✅ Valida formato de payment_method_id
+    if (typeof validateStripeId === 'function') {
+        const methodIdError = validateStripeId(methodId, 'payment_method_id', true);
+        if (methodIdError) {
+            showAlert('ID de método de pagamento inválido: ' + methodIdError, 'danger');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const methodIdPattern = /^pm_[a-zA-Z0-9]+$/;
+        if (!methodIdPattern.test(methodId)) {
+            showAlert('Formato de Payment Method ID inválido. Use: pm_xxxxx', 'danger');
+            return;
+        }
+    }
+    
     const confirmed = await showConfirmModal(
         'Tem certeza que deseja remover este método de pagamento?',
         'Confirmar Exclusão',

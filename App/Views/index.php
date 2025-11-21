@@ -144,6 +144,23 @@
                 e.preventDefault();
                 const formData = new FormData(e.target);
                 const priceId = formData.get('price_id');
+                
+                // ✅ Valida price_id antes de submeter
+                if (typeof validateStripeId === 'function') {
+                    const priceIdError = validateStripeId(priceId, 'price_id', true);
+                    if (priceIdError) {
+                        showAlert(priceIdError, 'danger');
+                        return;
+                    }
+                } else {
+                    // Fallback se validations.js não estiver carregado
+                    const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+                    if (!priceIdPattern.test(priceId)) {
+                        showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+                        return;
+                    }
+                }
+                
                 const customerData = {
                     name: formData.get('name'),
                     email: formData.get('email')

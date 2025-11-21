@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -41,7 +43,7 @@ class CouponController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_coupon']);
                 return;
             }
 
@@ -51,20 +53,24 @@ class CouponController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_coupon']);
                     return;
                 }
                 $data = [];
             }
 
             // Validações obrigatórias
+            $errors = [];
             if (empty($data['duration'])) {
-                Flight::json(['error' => 'Campo duration é obrigatório'], 400);
-                return;
+                $errors['duration'] = 'Campo duration é obrigatório';
             }
 
             if (!isset($data['percent_off']) && !isset($data['amount_off'])) {
-                Flight::json(['error' => 'É necessário fornecer percent_off ou amount_off'], 400);
+                $errors['discount'] = 'É necessário fornecer percent_off ou amount_off';
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError('Dados inválidos', $errors, ['action' => 'create_coupon', 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -76,51 +82,27 @@ class CouponController
 
             $coupon = $this->stripeService->createCoupon($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $coupon->id,
-                    'name' => $coupon->name,
-                    'percent_off' => $coupon->percent_off,
-                    'amount_off' => $coupon->amount_off,
-                    'currency' => $coupon->currency,
-                    'duration' => $coupon->duration,
-                    'duration_in_months' => $coupon->duration_in_months,
-                    'max_redemptions' => $coupon->max_redemptions,
-                    'times_redeemed' => $coupon->times_redeemed,
-                    'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
-                    'valid' => $coupon->valid,
-                    'created' => date('Y-m-d H:i:s', $coupon->created),
-                    'metadata' => $coupon->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $coupon->id,
+                'name' => $coupon->name,
+                'percent_off' => $coupon->percent_off,
+                'amount_off' => $coupon->amount_off,
+                'currency' => $coupon->currency,
+                'duration' => $coupon->duration,
+                'duration_in_months' => $coupon->duration_in_months,
+                'max_redemptions' => $coupon->max_redemptions,
+                'times_redeemed' => $coupon->times_redeemed,
+                'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
+                'valid' => $coupon->valid,
+                'created' => date('Y-m-d H:i:s', $coupon->created),
+                'metadata' => $coupon->metadata->toArray()
+            ], 'Cupom criado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro ao criar cupom", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar cupom',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'create_coupon', 'tenant_id' => $tenantId ?? null]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar cupom no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar cupom',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar cupom', ['action' => 'create_coupon', 'tenant_id' => $tenantId ?? null]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar cupom", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar cupom',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar cupom', 'COUPON_CREATE_ERROR', ['action' => 'create_coupon', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -139,7 +121,7 @@ class CouponController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_coupon']);
                 return;
             }
 
@@ -218,7 +200,7 @@ class CouponController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_coupon']);
                 return;
             }
 
@@ -278,7 +260,7 @@ class CouponController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_coupon']);
                 return;
             }
 
@@ -291,7 +273,7 @@ class CouponController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_coupon']);
                     return;
                 }
                 $data = [];
@@ -370,7 +352,7 @@ class CouponController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_coupon']);
                 return;
             }
 

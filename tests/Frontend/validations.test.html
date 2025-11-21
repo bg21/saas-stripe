@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Testes de Validação Frontend - Stripe IDs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-header {
+            background: #007bff;
+            color: white;
+            padding: 15px;
+            margin: -20px -20px 20px -20px;
+            border-radius: 8px 8px 0 0;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .test-result.pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .test-result.fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .test-summary {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        h2 {
+            color: #007bff;
+            margin-top: 0;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .stat {
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Testes de Validação Frontend - Formatos Stripe</h1>
+    
+    <div class="test-container">
+        <div class="test-header">
+            <h2>Resumo dos Testes</h2>
+        </div>
+        <div class="test-summary" id="testSummary">
+            <p>Executando testes...</p>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-header">
+            <h2>Teste: validateStripeId()</h2>
+        </div>
+        <div id="validateStripeIdTests"></div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-header">
+            <h2>Teste: validateStripeIds()</h2>
+        </div>
+        <div id="validateStripeIdsTests"></div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-header">
+            <h2>Teste: Padrões de IDs Stripe</h2>
+        </div>
+        <div id="patternTests"></div>
+    </div>
+
+    <!-- Carrega o arquivo de validações -->
+    <script src="/app/validations.js"></script>
+    
+    <script>
+        // Contador de testes
+        let totalTests = 0;
+        let passedTests = 0;
+        let failedTests = 0;
+
+        // Função auxiliar para executar um teste
+        function runTest(testName, testFn) {
+            totalTests++;
+            try {
+                const result = testFn();
+                if (result === true || result === null) {
+                    passedTests++;
+                    return { pass: true, message: result === true ? 'OK' : 'Passou' };
+                } else {
+                    failedTests++;
+                    return { pass: false, message: result || 'Falhou' };
+                }
+            } catch (error) {
+                failedTests++;
+                return { pass: false, message: `Erro: ${error.message}` };
+            }
+        }
+
+        // Função para exibir resultado do teste
+        function displayTest(container, testName, result) {
+            const div = document.createElement('div');
+            div.className = `test-result ${result.pass ? 'pass' : 'fail'}`;
+            div.innerHTML = `
+                <strong>${testName}</strong><br>
+                ${result.message}
+            `;
+            container.appendChild(div);
+        }
+
+        // Testes para validateStripeId()
+        function testValidateStripeId() {
+            const container = document.getElementById('validateStripeIdTests');
+            
+            // Teste 1: price_id válido
+            displayTest(container, 'price_id válido (price_123abc)', 
+                runTest('price_id válido', () => {
+                    return validateStripeId('price_123abc', 'price_id', true) === null;
+                })
+            );
+
+            // Teste 2: price_id inválido (sem prefixo)
+            displayTest(container, 'price_id inválido (sem prefixo)', 
+                runTest('price_id inválido', () => {
+                    const error = validateStripeId('123abc', 'price_id', true);
+                    return error !== null && error.includes('Formato inválido');
+                })
+            );
+
+            // Teste 3: price_id inválido (prefixo errado)
+            displayTest(container, 'price_id inválido (prefixo errado)', 
+                runTest('price_id prefixo errado', () => {
+                    const error = validateStripeId('prod_123abc', 'price_id', true);
+                    return error !== null && error.includes('Formato inválido');
+                })
+            );
+
+            // Teste 4: price_id obrigatório vazio
+            displayTest(container, 'price_id obrigatório vazio', 
+                runTest('price_id obrigatório vazio', () => {
+                    const error = validateStripeId('', 'price_id', true);
+                    return error !== null && error.includes('obrigatório');
+                })
+            );
+
+            // Teste 5: price_id opcional vazio (deve passar)
+            displayTest(container, 'price_id opcional vazio (deve passar)', 
+                runTest('price_id opcional vazio', () => {
+                    return validateStripeId('', 'price_id', false) === null;
+                })
+            );
+
+            // Teste 6: product_id válido
+            displayTest(container, 'product_id válido (prod_abc123)', 
+                runTest('product_id válido', () => {
+                    return validateStripeId('prod_abc123', 'product_id', true) === null;
+                })
+            );
+
+            // Teste 7: customer_id válido
+            displayTest(container, 'customer_id válido (cus_xyz789)', 
+                runTest('customer_id válido', () => {
+                    return validateStripeId('cus_xyz789', 'customer_id', true) === null;
+                })
+            );
+
+            // Teste 8: subscription_id válido
+            displayTest(container, 'subscription_id válido (sub_test123)', 
+                runTest('subscription_id válido', () => {
+                    return validateStripeId('sub_test123', 'subscription_id', true) === null;
+                })
+            );
+
+            // Teste 9: payment_method_id válido
+            displayTest(container, 'payment_method_id válido (pm_card123)', 
+                runTest('payment_method_id válido', () => {
+                    return validateStripeId('pm_card123', 'payment_method_id', true) === null;
+                })
+            );
+
+            // Teste 10: invoice_id válido
+            displayTest(container, 'invoice_id válido (in_inv456)', 
+                runTest('invoice_id válido', () => {
+                    return validateStripeId('in_inv456', 'invoice_id', true) === null;
+                })
+            );
+
+            // Teste 11: invoice_item_id válido
+            displayTest(container, 'invoice_item_id válido (ii_item789)', 
+                runTest('invoice_item_id válido', () => {
+                    return validateStripeId('ii_item789', 'invoice_item_id', true) === null;
+                })
+            );
+
+            // Teste 12: balance_transaction_id válido
+            displayTest(container, 'balance_transaction_id válido (txn_tx123)', 
+                runTest('balance_transaction_id válido', () => {
+                    return validateStripeId('txn_tx123', 'balance_transaction_id', true) === null;
+                })
+            );
+
+            // Teste 13: ID com caracteres especiais (inválido)
+            displayTest(container, 'ID com caracteres especiais (inválido)', 
+                runTest('ID com caracteres especiais', () => {
+                    const error = validateStripeId('price_123-456', 'price_id', true);
+                    return error !== null && error.includes('Formato inválido');
+                })
+            );
+
+            // Teste 14: ID com espaços (inválido)
+            displayTest(container, 'ID com espaços (inválido)', 
+                runTest('ID com espaços', () => {
+                    const error = validateStripeId('price_123 456', 'price_id', true);
+                    return error !== null && error.includes('Formato inválido');
+                })
+            );
+
+            // Teste 15: ID apenas com prefixo (inválido)
+            displayTest(container, 'ID apenas com prefixo (inválido)', 
+                runTest('ID apenas com prefixo', () => {
+                    const error = validateStripeId('price_', 'price_id', true);
+                    return error !== null && error.includes('Formato inválido');
+                })
+            );
+        }
+
+        // Testes para validateStripeIds()
+        function testValidateStripeIds() {
+            const container = document.getElementById('validateStripeIdsTests');
+            
+            // Criar elementos mock
+            const priceInput = document.createElement('input');
+            priceInput.value = 'price_123';
+            priceInput.id = 'testPriceInput';
+            
+            const productInput = document.createElement('input');
+            productInput.value = 'prod_456';
+            productInput.id = 'testProductInput';
+
+            // Teste 1: Múltiplos IDs válidos
+            displayTest(container, 'Múltiplos IDs válidos', 
+                runTest('Múltiplos IDs válidos', () => {
+                    const result = validateStripeIds({
+                        price_id: { element: priceInput, type: 'price_id', required: true },
+                        product_id: { element: productInput, type: 'product_id', required: true }
+                    });
+                    return result.valid === true && Object.keys(result.errors).length === 0;
+                })
+            );
+
+            // Teste 2: Um ID inválido
+            const invalidInput = document.createElement('input');
+            invalidInput.value = 'invalid_id';
+            invalidInput.id = 'testInvalidInput';
+
+            displayTest(container, 'Um ID inválido entre múltiplos', 
+                runTest('Um ID inválido', () => {
+                    const result = validateStripeIds({
+                        price_id: { element: priceInput, type: 'price_id', required: true },
+                        invalid_id: { element: invalidInput, type: 'price_id', required: true }
+                    });
+                    return result.valid === false && result.errors.invalid_id !== undefined;
+                })
+            );
+        }
+
+        // Testes para padrões de IDs
+        function testPatterns() {
+            const container = document.getElementById('patternTests');
+            
+            const testCases = [
+                { type: 'price_id', valid: 'price_123abc', invalid: 'prod_123abc' },
+                { type: 'product_id', valid: 'prod_abc123', invalid: 'price_abc123' },
+                { type: 'customer_id', valid: 'cus_xyz789', invalid: 'sub_xyz789' },
+                { type: 'subscription_id', valid: 'sub_test123', invalid: 'cus_test123' },
+                { type: 'payment_method_id', valid: 'pm_card123', invalid: 'pi_card123' },
+                { type: 'invoice_id', valid: 'in_inv456', invalid: 'ch_inv456' },
+                { type: 'invoice_item_id', valid: 'ii_item789', invalid: 'in_item789' },
+                { type: 'balance_transaction_id', valid: 'txn_tx123', invalid: 'ch_tx123' }
+            ];
+
+            testCases.forEach(testCase => {
+                // Teste válido
+                displayTest(container, `${testCase.type} válido: ${testCase.valid}`, 
+                    runTest(`${testCase.type} válido`, () => {
+                        return validateStripeId(testCase.valid, testCase.type, true) === null;
+                    })
+                );
+
+                // Teste inválido (tipo errado)
+                displayTest(container, `${testCase.type} inválido (tipo errado): ${testCase.invalid}`, 
+                    runTest(`${testCase.type} inválido`, () => {
+                        const error = validateStripeId(testCase.invalid, testCase.type, true);
+                        return error !== null && error.includes('Formato inválido');
+                    })
+                );
+            });
+        }
+
+        // Executa todos os testes
+        function runAllTests() {
+            testValidateStripeId();
+            testValidateStripeIds();
+            testPatterns();
+
+            // Atualiza resumo
+            const summary = document.getElementById('testSummary');
+            const passRate = totalTests > 0 ? ((passedTests / totalTests) * 100).toFixed(1) : 0;
+            
+            summary.innerHTML = `
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value">${totalTests}</div>
+                        <div>Total de Testes</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color: #28a745;">${passedTests}</div>
+                        <div>Testes Passaram</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color: #dc3545;">${failedTests}</div>
+                        <div>Testes Falharam</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color: ${passRate >= 90 ? '#28a745' : passRate >= 70 ? '#ffc107' : '#dc3545'};">${passRate}%</div>
+                        <div>Taxa de Sucesso</div>
+                    </div>
+                </div>
+                ${failedTests === 0 ? 
+                    '<p style="color: #28a745; font-weight: bold; margin-top: 15px;">✅ Todos os testes passaram!</p>' :
+                    `<p style="color: #dc3545; font-weight: bold; margin-top: 15px;">❌ ${failedTests} teste(s) falharam. Verifique os detalhes acima.</p>`
+                }
+            `;
+        }
+
+        // Aguarda o carregamento do arquivo de validações
+        window.addEventListener('load', () => {
+            // Verifica se as funções estão disponíveis
+            if (typeof validateStripeId === 'function') {
+                setTimeout(runAllTests, 100);
+            } else {
+                document.getElementById('testSummary').innerHTML = `
+                    <p style="color: #dc3545;">❌ Erro: Funções de validação não foram carregadas.</p>
+                    <p>Certifique-se de que o arquivo <code>/app/validations.js</code> está acessível.</p>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
+

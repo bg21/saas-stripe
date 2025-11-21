@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -42,7 +44,7 @@ class PromotionCodeController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_promotion_code']);
                 return;
             }
 
@@ -52,15 +54,20 @@ class PromotionCodeController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_promotion_code', 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
-            if (empty($data['coupon'])) {
-                Flight::json(['error' => 'Campo coupon é obrigatório'], 400);
+            // ✅ Validação consistente usando Validator
+            $errors = Validator::validatePromotionCodeCreate($data);
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_promotion_code', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -72,56 +79,45 @@ class PromotionCodeController
 
             $promotionCode = $this->stripeService->createPromotionCode($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $promotionCode->id,
-                    'code' => $promotionCode->code,
-                    'coupon' => [
-                        'id' => $promotionCode->coupon->id,
-                        'name' => $promotionCode->coupon->name ?? null,
-                        'percent_off' => $promotionCode->coupon->percent_off ?? null,
-                        'amount_off' => $promotionCode->coupon->amount_off ?? null,
-                        'currency' => $promotionCode->coupon->currency ?? null,
-                        'duration' => $promotionCode->coupon->duration ?? null
-                    ],
-                    'active' => $promotionCode->active,
-                    'customer' => $promotionCode->customer ?? null,
-                    'expires_at' => $promotionCode->expires_at ? date('Y-m-d H:i:s', $promotionCode->expires_at) : null,
-                    'first_time_transaction' => $promotionCode->first_time_transaction ?? false,
-                    'max_redemptions' => $promotionCode->max_redemptions ?? null,
-                    'times_redeemed' => $promotionCode->times_redeemed,
-                    'created' => date('Y-m-d H:i:s', $promotionCode->created),
-                    'metadata' => $promotionCode->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $promotionCode->id,
+                'code' => $promotionCode->code,
+                'coupon' => [
+                    'id' => $promotionCode->coupon->id,
+                    'name' => $promotionCode->coupon->name ?? null,
+                    'percent_off' => $promotionCode->coupon->percent_off ?? null,
+                    'amount_off' => $promotionCode->coupon->amount_off ?? null,
+                    'currency' => $promotionCode->coupon->currency ?? null,
+                    'duration' => $promotionCode->coupon->duration ?? null
+                ],
+                'active' => $promotionCode->active,
+                'customer' => $promotionCode->customer ?? null,
+                'expires_at' => $promotionCode->expires_at ? date('Y-m-d H:i:s', $promotionCode->expires_at) : null,
+                'first_time_transaction' => $promotionCode->first_time_transaction ?? false,
+                'max_redemptions' => $promotionCode->max_redemptions ?? null,
+                'times_redeemed' => $promotionCode->times_redeemed,
+                'created' => date('Y-m-d H:i:s', $promotionCode->created),
+                'metadata' => $promotionCode->metadata->toArray()
+            ], 'Código promocional criado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro ao criar promotion code", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar código promocional',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'create_promotion_code', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar promotion code no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar código promocional',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar código promocional no Stripe',
+                ['action' => 'create_promotion_code', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar promotion code", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar código promocional',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar código promocional',
+                'PROMOTION_CODE_CREATE_ERROR',
+                ['action' => 'create_promotion_code', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -144,7 +140,7 @@ class PromotionCodeController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_promotion_codes']);
                 return;
             }
 
@@ -207,30 +203,24 @@ class PromotionCodeController
                 ];
             }
             
-            Flight::json([
-                'success' => true,
-                'data' => $formattedCodes,
+            ResponseHelper::sendSuccess([
+                'promotion_codes' => $formattedCodes,
                 'has_more' => $promotionCodes->has_more,
                 'count' => count($formattedCodes)
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar promotion codes", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar códigos promocionais',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar códigos promocionais',
+                ['action' => 'list_promotion_codes', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar promotion codes", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar códigos promocionais',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar códigos promocionais',
+                'PROMOTION_CODE_LIST_ERROR',
+                ['action' => 'list_promotion_codes', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -244,7 +234,7 @@ class PromotionCodeController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_promotion_codes']);
                 return;
             }
 
@@ -253,60 +243,47 @@ class PromotionCodeController
             // Valida se pertence ao tenant (via metadata)
             if (isset($promotionCode->metadata->tenant_id) && 
                 (string)$promotionCode->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Código promocional não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Código promocional', ['action' => 'get_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $promotionCode->id,
-                    'code' => $promotionCode->code,
-                    'coupon' => [
-                        'id' => $promotionCode->coupon->id,
-                        'name' => $promotionCode->coupon->name ?? null,
-                        'percent_off' => $promotionCode->coupon->percent_off ?? null,
-                        'amount_off' => $promotionCode->coupon->amount_off ?? null,
-                        'currency' => $promotionCode->coupon->currency ?? null,
-                        'duration' => $promotionCode->coupon->duration ?? null
-                    ],
-                    'active' => $promotionCode->active,
-                    'customer' => $promotionCode->customer ?? null,
-                    'expires_at' => $promotionCode->expires_at ? date('Y-m-d H:i:s', $promotionCode->expires_at) : null,
-                    'first_time_transaction' => $promotionCode->first_time_transaction ?? false,
-                    'max_redemptions' => $promotionCode->max_redemptions ?? null,
-                    'times_redeemed' => $promotionCode->times_redeemed,
-                    'created' => date('Y-m-d H:i:s', $promotionCode->created),
-                    'metadata' => $promotionCode->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $promotionCode->id,
+                'code' => $promotionCode->code,
+                'coupon' => [
+                    'id' => $promotionCode->coupon->id,
+                    'name' => $promotionCode->coupon->name ?? null,
+                    'percent_off' => $promotionCode->coupon->percent_off ?? null,
+                    'amount_off' => $promotionCode->coupon->amount_off ?? null,
+                    'currency' => $promotionCode->coupon->currency ?? null,
+                    'duration' => $promotionCode->coupon->duration ?? null
+                ],
+                'active' => $promotionCode->active,
+                'customer' => $promotionCode->customer ?? null,
+                'expires_at' => $promotionCode->expires_at ? date('Y-m-d H:i:s', $promotionCode->expires_at) : null,
+                'first_time_transaction' => $promotionCode->first_time_transaction ?? false,
+                'max_redemptions' => $promotionCode->max_redemptions ?? null,
+                'times_redeemed' => $promotionCode->times_redeemed,
+                'created' => date('Y-m-d H:i:s', $promotionCode->created),
+                'metadata' => $promotionCode->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Logger::error("Promotion code não encontrado", ['promotion_code_id' => $id]);
-                Flight::json([
-                    'error' => 'Código promocional não encontrado',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 404);
+                ResponseHelper::sendNotFoundError('Código promocional', ['action' => 'get_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao obter promotion code", [
-                    'error' => $e->getMessage(),
-                    'promotion_code_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao obter código promocional',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter código promocional',
+                    ['action' => 'get_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter promotion code", [
-                'error' => $e->getMessage(),
-                'promotion_code_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter código promocional',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter código promocional',
+                'PROMOTION_CODE_GET_ERROR',
+                ['action' => 'get_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -324,7 +301,7 @@ class PromotionCodeController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_promotion_codes']);
                 return;
             }
 
@@ -343,10 +320,55 @@ class PromotionCodeController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
+            }
+            
+            // Valida que há dados para atualizar
+            if (empty($data)) {
+                ResponseHelper::sendValidationError(
+                    'Nenhum dado fornecido para atualização',
+                    [],
+                    ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
+            // Valida campos permitidos (apenas active e metadata)
+            $allowedFields = ['active', 'metadata'];
+            $invalidFields = array_diff(array_keys($data), $allowedFields);
+            if (!empty($invalidFields)) {
+                ResponseHelper::sendValidationError(
+                    'Campos inválidos para atualização',
+                    ['fields' => 'Apenas active e metadata podem ser atualizados. Campos inválidos: ' . implode(', ', $invalidFields)],
+                    ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId, 'invalid_fields' => $invalidFields]
+                );
+                return;
+            }
+            
+            // Valida active se fornecido
+            if (isset($data['active']) && !is_bool($data['active'])) {
+                ResponseHelper::sendValidationError(
+                    'active inválido',
+                    ['active' => 'Deve ser true ou false'],
+                    ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
+            // Valida metadata se fornecido
+            if (isset($data['metadata'])) {
+                $metadataErrors = Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataErrors)) {
+                    ResponseHelper::sendValidationError(
+                        'metadata inválido',
+                        $metadataErrors,
+                        ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+                    );
+                    return;
+                }
             }
 
             // Preserva tenant_id nos metadados se metadata for atualizado
@@ -356,47 +378,35 @@ class PromotionCodeController
 
             $promotionCode = $this->stripeService->updatePromotionCode($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $promotionCode->id,
-                    'code' => $promotionCode->code,
-                    'active' => $promotionCode->active,
-                    'metadata' => $promotionCode->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $promotionCode->id,
+                'code' => $promotionCode->code,
+                'active' => $promotionCode->active,
+                'metadata' => $promotionCode->metadata->toArray()
+            ], 200, 'Código promocional atualizado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro ao atualizar promotion code", [
-                'error' => $e->getMessage(),
-                'promotion_code_id' => $id
-            ]);
-            Flight::json([
-                'error' => 'Erro ao atualizar código promocional',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+            );
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Código promocional não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Código promocional', ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao atualizar promotion code", [
-                    'error' => $e->getMessage(),
-                    'promotion_code_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar código promocional',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar código promocional',
+                    ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar promotion code", [
-                'error' => $e->getMessage(),
-                'promotion_code_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar código promocional',
+                'PROMOTION_CODE_UPDATE_ERROR',
+                ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

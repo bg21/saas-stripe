@@ -240,7 +240,10 @@ class ErrorHandler
         // Adiciona informações específicas do Stripe se disponível
         if (method_exists($exception, 'getStripeCode')) {
             $context['stripe_code'] = $exception->getStripeCode();
-            $context['stripe_type'] = $exception->getStripeType() ?? null;
+            // ✅ CORREÇÃO: Verifica se método existe antes de chamar
+            if (method_exists($exception, 'getStripeType')) {
+                $context['stripe_type'] = $exception->getStripeType();
+            }
         }
         
         Logger::error("Exceção capturada: " . get_class($exception), $context);
@@ -277,31 +280,119 @@ class ErrorHandler
     }
     
     /**
+     * Mapeia códigos de erro do Stripe para mensagens amigáveis
+     * 
+     * @param string|null $stripeCode Código de erro do Stripe
+     * @return array ['message' => string, 'user_friendly' => bool]
+     */
+    private static function mapStripeErrorCode(?string $stripeCode): array
+    {
+        if ($stripeCode === null) {
+            return ['message' => 'Erro na integração com Stripe', 'user_friendly' => false];
+        }
+        
+        $errorMap = [
+            // Erros de autenticação
+            'api_key_expired' => ['message' => 'Chave da API expirada. Entre em contato com o suporte.', 'user_friendly' => true],
+            'authentication_required' => ['message' => 'Autenticação necessária para esta operação.', 'user_friendly' => true],
+            
+            // Erros de cartão
+            'card_declined' => ['message' => 'Cartão recusado. Verifique os dados ou use outro cartão.', 'user_friendly' => true],
+            'insufficient_funds' => ['message' => 'Fundos insuficientes no cartão.', 'user_friendly' => true],
+            'expired_card' => ['message' => 'Cartão expirado. Use outro cartão.', 'user_friendly' => true],
+            'incorrect_cvc' => ['message' => 'Código de segurança (CVC) incorreto.', 'user_friendly' => true],
+            'incorrect_number' => ['message' => 'Número do cartão incorreto.', 'user_friendly' => true],
+            'invalid_cvc' => ['message' => 'Código de segurança (CVC) inválido.', 'user_friendly' => true],
+            'invalid_expiry_month' => ['message' => 'Mês de expiração inválido.', 'user_friendly' => true],
+            'invalid_expiry_year' => ['message' => 'Ano de expiração inválido.', 'user_friendly' => true],
+            'invalid_number' => ['message' => 'Número do cartão inválido.', 'user_friendly' => true],
+            'processing_error' => ['message' => 'Erro ao processar o pagamento. Tente novamente.', 'user_friendly' => true],
+            
+            // Erros de rate limit
+            'rate_limit' => ['message' => 'Muitas requisições. Aguarde um momento e tente novamente.', 'user_friendly' => true],
+            
+            // Erros de recursos
+            'resource_missing' => ['message' => 'Recurso não encontrado.', 'user_friendly' => true],
+            'resource_already_exists' => ['message' => 'Este recurso já existe.', 'user_friendly' => true],
+            
+            // Erros de parâmetros
+            'parameter_invalid_empty' => ['message' => 'Parâmetro obrigatório não fornecido.', 'user_friendly' => true],
+            'parameter_invalid_integer' => ['message' => 'Parâmetro deve ser um número inteiro.', 'user_friendly' => true],
+            'parameter_invalid_string_blank' => ['message' => 'Parâmetro não pode estar vazio.', 'user_friendly' => true],
+            'parameter_missing' => ['message' => 'Parâmetro obrigatório ausente.', 'user_friendly' => true],
+            
+            // Erros de assinatura
+            'subscription_canceled' => ['message' => 'Assinatura foi cancelada.', 'user_friendly' => true],
+            'subscription_past_due' => ['message' => 'Assinatura está em atraso. Atualize o método de pagamento.', 'user_friendly' => true],
+            'subscription_unpaid' => ['message' => 'Assinatura não paga. Atualize o método de pagamento.', 'user_friendly' => true],
+            
+            // Erros de pagamento
+            'payment_intent_payment_attempt_failed' => ['message' => 'Tentativa de pagamento falhou. Tente novamente.', 'user_friendly' => true],
+            'payment_method_unactivated' => ['message' => 'Método de pagamento não está ativo.', 'user_friendly' => true],
+            
+            // Erros de checkout
+            'checkout_session_expired' => ['message' => 'Sessão de checkout expirada. Crie uma nova sessão.', 'user_friendly' => true],
+        ];
+        
+        if (isset($errorMap[$stripeCode])) {
+            return $errorMap[$stripeCode];
+        }
+        
+        // Para códigos não mapeados, retorna mensagem genérica
+        return ['message' => 'Erro na integração com Stripe', 'user_friendly' => false];
+    }
+    
+    /**
      * Prepara resposta de erro para exceções do Stripe
      * 
      * @param \Stripe\Exception\ApiErrorException $exception Exceção do Stripe
-     * @param string $userMessage Mensagem amigável
-     * @return array Resposta formatada
+     * @param string $userMessage Mensagem amigável (usada como fallback)
+     * @return array ['response' => array, 'status_code' => int] Resposta formatada e código HTTP
      */
     public static function prepareStripeErrorResponse(\Stripe\Exception\ApiErrorException $exception, string $userMessage): array
     {
         self::logException($exception);
         
+        $stripeCode = $exception->getStripeCode();
+        $httpStatus = $exception->getHttpStatus();
+        
+        // Mapeia código de erro para mensagem amigável
+        $mappedError = self::mapStripeErrorCode($stripeCode);
+        
+        // Se o mapeamento retornou mensagem amigável, usa ela; senão usa a mensagem fornecida
+        $finalMessage = $mappedError['user_friendly'] ? $mappedError['message'] : $userMessage;
+        
+        // Determina código HTTP apropriado
+        $statusCode = 400; // Default
+        if ($httpStatus >= 400 && $httpStatus < 600) {
+            $statusCode = $httpStatus;
+        } elseif (in_array($stripeCode, ['api_key_expired', 'authentication_required'], true)) {
+            $statusCode = 401;
+        } elseif ($stripeCode === 'resource_missing') {
+            $statusCode = 404;
+        } elseif ($stripeCode === 'rate_limit') {
+            $statusCode = 429;
+        }
+        
         $response = [
             'error' => 'Erro na integração com Stripe',
-            'message' => $userMessage,
-            'code' => 'STRIPE_ERROR'
+            'message' => $finalMessage,
+            'code' => 'STRIPE_ERROR',
+            'stripe_code' => $stripeCode
         ];
         
         if (Config::isDevelopment()) {
             $response['debug'] = [
-                'stripe_code' => $exception->getStripeCode(),
-                'stripe_type' => $exception->getStripeType(),
-                'message' => self::sanitizeMessage($exception->getMessage())
+                'stripe_code' => $stripeCode,
+                'stripe_type' => method_exists($exception, 'getStripeType') ? $exception->getStripeType() : null,
+                'http_status' => $httpStatus,
+                'raw_message' => self::sanitizeMessage($exception->getMessage()),
+                'mapped_message' => $mappedError['message'],
+                'user_friendly' => $mappedError['user_friendly']
             ];
         }
         
-        return $response;
+        return ['response' => $response, 'status_code' => $statusCode];
     }
     
     /**

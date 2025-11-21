@@ -34,6 +34,24 @@ if (!transactionId) {
     window.location.href = '/transactions';
 }
 
+// ✅ Valida formato de balance_transaction_id da URL
+if (typeof validateStripeId === 'function') {
+    const transactionIdError = validateStripeId(transactionId, 'balance_transaction_id', true);
+    if (transactionIdError) {
+        showAlert('ID de transação inválido na URL: ' + transactionIdError, 'danger');
+        window.location.href = '/transactions';
+        throw new Error('Invalid balance_transaction_id format');
+    }
+} else {
+    // Fallback: validação básica
+    const transactionIdPattern = /^txn_[a-zA-Z0-9]+$/;
+    if (!transactionIdPattern.test(transactionId)) {
+        showAlert('Formato de Transaction ID inválido na URL. Use: txn_xxxxx', 'danger');
+        window.location.href = '/transactions';
+        throw new Error('Invalid balance_transaction_id format');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         loadTransactionDetails();

@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -138,30 +140,24 @@ class DisputeController
                 ];
             }
             
-            Flight::json([
-                'success' => true,
-                'data' => $formattedDisputes,
+            ResponseHelper::sendSuccess([
+                'disputes' => $formattedDisputes,
                 'has_more' => $disputes->has_more,
                 'count' => count($formattedDisputes)
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao listar disputes", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar disputes',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar disputes',
+                ['action' => 'list_disputes', 'tenant_id' => Flight::get('tenant_id')]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao listar disputes", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar disputes',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar disputes',
+                'DISPUTE_LIST_ERROR',
+                ['action' => 'list_disputes', 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 
@@ -175,92 +171,84 @@ class DisputeController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('view_disputes');
             
-            if (empty($id)) {
-                Flight::halt(400, json_encode(['error' => 'ID da dispute é obrigatório']));
+            // Valida ID
+            $idErrors = Validator::validateDisputeId($id);
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID da dispute inválido',
+                    $idErrors,
+                    ['action' => 'get_dispute', 'dispute_id' => $id]
+                );
                 return;
             }
 
             $dispute = $this->stripeService->getDispute($id);
             
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $dispute->id,
-                    'object' => $dispute->object,
-                    'amount' => $dispute->amount,
-                    'currency' => strtoupper($dispute->currency),
-                    'status' => $dispute->status,
-                    'reason' => $dispute->reason,
-                    'charge' => $dispute->charge,
-                    'payment_intent' => $dispute->payment_intent ?? null,
-                    'created' => date('Y-m-d H:i:s', $dispute->created),
-                    'evidence_details' => [
-                        'due_by' => $dispute->evidence_details->due_by ? date('Y-m-d H:i:s', $dispute->evidence_details->due_by) : null,
-                        'has_evidence' => $dispute->evidence_details->has_evidence,
-                        'past_due' => $dispute->evidence_details->past_due,
-                        'submission_count' => $dispute->evidence_details->submission_count
-                    ],
-                    'evidence' => [
-                        'access_activity_log' => $dispute->evidence->access_activity_log ?? null,
-                        'billing_address' => $dispute->evidence->billing_address ?? null,
-                        'cancellation_policy' => $dispute->evidence->cancellation_policy ?? null,
-                        'cancellation_policy_disclosure' => $dispute->evidence->cancellation_policy_disclosure ?? null,
-                        'cancellation_rebuttal' => $dispute->evidence->cancellation_rebuttal ?? null,
-                        'customer_communication' => $dispute->evidence->customer_communication ?? null,
-                        'customer_email_address' => $dispute->evidence->customer_email_address ?? null,
-                        'customer_name' => $dispute->evidence->customer_name ?? null,
-                        'customer_purchase_ip' => $dispute->evidence->customer_purchase_ip ?? null,
-                        'customer_signature' => $dispute->evidence->customer_signature ?? null,
-                        'duplicate_charge_documentation' => $dispute->evidence->duplicate_charge_documentation ?? null,
-                        'duplicate_charge_explanation' => $dispute->evidence->duplicate_charge_explanation ?? null,
-                        'duplicate_charge_id' => $dispute->evidence->duplicate_charge_id ?? null,
-                        'product_description' => $dispute->evidence->product_description ?? null,
-                        'receipt' => $dispute->evidence->receipt ?? null,
-                        'refund_policy' => $dispute->evidence->refund_policy ?? null,
-                        'refund_policy_disclosure' => $dispute->evidence->refund_policy_disclosure ?? null,
-                        'refund_refusal_explanation' => $dispute->evidence->refund_refusal_explanation ?? null,
-                        'service_date' => $dispute->evidence->service_date ?? null,
-                        'service_documentation' => $dispute->evidence->service_documentation ?? null,
-                        'shipping_address' => $dispute->evidence->shipping_address ?? null,
-                        'shipping_carrier' => $dispute->evidence->shipping_carrier ?? null,
-                        'shipping_date' => $dispute->evidence->shipping_date ?? null,
-                        'shipping_documentation' => $dispute->evidence->shipping_documentation ?? null,
-                        'shipping_tracking_number' => $dispute->evidence->shipping_tracking_number ?? null,
-                        'uncategorized_file' => $dispute->evidence->uncategorized_file ?? null,
-                        'uncategorized_text' => $dispute->evidence->uncategorized_text ?? null
-                    ],
-                    'metadata' => $dispute->metadata->toArray() ?? []
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $dispute->id,
+                'object' => $dispute->object,
+                'amount' => $dispute->amount,
+                'currency' => strtoupper($dispute->currency),
+                'status' => $dispute->status,
+                'reason' => $dispute->reason,
+                'charge' => $dispute->charge,
+                'payment_intent' => $dispute->payment_intent ?? null,
+                'created' => date('Y-m-d H:i:s', $dispute->created),
+                'evidence_details' => [
+                    'due_by' => $dispute->evidence_details->due_by ? date('Y-m-d H:i:s', $dispute->evidence_details->due_by) : null,
+                    'has_evidence' => $dispute->evidence_details->has_evidence,
+                    'past_due' => $dispute->evidence_details->past_due,
+                    'submission_count' => $dispute->evidence_details->submission_count
+                ],
+                'evidence' => [
+                    'access_activity_log' => $dispute->evidence->access_activity_log ?? null,
+                    'billing_address' => $dispute->evidence->billing_address ?? null,
+                    'cancellation_policy' => $dispute->evidence->cancellation_policy ?? null,
+                    'cancellation_policy_disclosure' => $dispute->evidence->cancellation_policy_disclosure ?? null,
+                    'cancellation_rebuttal' => $dispute->evidence->cancellation_rebuttal ?? null,
+                    'customer_communication' => $dispute->evidence->customer_communication ?? null,
+                    'customer_email_address' => $dispute->evidence->customer_email_address ?? null,
+                    'customer_name' => $dispute->evidence->customer_name ?? null,
+                    'customer_purchase_ip' => $dispute->evidence->customer_purchase_ip ?? null,
+                    'customer_signature' => $dispute->evidence->customer_signature ?? null,
+                    'duplicate_charge_documentation' => $dispute->evidence->duplicate_charge_documentation ?? null,
+                    'duplicate_charge_explanation' => $dispute->evidence->duplicate_charge_explanation ?? null,
+                    'duplicate_charge_id' => $dispute->evidence->duplicate_charge_id ?? null,
+                    'product_description' => $dispute->evidence->product_description ?? null,
+                    'receipt' => $dispute->evidence->receipt ?? null,
+                    'refund_policy' => $dispute->evidence->refund_policy ?? null,
+                    'refund_policy_disclosure' => $dispute->evidence->refund_policy_disclosure ?? null,
+                    'refund_refusal_explanation' => $dispute->evidence->refund_refusal_explanation ?? null,
+                    'service_date' => $dispute->evidence->service_date ?? null,
+                    'service_documentation' => $dispute->evidence->service_documentation ?? null,
+                    'shipping_address' => $dispute->evidence->shipping_address ?? null,
+                    'shipping_carrier' => $dispute->evidence->shipping_carrier ?? null,
+                    'shipping_date' => $dispute->evidence->shipping_date ?? null,
+                    'shipping_documentation' => $dispute->evidence->shipping_documentation ?? null,
+                    'shipping_tracking_number' => $dispute->evidence->shipping_tracking_number ?? null,
+                    'uncategorized_file' => $dispute->evidence->uncategorized_file ?? null,
+                    'uncategorized_text' => $dispute->evidence->uncategorized_text ?? null
+                ],
+                'metadata' => $dispute->metadata->toArray() ?? []
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao obter dispute", [
-                'dispute_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            
             // Se não encontrado, retorna 404
             if ($e->getHttpStatus() === 404) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Dispute não encontrada',
-                    'message' => $e->getMessage()
-                ]));
+                ResponseHelper::sendNotFoundError('Dispute', ['action' => 'get_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
             } else {
-                Flight::halt(400, json_encode([
-                    'error' => 'Erro ao obter dispute',
-                    'message' => $e->getMessage()
-                ]));
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter dispute',
+                    ['action' => 'get_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao obter dispute", [
-                'dispute_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao obter dispute',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter dispute',
+                'DISPUTE_GET_ERROR',
+                ['action' => 'get_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 
@@ -277,8 +265,14 @@ class DisputeController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('manage_disputes');
             
-            if (empty($id)) {
-                Flight::halt(400, json_encode(['error' => 'ID da dispute é obrigatório']));
+            // Valida ID
+            $idErrors = Validator::validateDisputeId($id);
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID da dispute inválido',
+                    $idErrors,
+                    ['action' => 'update_dispute', 'dispute_id' => $id]
+                );
                 return;
             }
 
@@ -288,7 +282,7 @@ class DisputeController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_dispute', 'dispute_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -296,55 +290,44 @@ class DisputeController
             
             // Valida se há dados de evidência
             if (empty($data)) {
-                Flight::halt(400, json_encode(['error' => 'Dados de evidência são obrigatórios']));
+                ResponseHelper::sendValidationError(
+                    'Dados de evidência são obrigatórios',
+                    ['evidence' => 'Forneça pelo menos um campo de evidência'],
+                    ['action' => 'update_dispute', 'dispute_id' => $id]
+                );
                 return;
             }
 
             $dispute = $this->stripeService->updateDispute($id, $data);
             
-            Flight::json([
-                'success' => true,
-                'message' => 'Dispute atualizada com sucesso',
-                'data' => [
-                    'id' => $dispute->id,
-                    'status' => $dispute->status,
-                    'evidence_details' => [
-                        'due_by' => $dispute->evidence_details->due_by ? date('Y-m-d H:i:s', $dispute->evidence_details->due_by) : null,
-                        'has_evidence' => $dispute->evidence_details->has_evidence,
-                        'past_due' => $dispute->evidence_details->past_due,
-                        'submission_count' => $dispute->evidence_details->submission_count
-                    ]
+            ResponseHelper::sendSuccess([
+                'id' => $dispute->id,
+                'status' => $dispute->status,
+                'evidence_details' => [
+                    'due_by' => $dispute->evidence_details->due_by ? date('Y-m-d H:i:s', $dispute->evidence_details->due_by) : null,
+                    'has_evidence' => $dispute->evidence_details->has_evidence,
+                    'past_due' => $dispute->evidence_details->past_due,
+                    'submission_count' => $dispute->evidence_details->submission_count
                 ]
-            ]);
+            ], 200, 'Dispute atualizada com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao atualizar dispute", [
-                'dispute_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            
             // Se não encontrado, retorna 404
             if ($e->getHttpStatus() === 404) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Dispute não encontrada',
-                    'message' => $e->getMessage()
-                ]));
+                ResponseHelper::sendNotFoundError('Dispute', ['action' => 'update_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
             } else {
-                Flight::halt(400, json_encode([
-                    'error' => 'Erro ao atualizar dispute',
-                    'message' => $e->getMessage()
-                ]));
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar dispute',
+                    ['action' => 'update_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao atualizar dispute", [
-                'dispute_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao atualizar dispute',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar dispute',
+                'DISPUTE_UPDATE_ERROR',
+                ['action' => 'update_dispute', 'dispute_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 }

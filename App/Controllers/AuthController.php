@@ -10,6 +10,7 @@ use App\Services\AnomalyDetectionService;
 use App\Middleware\LoginRateLimitMiddleware;
 use App\Utils\Validator;
 use App\Utils\ErrorHandler;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -61,7 +62,7 @@ class AuthController
             if ($data === null) {
                 // Verifica se houve erro no JSON (RequestCache já valida, mas verifica novamente)
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    $this->sendError(400, 'Dados inválidos', 'JSON inválido no corpo da requisição: ' . json_last_error_msg());
+                    ResponseHelper::sendInvalidJsonError(['action' => 'login']);
                     return;
                 }
                 // Se não há dados mas JSON é válido (corpo vazio), inicializa array vazio
@@ -71,7 +72,11 @@ class AuthController
             // Validação rigorosa usando Validator
             $validationErrors = Validator::validateLogin($data);
             if (!empty($validationErrors)) {
-                $this->sendError(400, 'Dados inválidos', 'Por favor, verifique os dados informados', ['errors' => $validationErrors]);
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $validationErrors,
+                    ['action' => 'login']
+                );
                 return;
             }
             
@@ -81,7 +86,11 @@ class AuthController
             // ✅ CORREÇÃO: Cast seguro de tenant_id usando filter_var
             $tenantId = filter_var($data['tenant_id'], FILTER_VALIDATE_INT);
             if ($tenantId === false || $tenantId <= 0) {
-                $this->sendError(400, 'Dados inválidos', 'tenant_id deve ser um número inteiro positivo');
+                ResponseHelper::sendValidationError(
+                    'tenant_id deve ser um número inteiro positivo',
+                    ['tenant_id' => 'Deve ser um número inteiro positivo'],
+                    ['action' => 'login']
+                );
                 return;
             }
             
@@ -100,9 +109,14 @@ class AuthController
                     'reason' => $blockStatus['reason']
                 ]);
                 
-                $this->sendError(429, 'Acesso temporariamente bloqueado', 
-                    "Muitas tentativas falhadas. Acesso bloqueado até {$blockedUntil}. " .
-                    "Por favor, tente novamente mais tarde.");
+                ResponseHelper::sendError(
+                    429,
+                    'Acesso temporariamente bloqueado',
+                    "Muitas tentativas falhadas. Acesso bloqueado até {$blockedUntil}. Por favor, tente novamente mais tarde.",
+                    'TOO_MANY_ATTEMPTS',
+                    [],
+                    ['action' => 'login', 'email' => $email, 'ip' => $ip, 'blocked_until' => $blockedUntil]
+                );
                 return;
             }
 
@@ -132,7 +146,11 @@ class AuthController
                     $message .= ". Restam {$anomalyResult['remaining_attempts']} tentativas antes do bloqueio.";
                 }
                 
-                $this->sendError(401, 'Credenciais inválidas', $message);
+                ResponseHelper::sendUnauthorizedError($message, [
+                    'action' => 'login',
+                    'email' => $email,
+                    'remaining_attempts' => $anomalyResult['remaining_attempts']
+                ]);
                 return;
             }
 
@@ -160,7 +178,12 @@ class AuthController
                     $message .= ". Restam {$anomalyResult['remaining_attempts']} tentativas antes do bloqueio.";
                 }
                 
-                $this->sendError(401, 'Credenciais inválidas', $message);
+                ResponseHelper::sendUnauthorizedError($message, [
+                    'action' => 'login',
+                    'user_id' => $user['id'],
+                    'email' => $email,
+                    'remaining_attempts' => $anomalyResult['remaining_attempts']
+                ]);
                 return;
             }
             
@@ -173,7 +196,11 @@ class AuthController
                     'user_id' => $user['id'],
                     'email' => $email
                 ]);
-                $this->sendError(403, 'Usuário inativo', 'Sua conta está inativa. Entre em contato com o administrador.');
+                ResponseHelper::sendForbiddenError('Sua conta está inativa. Entre em contato com o administrador.', [
+                    'action' => 'login',
+                    'user_id' => $user['id'],
+                    'email' => $email
+                ]);
                 return;
             }
 
@@ -184,7 +211,11 @@ class AuthController
                     'tenant_id' => $tenantId,
                     'email' => $email
                 ]);
-                $this->sendError(403, 'Tenant inválido', 'O tenant informado não existe.');
+                ResponseHelper::sendForbiddenError('O tenant informado não existe.', [
+                    'action' => 'login',
+                    'tenant_id' => $tenantId,
+                    'email' => $email
+                ]);
                 return;
             }
             
@@ -193,7 +224,11 @@ class AuthController
                     'tenant_id' => $tenantId,
                     'email' => $email
                 ]);
-                $this->sendError(403, 'Tenant inativo', 'O tenant está inativo. Entre em contato com o suporte.');
+                ResponseHelper::sendForbiddenError('O tenant está inativo. Entre em contato com o suporte.', [
+                    'action' => 'login',
+                    'tenant_id' => $tenantId,
+                    'email' => $email
+                ]);
                 return;
             }
 
@@ -210,25 +245,26 @@ class AuthController
             ]);
 
             // Retorna dados do usuário e token
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'session_id' => $sessionId,
-                    'user' => [
-                        'id' => (int)$user['id'],
-                        'email' => $user['email'],
-                        'name' => $user['name'],
-                        'role' => $user['role'] ?? 'viewer'
-                    ],
-                    'tenant' => [
-                        'id' => (int)$tenant['id'],
-                        'name' => $tenant['name']
-                    ]
+            ResponseHelper::sendSuccess([
+                'session_id' => $sessionId,
+                'user' => [
+                    'id' => (int)$user['id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'role' => $user['role'] ?? 'viewer'
+                ],
+                'tenant' => [
+                    'id' => (int)$tenant['id'],
+                    'name' => $tenant['name']
                 ]
             ]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao processar o login', 'LOGIN_ERROR');
-            $this->sendError(500, 'Erro interno', $response['message'], $response);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Ocorreu um erro ao processar o login',
+                'LOGIN_ERROR',
+                ['action' => 'login']
+            );
         }
     }
 
@@ -251,13 +287,14 @@ class AuthController
                 }
             }
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Logout realizado com sucesso'
-            ]);
+            ResponseHelper::sendSuccess(null, 200, 'Logout realizado com sucesso');
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao processar o logout', 'LOGOUT_ERROR');
-            $this->sendError(500, 'Erro interno', $response['message'], $response);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Ocorreu um erro ao processar o logout',
+                'LOGOUT_ERROR',
+                ['action' => 'logout']
+            );
         }
     }
 
@@ -271,35 +308,36 @@ class AuthController
             $sessionId = $this->getSessionId();
 
             if (!$sessionId) {
-                $this->sendError(401, 'Não autenticado', 'Token de sessão não fornecido');
+                ResponseHelper::sendUnauthorizedError('Token de sessão não fornecido', ['action' => 'verify_session']);
                 return;
             }
 
             $session = $this->sessionModel->validate($sessionId);
 
             if (!$session) {
-                $this->sendError(401, 'Sessão inválida', 'Sessão inválida ou expirada. Faça login novamente.');
+                ResponseHelper::sendUnauthorizedError('Sessão inválida ou expirada. Faça login novamente.', ['action' => 'verify_session']);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'user' => [
-                        'id' => (int)$session['user_id'],
-                        'email' => $session['email'],
-                        'name' => $session['name'],
-                        'role' => $session['role'] ?? 'viewer'
-                    ],
-                    'tenant' => [
-                        'id' => (int)$session['tenant_id'],
-                        'name' => $session['tenant_name']
-                    ]
+            ResponseHelper::sendSuccess([
+                'user' => [
+                    'id' => (int)$session['user_id'],
+                    'email' => $session['email'],
+                    'name' => $session['name'],
+                    'role' => $session['role'] ?? 'viewer'
+                ],
+                'tenant' => [
+                    'id' => (int)$session['tenant_id'],
+                    'name' => $session['tenant_name']
                 ]
             ]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Ocorreu um erro ao verificar a sessão', 'SESSION_VERIFY_ERROR');
-            $this->sendError(500, 'Erro interno', $response['message'], $response);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Ocorreu um erro ao verificar a sessão',
+                'SESSION_VERIFY_ERROR',
+                ['action' => 'verify_session']
+            );
         }
     }
 
@@ -375,26 +413,4 @@ class AuthController
         return $errors;
     }
     
-    /**
-     * Envia resposta de erro padronizada
-     * 
-     * @param int $statusCode Código HTTP
-     * @param string $error Tipo do erro
-     * @param string $message Mensagem amigável
-     * @param array $extra Dados extras (opcional)
-     */
-    private function sendError(int $statusCode, string $error, string $message, array $extra = []): void
-    {
-        $response = [
-            'error' => $error,
-            'message' => $message
-        ];
-        
-        if (!empty($extra)) {
-            $response = array_merge($response, $extra);
-        }
-        
-        Flight::json($response, $statusCode);
-        Flight::stop();
-    }
 }

@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -181,7 +183,7 @@ class PriceController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_price']);
                 return;
             }
 
@@ -191,25 +193,28 @@ class PriceController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_price']);
                     return;
                 }
                 $data = [];
             }
 
             // Validações obrigatórias
+            $errors = [];
             if (empty($data['product'])) {
-                Flight::json(['error' => 'Campo product é obrigatório'], 400);
-                return;
+                $errors['product'] = 'Campo product é obrigatório';
             }
 
             if (!isset($data['unit_amount'])) {
-                Flight::json(['error' => 'Campo unit_amount é obrigatório'], 400);
-                return;
+                $errors['unit_amount'] = 'Campo unit_amount é obrigatório';
             }
 
             if (empty($data['currency'])) {
-                Flight::json(['error' => 'Campo currency é obrigatório'], 400);
+                $errors['currency'] = 'Campo currency é obrigatório';
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError('Dados inválidos', $errors, ['action' => 'create_price', 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -256,37 +261,13 @@ class PriceController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $priceData
-            ], 201);
+            ResponseHelper::sendCreated($priceData, 'Preço criado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao criar preço", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'create_price', 'tenant_id' => $tenantId ?? null]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao criar preço no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar preço',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar preço', ['action' => 'create_price', 'tenant_id' => $tenantId ?? null]);
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao criar preço", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar preço', 'PRICE_CREATE_ERROR', ['action' => 'create_price', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -300,7 +281,7 @@ class PriceController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_price']);
                 return;
             }
 
@@ -308,7 +289,7 @@ class PriceController
 
             // Valida se o preço pertence ao tenant (via metadata)
             if (isset($price->metadata->tenant_id) && (string)$price->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Preço não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -347,26 +328,15 @@ class PriceController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $priceData
-            ]);
+            ResponseHelper::sendSuccess($priceData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Preço não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao obter preço", ['error' => $e->getMessage()]);
-                Flight::json([
-                    'error' => 'Erro ao obter preço',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError($e, 'Erro ao obter preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter preço", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao obter preço', 'PRICE_GET_ERROR', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -388,7 +358,7 @@ class PriceController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'update_price', 'price_id' => $id]);
                 return;
             }
 
@@ -396,7 +366,7 @@ class PriceController
             $price = $this->stripeService->getPrice($id);
             
             if (isset($price->metadata->tenant_id) && (string)$price->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Preço não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Preço', ['action' => 'update_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -406,7 +376,7 @@ class PriceController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_price']);
                     return;
                 }
                 $data = [];
@@ -454,35 +424,17 @@ class PriceController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $priceData
-            ]);
+            ResponseHelper::sendSuccess($priceData, 200, 'Preço atualizado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao atualizar preço", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'update_price', 'price_id' => $id, 'tenant_id' => $tenantId ?? null]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Preço não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Preço', ['action' => 'update_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao atualizar preço", ['error' => $e->getMessage()]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar preço',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError($e, 'Erro ao atualizar preço', ['action' => 'update_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar preço", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao atualizar preço', 'PRICE_UPDATE_ERROR', ['action' => 'update_price', 'price_id' => $id, 'tenant_id' => $tenantId ?? null]);
         }
     }
 }

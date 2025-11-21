@@ -149,6 +149,24 @@ if (!productId) {
     window.location.href = '/products';
 }
 
+// ✅ Valida formato de product_id da URL
+if (typeof validateStripeId === 'function') {
+    const productIdError = validateStripeId(productId, 'product_id', true);
+    if (productIdError) {
+        showAlert('ID de produto inválido na URL: ' + productIdError, 'danger');
+        window.location.href = '/products';
+        throw new Error('Invalid product_id format');
+    }
+} else {
+    // Fallback: validação básica
+    const productIdPattern = /^prod_[a-zA-Z0-9]+$/;
+    if (!productIdPattern.test(productId)) {
+        showAlert('Formato de Product ID inválido na URL. Use: prod_xxxxx', 'danger');
+        window.location.href = '/products';
+        throw new Error('Invalid product_id format');
+    }
+}
+
 let productData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -285,6 +303,25 @@ document.getElementById('editProductForm').addEventListener('submit', function(e
     }
 
     const productId = document.getElementById('editProductId').value;
+    
+    // ✅ Valida formato de product_id antes de submeter
+    if (typeof validateStripeId === 'function') {
+        const productIdError = validateStripeId(productId, 'product_id', true);
+        if (productIdError) {
+            showAlert(productIdError, 'danger');
+            document.getElementById('editProductId').classList.add('is-invalid');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const productIdPattern = /^prod_[a-zA-Z0-9]+$/;
+        if (!productIdPattern.test(productId)) {
+            showAlert('Formato de Product ID inválido. Use: prod_xxxxx', 'danger');
+            document.getElementById('editProductId').classList.add('is-invalid');
+            return;
+        }
+    }
+    
     const formData = {
         name: document.getElementById('editProductName').value.trim(),
         description: document.getElementById('editProductDescription').value.trim(),

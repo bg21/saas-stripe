@@ -8,13 +8,32 @@ namespace App\Models;
 class Subscription extends BaseModel
 {
     protected string $table = 'subscriptions';
+    protected bool $usesSoftDeletes = true; // ✅ Ativa soft deletes
 
     /**
      * Busca assinatura por Stripe Subscription ID
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados
      */
     public function findByStripeId(string $stripeSubscriptionId): ?array
     {
         return $this->findBy('stripe_subscription_id', $stripeSubscriptionId);
+    }
+    
+    /**
+     * Busca assinatura por Stripe Subscription ID incluindo deletados
+     * 
+     * @param string $stripeSubscriptionId ID do Stripe Subscription
+     * @return array|null Assinatura encontrada ou null
+     */
+    public function findByStripeIdWithTrashed(string $stripeSubscriptionId): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM {$this->table} WHERE stripe_subscription_id = :stripe_subscription_id LIMIT 1"
+        );
+        $stmt->execute(['stripe_subscription_id' => $stripeSubscriptionId]);
+        $result = $stmt->fetch();
+        
+        return $result ?: null;
     }
 
     /**
@@ -148,9 +167,29 @@ class Subscription extends BaseModel
 
     /**
      * Cria ou atualiza assinatura
+     * ✅ VALIDAÇÃO: Valida se tenant_id e customer_id existem antes de criar
      */
     public function createOrUpdate(int $tenantId, int $customerId, array $stripeData): int
     {
+        // ✅ Validação de relacionamento: verifica se tenant existe
+        $tenantModel = new Tenant();
+        $tenant = $tenantModel->findById($tenantId);
+        if (!$tenant) {
+            throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
+        }
+        
+        // ✅ Validação de relacionamento: verifica se customer existe
+        $customerModel = new Customer();
+        $customer = $customerModel->findById($customerId);
+        if (!$customer) {
+            throw new \RuntimeException("Customer com ID {$customerId} não encontrado");
+        }
+        
+        // ✅ Validação adicional: verifica se customer pertence ao tenant
+        if ($customer['tenant_id'] != $tenantId) {
+            throw new \RuntimeException("Customer com ID {$customerId} não pertence ao tenant {$tenantId}");
+        }
+        
         $existing = $this->findByStripeId($stripeData['id']);
 
         // Trata current_period_start (pode não existir em assinaturas em trial)

@@ -6,6 +6,7 @@ use App\Services\StripeService;
 use App\Services\Logger;
 use App\Models\Customer;
 use App\Models\Subscription;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -41,7 +42,7 @@ class StatsController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_stats']);
                 return;
             }
 
@@ -52,7 +53,13 @@ class StatsController
             $cacheKey = sprintf('stats:%d:%s', $tenantId, $period);
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // Se o cache já tem formato ResponseHelper, usa diretamente
+                if (isset($cached['success']) && isset($cached['data'])) {
+                    ResponseHelper::sendSuccess($cached['data']);
+                } else {
+                    // Formato antigo, converte
+                    ResponseHelper::sendSuccess($cached);
+                }
                 return;
             }
 
@@ -126,43 +133,42 @@ class StatsController
                 ? round(($canceledSubscriptions / $totalSubscriptions) * 100, 2) 
                 : 0;
 
-            $response = [
-                'success' => true,
+            $statsData = [
                 'period' => $period,
-                'data' => [
-                    'customers' => [
-                        'total' => $totalCustomers,
-                        'new' => $newCustomers
-                    ],
-                    'subscriptions' => [
-                        'total' => $totalSubscriptions,
-                        'active' => $activeSubscriptions,
-                        'canceled' => $canceledSubscriptions,
-                        'trialing' => $trialingSubscriptions,
-                        'new' => $newSubscriptions
-                    ],
-                    'revenue' => $revenue,
-                    'metrics' => [
-                        'conversion_rate' => $conversionRate . '%',
-                        'churn_rate' => $churnRate . '%'
-                    ]
+                'customers' => [
+                    'total' => $totalCustomers,
+                    'new' => $newCustomers
+                ],
+                'subscriptions' => [
+                    'total' => $totalSubscriptions,
+                    'active' => $activeSubscriptions,
+                    'canceled' => $canceledSubscriptions,
+                    'trialing' => $trialingSubscriptions,
+                    'new' => $newSubscriptions
+                ],
+                'revenue' => $revenue,
+                'metrics' => [
+                    'conversion_rate' => $conversionRate . '%',
+                    'churn_rate' => $churnRate . '%'
                 ],
                 'timestamp' => date('Y-m-d H:i:s')
             ];
 
-            // ✅ OTIMIZAÇÃO: Salva no cache (TTL: 60 segundos)
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ OTIMIZAÇÃO: Salva no cache (TTL: 60 segundos) - formato ResponseHelper
+            $cacheResponse = [
+                'success' => true,
+                'data' => $statsData
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheResponse, 60);
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess($statsData);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter estatísticas", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter estatísticas',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter estatísticas',
+                'STATS_GET_ERROR',
+                ['action' => 'get_stats', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 

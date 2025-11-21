@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -44,7 +46,7 @@ class InvoiceItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_invoice_item']);
                 return;
             }
 
@@ -54,27 +56,25 @@ class InvoiceItemController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_invoice_item']);
                     return;
                 }
                 $data = [];
             }
 
             // Validações obrigatórias
+            $errors = [];
             if (empty($data['customer_id'])) {
-                Flight::json(['error' => 'Campo customer_id é obrigatório'], 400);
-                return;
+                $errors['customer_id'] = 'Campo customer_id é obrigatório';
             }
 
             // Valida amount/currency ou price
             if (empty($data['price'])) {
                 if (empty($data['amount']) || !is_numeric($data['amount'])) {
-                    Flight::json(['error' => 'Campo amount é obrigatório quando price não é fornecido'], 400);
-                    return;
+                    $errors['amount'] = 'Campo amount é obrigatório quando price não é fornecido';
                 }
                 if (empty($data['currency'])) {
-                    Flight::json(['error' => 'Campo currency é obrigatório quando amount é fornecido'], 400);
-                    return;
+                    $errors['currency'] = 'Campo currency é obrigatório quando amount é fornecido';
                 }
             }
             
@@ -82,9 +82,13 @@ class InvoiceItemController
             if (isset($data['tax_rates']) && is_array($data['tax_rates'])) {
                 $taxRatesErrors = \App\Utils\Validator::validateArraySize($data['tax_rates'], 'tax_rates', 50);
                 if (!empty($taxRatesErrors)) {
-                    Flight::json(['error' => 'Dados inválidos', 'errors' => $taxRatesErrors], 400);
-                    return;
+                    $errors = array_merge($errors, $taxRatesErrors);
                 }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError('Dados inválidos', $errors, ['action' => 'create_invoice_item', 'tenant_id' => $tenantId]);
+                return;
             }
 
             // Valida se customer existe e pertence ao tenant
@@ -92,7 +96,7 @@ class InvoiceItemController
             $customer = $customerModel->findByStripeId($data['customer_id']);
             
             if (!$customer || $customer['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Customer não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Customer', ['action' => 'create_invoice_item', 'customer_id' => $data['customer_id'], 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -104,41 +108,24 @@ class InvoiceItemController
 
             $invoiceItem = $this->stripeService->createInvoiceItem($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $invoiceItem->id,
-                    'customer' => $invoiceItem->customer,
-                    'amount' => $invoiceItem->amount ?? null,
-                    'currency' => $invoiceItem->currency ?? null,
-                    'description' => $invoiceItem->description ?? null,
-                    'invoice' => $invoiceItem->invoice ?? null,
-                    'subscription' => $invoiceItem->subscription ?? null,
-                    'price' => $invoiceItem->price->id ?? null,
-                    'quantity' => $invoiceItem->quantity,
-                    'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
-                    'created' => date('Y-m-d H:i:s', $invoiceItem->created),
-                    'metadata' => $invoiceItem->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $invoiceItem->id,
+                'customer' => $invoiceItem->customer,
+                'amount' => $invoiceItem->amount ?? null,
+                'currency' => $invoiceItem->currency ?? null,
+                'description' => $invoiceItem->description ?? null,
+                'invoice' => $invoiceItem->invoice ?? null,
+                'subscription' => $invoiceItem->subscription ?? null,
+                'price' => $invoiceItem->price->id ?? null,
+                'quantity' => $invoiceItem->quantity,
+                'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
+                'created' => date('Y-m-d H:i:s', $invoiceItem->created),
+                'metadata' => $invoiceItem->metadata->toArray()
+            ], 'Invoice item criado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar invoice item no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar invoice item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar invoice item', ['action' => 'create_invoice_item', 'tenant_id' => $tenantId ?? null]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar invoice item", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar invoice item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar invoice item', 'INVOICE_ITEM_CREATE_ERROR', ['action' => 'create_invoice_item', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -160,7 +147,7 @@ class InvoiceItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_invoice_item']);
                 return;
             }
 
@@ -281,7 +268,7 @@ class InvoiceItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_invoice_item']);
                 return;
             }
 
@@ -374,7 +361,7 @@ class InvoiceItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_invoice_item']);
                 return;
             }
 
@@ -406,7 +393,7 @@ class InvoiceItemController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_invoice_item']);
                     return;
                 }
                 $data = [];
@@ -476,7 +463,7 @@ class InvoiceItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_invoice_item']);
                 return;
             }
 

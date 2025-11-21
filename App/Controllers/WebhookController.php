@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Services\PaymentService;
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -67,7 +68,11 @@ class WebhookController
                     'headers_available' => array_keys($headers),
                     'has_stripe_signature' => isset($headers['Stripe-Signature']) || isset($headers['stripe-signature'])
                 ]);
-                Flight::json(['error' => 'Signature não fornecida'], 400);
+                ResponseHelper::sendValidationError(
+                    'Signature não fornecida',
+                    ['signature' => 'O header Stripe-Signature é obrigatório'],
+                    ['action' => 'handle_webhook']
+                );
                 return;
             }
 
@@ -94,11 +99,10 @@ class WebhookController
                 ]);
                 
                 // Retorna sucesso para evitar que o Stripe reenvie
-                Flight::json([
-                    'success' => true,
-                    'message' => 'Evento já processado anteriormente',
-                    'event_id' => $event->id
-                ], 200);
+                ResponseHelper::sendSuccess([
+                    'event_id' => $event->id,
+                    'already_processed' => true
+                ], 200, 'Evento já processado anteriormente');
                 return;
             }
 
@@ -110,16 +114,20 @@ class WebhookController
                 'event_type' => $event->type
             ]);
 
-            Flight::json(['success' => true, 'received' => true]);
+            ResponseHelper::sendSuccess(['received' => true, 'event_id' => $event->id], 200, 'Webhook processado com sucesso');
         } catch (\Stripe\Exception\SignatureVerificationException $e) {
-            Logger::error("Webhook signature inválida", ['error' => $e->getMessage()]);
-            Flight::json(['error' => 'Signature inválida'], 400);
+            ResponseHelper::sendValidationError(
+                'Signature inválida',
+                ['signature' => $e->getMessage()],
+                ['action' => 'handle_webhook', 'error_type' => 'signature_verification']
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao processar webhook", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao processar webhook',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao processar webhook',
+                'WEBHOOK_PROCESS_ERROR',
+                ['action' => 'handle_webhook']
+            );
         }
     }
 }

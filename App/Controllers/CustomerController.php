@@ -7,6 +7,7 @@ use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
 use App\Utils\ErrorHandler;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -37,18 +38,16 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null || $tenantId === '') {
-                Flight::json([
-                    'error' => 'Não autenticado',
-                    'debug' => Config::isDevelopment() ? [
-                        'tenant_id' => $tenantId,
-                        'type' => gettype($tenantId),
-                        'all_flight_data' => [
-                            'tenant_id' => Flight::get('tenant_id'),
-                            'is_master' => Flight::get('is_master'),
-                            'tenant' => Flight::get('tenant')
-                        ]
-                    ] : null
-                ], 401);
+                $context = Config::isDevelopment() ? [
+                    'tenant_id' => $tenantId,
+                    'type' => gettype($tenantId),
+                    'all_flight_data' => [
+                        'tenant_id' => Flight::get('tenant_id'),
+                        'is_master' => Flight::get('is_master'),
+                        'tenant' => Flight::get('tenant')
+                    ]
+                ] : [];
+                ResponseHelper::sendUnauthorizedError('Não autenticado', array_merge($context, ['action' => 'create_customer']));
                 return;
             }
             
@@ -58,7 +57,7 @@ class CustomerController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_customer', 'customer_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -67,11 +66,11 @@ class CustomerController
             // Validação rigorosa de inputs
             $errors = \App\Utils\Validator::validateCustomerCreate($data);
             if (!empty($errors)) {
-                Flight::json([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Por favor, verifique os dados informados',
-                    'errors' => $errors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_customer', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -80,16 +79,11 @@ class CustomerController
             // ✅ Invalida cache de listagem
             \App\Services\CacheService::invalidateCustomerCache($tenantId);
 
-            Flight::json([
-                'success' => true,
-                'data' => $customer
-            ], 201);
+            ResponseHelper::sendCreated($customer, 'Cliente criado com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao criar cliente no Stripe');
-            Flight::json($response, 500);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar cliente no Stripe', ['action' => 'create_customer', 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao criar cliente', 'CUSTOMER_CREATE_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar cliente', 'CUSTOMER_CREATE_ERROR', ['action' => 'create_customer', 'tenant_id' => $tenantId]);
         }
     }
 
@@ -113,7 +107,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_customers']);
                 return;
             }
             
@@ -146,16 +140,21 @@ class CustomerController
             // ✅ Tenta obter do cache (TTL: 60 segundos)
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // Se o cache já tem formato ResponseHelper, usa diretamente
+                if (isset($cached['success']) && isset($cached['data'])) {
+                    ResponseHelper::sendSuccess($cached['data'], 200, null, $cached['meta'] ?? null);
+                } else {
+                    // Formato antigo, converte
+                    ResponseHelper::sendSuccess($cached);
+                }
                 return;
             }
             
             $customerModel = new \App\Models\Customer();
             $result = $customerModel->findByTenant($tenantId, $page, $limit, $filters);
 
-            $response = [
-                'success' => true,
-                'data' => $result['data'],
+            $responseData = [
+                'customers' => $result['data'],
                 'meta' => [
                     'total' => $result['total'],
                     'page' => $result['page'],
@@ -164,13 +163,18 @@ class CustomerController
                 ]
             ];
             
-            // ✅ Salva no cache
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ Salva no cache (formato ResponseHelper)
+            $cacheResponse = [
+                'success' => true,
+                'data' => $responseData,
+                'meta' => $responseData['meta']
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheResponse, 60);
             
-            Flight::json($response);
+            // Envia resposta com meta
+            ResponseHelper::sendSuccess($responseData['customers'], 200, null, $responseData['meta']);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao listar clientes', 'CUSTOMER_LIST_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao listar clientes', 'CUSTOMER_LIST_ERROR', ['action' => 'list_customers', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -187,8 +191,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_customer', 'customer_id' => $id]);
                 return;
             }
 
@@ -198,7 +201,7 @@ class CustomerController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$customer) {
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'get_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -264,16 +267,12 @@ class CustomerController
             // ✅ Salva no cache
             \App\Services\CacheService::setJson($cacheKey, $responseData, 300); // 5 minutos
 
-            Flight::json([
-                'success' => true,
-                'data' => $responseData
-            ]);
+            ResponseHelper::sendSuccess($responseData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Logger::warning("Cliente não encontrado no Stripe", ['customer_id' => (int)$id]);
-            Flight::json(['error' => 'Cliente não encontrado'], 404);
+            ResponseHelper::sendNotFoundError('Cliente', ['action' => 'get_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao obter cliente', 'CUSTOMER_GET_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao obter cliente', 'CUSTOMER_GET_ERROR', ['action' => 'get_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -310,7 +309,7 @@ class CustomerController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_customer', 'customer_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -318,8 +317,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_customer', 'customer_id' => $id]);
                 return;
             }
 
@@ -329,7 +327,7 @@ class CustomerController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$customer) {
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'get_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -344,15 +342,22 @@ class CustomerController
             }
 
             if (!$hasUpdates) {
-                http_response_code(400);
-                Flight::json(['error' => 'Nenhum campo válido para atualização fornecido'], 400);
+                ResponseHelper::sendValidationError(
+                    'Nenhum campo válido para atualização fornecido',
+                    [],
+                    ['action' => 'update_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
-            // Valida email se fornecido
-            if (isset($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                http_response_code(400);
-                Flight::json(['error' => 'Email inválido'], 400);
+            // ✅ Validação consistente usando Validator
+            $errors = \App\Utils\Validator::validateCustomerUpdate($data);
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'update_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -399,17 +404,11 @@ class CustomerController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Cliente atualizado com sucesso',
-                'data' => $responseData
-            ]);
+            ResponseHelper::sendSuccess($responseData, 200, 'Cliente atualizado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao atualizar cliente no Stripe');
-            Flight::json($response, 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao atualizar cliente no Stripe', ['action' => 'update_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao atualizar cliente', 'CUSTOMER_UPDATE_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao atualizar cliente', 'CUSTOMER_UPDATE_ERROR', ['action' => 'update_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -430,8 +429,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_customer', 'customer_id' => $id]);
                 return;
             }
 
@@ -491,26 +489,16 @@ class CustomerController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
+            $response = [
                 'data' => $invoicesData,
                 'count' => count($invoicesData),
                 'has_more' => $invoices->has_more
-            ]);
+            ];
+            ResponseHelper::sendSuccess($response);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar faturas", ['error' => $e->getMessage()]);
-            http_response_code(400);
-            Flight::json([
-                'error' => 'Erro ao listar faturas',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao listar faturas', ['action' => 'list_customer_invoices', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar faturas", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao listar faturas',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao listar faturas', 'CUSTOMER_INVOICES_ERROR', ['action' => 'list_customer_invoices', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -531,8 +519,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_customer', 'customer_id' => $id]);
                 return;
             }
 
@@ -624,21 +611,11 @@ class CustomerController
             // ✅ Salva no cache
             \App\Services\CacheService::setJson($cacheKey, $response, 60);
             
-            Flight::json($response);
+            ResponseHelper::sendSuccess($response);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar métodos de pagamento", ['error' => $e->getMessage()]);
-            http_response_code(400);
-            Flight::json([
-                'error' => 'Erro ao listar métodos de pagamento',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao listar métodos de pagamento', ['action' => 'list_payment_methods', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar métodos de pagamento", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao listar métodos de pagamento',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao listar métodos de pagamento', 'PAYMENT_METHODS_LIST_ERROR', ['action' => 'list_payment_methods', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -659,7 +636,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_customers']);
                 return;
             }
 
@@ -668,7 +645,7 @@ class CustomerController
 
             // Valida se customer existe e pertence ao tenant
             if (!$customer || $customer['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'update_payment_method', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -678,7 +655,7 @@ class CustomerController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_customer', 'customer_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -699,7 +676,7 @@ class CustomerController
             }
 
             if (!$paymentMethodExists) {
-                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Método de pagamento', ['action' => 'update_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -743,22 +720,11 @@ class CustomerController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $paymentMethodData
-            ]);
+            ResponseHelper::sendSuccess($paymentMethodData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao atualizar método de pagamento", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao atualizar método de pagamento',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao atualizar método de pagamento', ['action' => 'update_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar método de pagamento", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao atualizar método de pagamento', 'PAYMENT_METHOD_UPDATE_ERROR', ['action' => 'update_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -775,7 +741,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_customers']);
                 return;
             }
 
@@ -784,7 +750,7 @@ class CustomerController
 
             // Valida se customer existe e pertence ao tenant
             if (!$customer || $customer['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'update_payment_method', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -799,33 +765,21 @@ class CustomerController
             }
 
             if (!$paymentMethodExists) {
-                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Método de pagamento', ['action' => 'update_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
                 return;
             }
 
             // Deleta payment method
             $paymentMethod = $this->stripeService->deletePaymentMethod($pmId);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Método de pagamento deletado com sucesso',
-                'data' => [
-                    'id' => $paymentMethod->id,
-                    'customer' => $paymentMethod->customer ?? null
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $paymentMethod->id,
+                'customer' => $paymentMethod->customer ?? null
+            ], 200, 'Método de pagamento deletado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao deletar método de pagamento", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao deletar método de pagamento',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao deletar método de pagamento', ['action' => 'delete_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao deletar método de pagamento", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao deletar método de pagamento', 'PAYMENT_METHOD_DELETE_ERROR', ['action' => 'delete_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -842,7 +796,7 @@ class CustomerController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_customers']);
                 return;
             }
 
@@ -851,7 +805,7 @@ class CustomerController
 
             // Valida se customer existe e pertence ao tenant
             if (!$customer || $customer['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'update_payment_method', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -866,7 +820,7 @@ class CustomerController
             }
 
             if (!$paymentMethodExists) {
-                Flight::json(['error' => 'Método de pagamento não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Método de pagamento', ['action' => 'update_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -876,33 +830,21 @@ class CustomerController
             // Obtém o customer atualizado para confirmar
             $stripeCustomer = $this->stripeService->getCustomer($customer['stripe_customer_id']);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Método de pagamento definido como padrão',
-                'data' => [
-                    'payment_method_id' => $pmId,
-                    'customer_id' => $customer['stripe_customer_id'],
-                    'default_payment_method' => $stripeCustomer->invoice_settings->default_payment_method ?? null
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'payment_method_id' => $pmId,
+                'customer_id' => $customer['stripe_customer_id'],
+                'default_payment_method' => $stripeCustomer->invoice_settings->default_payment_method ?? null
+            ], 200, 'Método de pagamento definido como padrão');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao definir método padrão", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'set_default_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]
+            );
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao definir método de pagamento como padrão", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao definir método de pagamento como padrão',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao definir método de pagamento como padrão', ['action' => 'set_default_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao definir método de pagamento como padrão", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao definir método de pagamento como padrão', 'PAYMENT_METHOD_SET_DEFAULT_ERROR', ['action' => 'set_default_payment_method', 'customer_id' => $id, 'payment_method_id' => $pmId, 'tenant_id' => $tenantId]);
         }
     }
 }

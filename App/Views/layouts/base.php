@@ -34,6 +34,11 @@
     
     <!-- ✅ OTIMIZAÇÃO: Security Helper com defer (não bloqueia renderização) -->
     <script src="/app/security.js" defer></script>
+    <!-- ✅ Validações Frontend (formulários e formatos Stripe) -->
+    <script src="/app/validations.js?v=<?php 
+        $validationsFile = __DIR__ . '/../../public/app/validations.js';
+        echo (file_exists($validationsFile) ? filemtime($validationsFile) : time()); 
+    ?>" defer></script>
 </head>
 <body>
     <!-- Mobile Header Bar -->

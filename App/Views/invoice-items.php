@@ -176,10 +176,42 @@ function renderItems(items) {
 }
 
 function viewItem(id) {
+    // ✅ Valida formato de invoice_item_id
+    if (typeof validateStripeId === 'function') {
+        const idError = validateStripeId(id, 'invoice_item_id', true);
+        if (idError) {
+            showAlert('ID de item de fatura inválido: ' + idError, 'danger');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const idPattern = /^ii_[a-zA-Z0-9]+$/;
+        if (!idPattern.test(id)) {
+            showAlert('Formato de Invoice Item ID inválido. Use: ii_xxxxx', 'danger');
+            return;
+        }
+    }
+    
     alert('Detalhes do item: ' + id);
 }
 
 async function deleteItem(id) {
+    // ✅ Valida formato de invoice_item_id
+    if (typeof validateStripeId === 'function') {
+        const idError = validateStripeId(id, 'invoice_item_id', true);
+        if (idError) {
+            showAlert('ID de item de fatura inválido: ' + idError, 'danger');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const idPattern = /^ii_[a-zA-Z0-9]+$/;
+        if (!idPattern.test(id)) {
+            showAlert('Formato de Invoice Item ID inválido. Use: ii_xxxxx', 'danger');
+            return;
+        }
+    }
+    
     const confirmed = await showConfirmModal(
         'Tem certeza que deseja remover este item?',
         'Confirmar Exclusão',

@@ -37,10 +37,29 @@
         const customerId = urlParams.get('customer_id');
         const priceId = urlParams.get('price_id');
         
+        // ✅ Validação de parâmetros
         if (!customerId || !priceId) {
-            alert('Parâmetros inválidos');
+            alert('Parâmetros inválidos: customer_id e price_id são obrigatórios');
             window.location.href = '/';
             return;
+        }
+        
+        // ✅ Valida formato de price_id (se validations.js estiver disponível)
+        if (typeof validateStripeId === 'function') {
+            const priceIdError = validateStripeId(priceId, 'price_id', true);
+            if (priceIdError) {
+                alert('Parâmetro price_id inválido: ' + priceIdError);
+                window.location.href = '/';
+                return;
+            }
+        } else {
+            // Fallback: validação básica
+            const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+            if (!priceIdPattern.test(priceId)) {
+                alert('Formato de Price ID inválido. Use: price_xxxxx');
+                window.location.href = '/';
+                return;
+            }
         }
         
         // Cria sessão de checkout

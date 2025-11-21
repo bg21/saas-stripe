@@ -164,21 +164,10 @@ document.addEventListener('DOMContentLoaded', () => {
         loadCustomers()
     ]);
     
-    // Validação de price_id no frontend
+    // ✅ Validação de price_id no frontend usando função reutilizável
     const priceIdInput = document.getElementById('priceIdInput');
     if (priceIdInput) {
-        priceIdInput.addEventListener('input', () => {
-            const priceId = priceIdInput.value.trim();
-            const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
-            
-            if (priceId && !priceIdPattern.test(priceId)) {
-                priceIdInput.classList.add('is-invalid');
-                document.getElementById('priceIdError').textContent = 'Formato inválido. Use: price_xxxxx';
-            } else {
-                priceIdInput.classList.remove('is-invalid');
-                document.getElementById('priceIdError').textContent = '';
-            }
-        });
+        applyStripeIdValidation(priceIdInput, 'price_id', true, 'priceIdError');
     }
     
     // Form criar assinatura
@@ -187,10 +176,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
         
-        // Valida price_id antes de submeter
-        const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
-        if (!priceIdPattern.test(data.price_id)) {
-            showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+        // ✅ Valida price_id antes de submeter usando função reutilizável
+        const priceIdError = validateStripeId(data.price_id, 'price_id', true);
+        if (priceIdError) {
+            showAlert(priceIdError, 'danger');
+            priceIdInput.classList.add('is-invalid');
+            priceIdInput.focus();
             return;
         }
         

@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -37,7 +39,18 @@ class SubscriptionItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_subscription_item']);
+                return;
+            }
+            
+            // Valida subscription_id
+            $subscriptionIdErrors = Validator::validateStripeId($subscriptionId, 'subscription_id');
+            if (!empty($subscriptionIdErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID da assinatura inválido',
+                    $subscriptionIdErrors,
+                    ['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -46,7 +59,7 @@ class SubscriptionItemController
             $subscription = $subscriptionModel->findByStripeId($subscriptionId);
             
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -56,15 +69,49 @@ class SubscriptionItemController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
+            // ✅ Validação consistente
+            $errors = [];
             if (empty($data['price_id'])) {
-                Flight::json(['error' => 'Campo price_id é obrigatório'], 400);
+                $errors['price_id'] = 'Obrigatório';
+            } else {
+                $priceIdErrors = Validator::validateStripeId($data['price_id'], 'price_id');
+                if (!empty($priceIdErrors)) {
+                    $errors = array_merge($errors, $priceIdErrors);
+                }
+            }
+            
+            // Valida quantity se fornecido
+            if (isset($data['quantity'])) {
+                if (!is_numeric($data['quantity'])) {
+                    $errors['quantity'] = 'Deve ser um número';
+                } else {
+                    $quantity = (int)$data['quantity'];
+                    if ($quantity < 1 || $quantity > 10000) {
+                        $errors['quantity'] = 'Deve estar entre 1 e 10000';
+                    }
+                }
+            }
+            
+            // Valida metadata se fornecido
+            if (isset($data['metadata'])) {
+                $metadataErrors = Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -76,37 +123,27 @@ class SubscriptionItemController
 
             $subscriptionItem = $this->stripeService->createSubscriptionItem($subscriptionId, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $subscriptionItem->id,
-                    'subscription' => $subscriptionItem->subscription,
-                    'price' => $subscriptionItem->price->id,
-                    'quantity' => $subscriptionItem->quantity,
-                    'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
-                    'metadata' => $subscriptionItem->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $subscriptionItem->id,
+                'subscription' => $subscriptionItem->subscription,
+                'price' => $subscriptionItem->price->id,
+                'quantity' => $subscriptionItem->quantity,
+                'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
+                'metadata' => $subscriptionItem->metadata->toArray()
+            ], 'Subscription item criado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar subscription item no Stripe", [
-                'error' => $e->getMessage(),
-                'subscription_id' => $subscriptionId,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar subscription item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar subscription item no Stripe',
+                ['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar subscription item", [
-                'error' => $e->getMessage(),
-                'subscription_id' => $subscriptionId,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar subscription item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar subscription item',
+                'SUBSCRIPTION_ITEM_CREATE_ERROR',
+                ['action' => 'create_subscription_item', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 

@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -118,26 +120,20 @@ class ChargeController
                 ];
             }
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess($response);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao listar charges", [
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao listar charges',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar charges',
+                ['action' => 'list_charges', 'tenant_id' => Flight::get('tenant_id')]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao listar charges", [
-                'error' => $e->getMessage()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao listar charges',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar charges',
+                'CHARGE_LIST_ERROR',
+                ['action' => 'list_charges', 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 
@@ -196,33 +192,25 @@ class ChargeController
                 ] : null
             ];
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess($response);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             if ($e->getStripeCode() === 'resource_missing' || $e->getHttpStatus() === 404) {
-                Flight::halt(404, json_encode(['error' => 'Charge não encontrada']));
+                ResponseHelper::sendNotFoundError('Charge', ['action' => 'get_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
                 return;
             }
 
-            Logger::error("Erro ao obter charge", [
-                'charge_id' => $id,
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao obter charge',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao obter charge',
+                ['action' => 'get_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao obter charge", [
-                'charge_id' => $id,
-                'error' => $e->getMessage()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao obter charge',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter charge',
+                'CHARGE_GET_ERROR',
+                ['action' => 'get_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 
@@ -239,13 +227,24 @@ class ChargeController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('manage_charges');
             
+            // Valida ID
+            $idErrors = Validator::validateChargeId($id);
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID da charge inválido',
+                    $idErrors,
+                    ['action' => 'update_charge', 'charge_id' => $id]
+                );
+                return;
+            }
+
             // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
             $data = \App\Utils\RequestCache::getJsonInput();
             
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_charge', 'charge_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -253,7 +252,11 @@ class ChargeController
 
             // Valida que há dados para atualizar
             if (empty($data)) {
-                Flight::json(['error' => 'Nenhum dado fornecido para atualização'], 400);
+                ResponseHelper::sendValidationError(
+                    'Nenhum dado fornecido para atualização',
+                    [],
+                    ['action' => 'update_charge', 'charge_id' => $id]
+                );
                 return;
             }
 
@@ -262,11 +265,25 @@ class ChargeController
             $invalidFields = array_diff(array_keys($data), $allowedFields);
             
             if (!empty($invalidFields)) {
-                Flight::json([
-                    'error' => 'Campos inválidos',
-                    'message' => 'Apenas metadata pode ser atualizado. Campos inválidos: ' . implode(', ', $invalidFields)
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Campos inválidos',
+                    ['fields' => 'Apenas metadata pode ser atualizado. Campos inválidos: ' . implode(', ', $invalidFields)],
+                    ['action' => 'update_charge', 'charge_id' => $id, 'invalid_fields' => $invalidFields]
+                );
                 return;
+            }
+            
+            // Valida metadata se fornecido
+            if (isset($data['metadata'])) {
+                $metadataErrors = Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataErrors)) {
+                    ResponseHelper::sendValidationError(
+                        'metadata inválido',
+                        $metadataErrors,
+                        ['action' => 'update_charge', 'charge_id' => $id]
+                    );
+                    return;
+                }
             }
 
             // Atualiza charge
@@ -279,33 +296,25 @@ class ChargeController
                 'updated' => true
             ];
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess($response, 200, 'Charge atualizada com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
             if ($e->getStripeCode() === 'resource_missing' || $e->getHttpStatus() === 404) {
-                Flight::halt(404, json_encode(['error' => 'Charge não encontrada']));
+                ResponseHelper::sendNotFoundError('Charge', ['action' => 'update_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
                 return;
             }
 
-            Logger::error("Erro ao atualizar charge", [
-                'charge_id' => $id,
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao atualizar charge',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao atualizar charge',
+                ['action' => 'update_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao atualizar charge", [
-                'charge_id' => $id,
-                'error' => $e->getMessage()
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao atualizar charge',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar charge',
+                'CHARGE_UPDATE_ERROR',
+                ['action' => 'update_charge', 'charge_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 }

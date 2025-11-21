@@ -181,11 +181,23 @@ function renderCoupons(coupons) {
 }
 
 function viewCoupon(id) {
+    // ✅ Validação básica: ID não pode estar vazio
+    if (!id || id.trim() === '') {
+        showAlert('ID do cupom inválido', 'danger');
+        return;
+    }
+    
     // ✅ CORREÇÃO: Redireciona para página de detalhes ao invés de alert
-    window.location.href = `/coupon-details?id=${id}`;
+    window.location.href = `/coupon-details?id=${encodeURIComponent(id)}`;
 }
 
 async function deleteCoupon(id) {
+    // ✅ Validação básica: ID não pode estar vazio
+    if (!id || id.trim() === '') {
+        showAlert('ID do cupom inválido', 'danger');
+        return;
+    }
+    
     const confirmed = await showConfirmModal(
         'Tem certeza que deseja remover este cupom? Esta ação não pode ser desfeita.',
         'Confirmar Exclusão',
@@ -194,7 +206,7 @@ async function deleteCoupon(id) {
     if (!confirmed) return;
     
     try {
-        await apiRequest(`/v1/coupons/${id}`, { method: 'DELETE' });
+        await apiRequest(`/v1/coupons/${encodeURIComponent(id)}`, { method: 'DELETE' });
         showAlert('Cupom removido com sucesso!', 'success');
         loadCoupons();
     } catch (error) {

@@ -4,6 +4,7 @@ namespace App\Middleware;
 
 use App\Services\RateLimiterService;
 use App\Services\Logger;
+use Config;
 use Flight;
 
 /**
@@ -12,6 +13,8 @@ use Flight;
  * Protege o endpoint de login contra ataques de brute force:
  * - 5 tentativas por IP a cada 15 minutos
  * - Após 5 falhas, bloqueia por 1 hora
+ * 
+ * ✅ DESENVOLVIMENTO: Desabilitado em ambiente de desenvolvimento/localhost
  */
 class LoginRateLimitMiddleware
 {
@@ -34,6 +37,15 @@ class LoginRateLimitMiddleware
      */
     public function check(): bool
     {
+        // ✅ DESENVOLVIMENTO: Desabilita rate limiting em desenvolvimento ou localhost
+        if ($this->isDevelopmentOrLocalhost()) {
+            Logger::debug("Rate limiting desabilitado para desenvolvimento/localhost", [
+                'ip' => $this->getClientIp(),
+                'env' => Config::env()
+            ]);
+            return true;
+        }
+        
         $ip = $this->getClientIp();
         $identifier = 'login_ip_' . $ip;
         
@@ -192,6 +204,35 @@ class LoginRateLimitMiddleware
         return $remainingMinutes > 0
             ? "{$hours} horas e {$remainingMinutes} minutos"
             : "{$hours} horas";
+    }
+    
+    /**
+     * Verifica se está em ambiente de desenvolvimento ou localhost
+     * 
+     * @return bool True se for desenvolvimento ou localhost
+     */
+    private function isDevelopmentOrLocalhost(): bool
+    {
+        // Verifica se está em ambiente de desenvolvimento
+        if (Config::isDevelopment()) {
+            return true;
+        }
+        
+        // Verifica se o IP é localhost
+        $ip = $this->getClientIp();
+        $localhostIps = ['127.0.0.1', '::1', 'localhost'];
+        
+        if (in_array($ip, $localhostIps, true)) {
+            return true;
+        }
+        
+        // Verifica se o hostname contém localhost
+        $hostname = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
+        if (strpos($hostname, 'localhost') !== false || strpos($hostname, '127.0.0.1') !== false) {
+            return true;
+        }
+        
+        return false;
     }
 }
 

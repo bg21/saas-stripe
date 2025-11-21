@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -39,7 +41,7 @@ class SetupIntentController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_setup_intent']);
                 return;
             }
 
@@ -49,7 +51,7 @@ class SetupIntentController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_setup_intent']);
                     return;
                 }
                 $data = [];
@@ -63,39 +65,22 @@ class SetupIntentController
 
             $setupIntent = $this->stripeService->createSetupIntent($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $setupIntent->id,
-                    'client_secret' => $setupIntent->client_secret,
-                    'status' => $setupIntent->status,
-                    'customer' => $setupIntent->customer ?? null,
-                    'payment_method' => $setupIntent->payment_method ?? null,
-                    'payment_method_types' => $setupIntent->payment_method_types,
-                    'usage' => $setupIntent->usage ?? 'off_session',
-                    'description' => $setupIntent->description ?? null,
-                    'created' => date('Y-m-d H:i:s', $setupIntent->created),
-                    'metadata' => $setupIntent->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $setupIntent->id,
+                'client_secret' => $setupIntent->client_secret,
+                'status' => $setupIntent->status,
+                'customer' => $setupIntent->customer ?? null,
+                'payment_method' => $setupIntent->payment_method ?? null,
+                'payment_method_types' => $setupIntent->payment_method_types,
+                'usage' => $setupIntent->usage ?? 'off_session',
+                'description' => $setupIntent->description ?? null,
+                'created' => date('Y-m-d H:i:s', $setupIntent->created),
+                'metadata' => $setupIntent->metadata->toArray()
+            ], 'Setup intent criado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar setup intent no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar setup intent',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar setup intent', ['action' => 'create_setup_intent', 'tenant_id' => $tenantId ?? null]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar setup intent", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar setup intent',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar setup intent', 'SETUP_INTENT_CREATE_ERROR', ['action' => 'create_setup_intent', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -109,7 +94,7 @@ class SetupIntentController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_setup_intent']);
                 return;
             }
 
@@ -181,7 +166,7 @@ class SetupIntentController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_setup_intent']);
                 return;
             }
 
@@ -200,7 +185,7 @@ class SetupIntentController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_setup_intent']);
                     return;
                 }
                 $data = [];

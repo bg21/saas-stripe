@@ -104,6 +104,7 @@ class UserPermission extends BaseModel
 
     /**
      * Concede permissão a um usuário
+     * ✅ VALIDAÇÃO: Valida se user_id existe antes de conceder
      * 
      * @param int $userId ID do usuário
      * @param string $permission Nome da permissão
@@ -111,6 +112,13 @@ class UserPermission extends BaseModel
      */
     public function grant(int $userId, string $permission): bool
     {
+        // ✅ Validação de relacionamento: verifica se user existe
+        $userModel = new User();
+        $user = $userModel->findById($userId);
+        if (!$user) {
+            throw new \RuntimeException("Usuário com ID {$userId} não encontrado");
+        }
+        
         try {
             // ✅ CORREÇÃO: Verifica se já existe antes de inserir (simplifica lógica)
             $existing = $this->findByUserAndPermission($userId, $permission);

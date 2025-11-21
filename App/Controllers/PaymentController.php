@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -39,7 +41,7 @@ class PaymentController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_payment_intent']);
                 return;
             }
 
@@ -49,20 +51,20 @@ class PaymentController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_payment_intent']);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
-            if (empty($data['amount']) || !is_numeric($data['amount'])) {
-                Flight::json(['error' => 'Campo amount é obrigatório e deve ser numérico'], 400);
-                return;
-            }
-
-            if (empty($data['currency'])) {
-                Flight::json(['error' => 'Campo currency é obrigatório'], 400);
+            // ✅ Validação consistente usando Validator
+            $errors = \App\Utils\Validator::validatePaymentIntentCreate($data);
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_payment_intent', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -74,39 +76,22 @@ class PaymentController
 
             $paymentIntent = $this->stripeService->createPaymentIntent($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $paymentIntent->id,
-                    'client_secret' => $paymentIntent->client_secret,
-                    'amount' => $paymentIntent->amount,
-                    'currency' => strtoupper($paymentIntent->currency),
-                    'status' => $paymentIntent->status,
-                    'description' => $paymentIntent->description,
-                    'customer' => $paymentIntent->customer,
-                    'payment_method' => $paymentIntent->payment_method,
-                    'created' => date('Y-m-d H:i:s', $paymentIntent->created),
-                    'metadata' => $paymentIntent->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $paymentIntent->id,
+                'client_secret' => $paymentIntent->client_secret,
+                'amount' => $paymentIntent->amount,
+                'currency' => strtoupper($paymentIntent->currency),
+                'status' => $paymentIntent->status,
+                'description' => $paymentIntent->description,
+                'customer' => $paymentIntent->customer,
+                'payment_method' => $paymentIntent->payment_method,
+                'created' => date('Y-m-d H:i:s', $paymentIntent->created),
+                'metadata' => $paymentIntent->metadata->toArray()
+            ], 'Payment intent criado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar payment intent", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar payment intent',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar payment intent', ['action' => 'create_payment_intent', 'tenant_id' => $tenantId ?? null]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar payment intent", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar payment intent',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar payment intent', 'PAYMENT_INTENT_CREATE_ERROR', ['action' => 'create_payment_intent', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -126,7 +111,7 @@ class PaymentController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_payment_intent']);
                 return;
             }
 
@@ -136,15 +121,59 @@ class PaymentController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_payment_intent']);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
+            // ✅ Validação consistente
+            $errors = [];
+            
+            // payment_intent_id: obrigatório, deve ser ID Stripe válido
             if (empty($data['payment_intent_id'])) {
-                Flight::json(['error' => 'Campo payment_intent_id é obrigatório'], 400);
+                $errors['payment_intent_id'] = 'Obrigatório';
+            } else {
+                $paymentIntentErrors = \App\Utils\Validator::validateStripeId($data['payment_intent_id'], 'payment_intent_id');
+                if (!empty($paymentIntentErrors)) {
+                    $errors = array_merge($errors, $paymentIntentErrors);
+                }
+            }
+            
+            // amount: opcional, mas se presente deve ser válido
+            if (isset($data['amount'])) {
+                if (!is_numeric($data['amount'])) {
+                    $errors['amount'] = 'Deve ser um número';
+                } else {
+                    $amount = (int)$data['amount'];
+                    if ($amount < 1) {
+                        $errors['amount'] = 'Deve ser maior que zero';
+                    }
+                }
+            }
+            
+            // reason: opcional, valores permitidos
+            if (isset($data['reason'])) {
+                $allowedReasons = ['duplicate', 'fraudulent', 'requested_by_customer'];
+                if (!is_string($data['reason']) || !in_array($data['reason'], $allowedReasons, true)) {
+                    $errors['reason'] = 'Deve ser "duplicate", "fraudulent" ou "requested_by_customer"';
+                }
+            }
+            
+            // metadata: validação padrão
+            if (isset($data['metadata'])) {
+                $metadataError = \App\Utils\Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataError)) {
+                    $errors = array_merge($errors, $metadataError);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_refund', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -171,50 +200,35 @@ class PaymentController
 
             $refund = $this->stripeService->refundPayment($data['payment_intent_id'], $options);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Reembolso criado com sucesso',
-                'data' => [
-                    'id' => $refund->id,
-                    'amount' => $refund->amount,
-                    'currency' => strtoupper($refund->currency),
-                    'status' => $refund->status,
-                    'reason' => $refund->reason,
-                    'payment_intent' => $refund->payment_intent,
-                    'created' => date('Y-m-d H:i:s', $refund->created),
-                    'metadata' => $refund->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $refund->id,
+                'amount' => $refund->amount,
+                'currency' => strtoupper($refund->currency),
+                'status' => $refund->status,
+                'reason' => $refund->reason,
+                'payment_intent' => $refund->payment_intent,
+                'created' => date('Y-m-d H:i:s', $refund->created),
+                'metadata' => $refund->metadata->toArray()
+            ], 'Reembolso criado com sucesso');
         } catch (\RuntimeException $e) {
-            Logger::error("Erro ao criar reembolso", [
-                'error' => $e->getMessage(),
-                'payment_intent_id' => $data['payment_intent_id'] ?? null,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar reembolso',
-                'message' => $e->getMessage()
-            ], 400);
-        } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar reembolso no Stripe", [
-                'error' => $e->getMessage(),
-                'payment_intent_id' => $data['payment_intent_id'] ?? null,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar reembolso',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'create_refund', 'payment_intent_id' => $data['payment_intent_id'] ?? null, 'tenant_id' => $tenantId ?? null]
+            );
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar reembolso no Stripe',
+                ['action' => 'create_refund', 'payment_intent_id' => $data['payment_intent_id'] ?? null, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar reembolso", [
-                'error' => $e->getMessage(),
-                'payment_intent_id' => $data['payment_intent_id'] ?? null,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar reembolso',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar reembolso',
+                'REFUND_CREATE_ERROR',
+                ['action' => 'create_refund', 'payment_intent_id' => $data['payment_intent_id'] ?? null, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

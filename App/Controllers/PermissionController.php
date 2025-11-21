@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\UserPermission;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -63,10 +64,7 @@ class PermissionController
         try {
             // Endpoints de permissões requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'list_available_permissions']);
                 return;
             }
             
@@ -189,9 +187,8 @@ class PermissionController
                 ]
             ];
 
-            Flight::json([
-                'success' => true,
-                'data' => array_values($permissions),
+            ResponseHelper::sendSuccess([
+                'permissions' => array_values($permissions),
                 'count' => count($permissions),
                 'categories' => [
                     'subscriptions' => 'Permissões de Assinaturas',
@@ -204,14 +201,12 @@ class PermissionController
                 ]
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar permissões disponíveis", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao listar permissões',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar permissões disponíveis',
+                'PERMISSION_LIST_ERROR',
+                ['action' => 'list_available_permissions']
+            );
         }
     }
 
@@ -224,10 +219,7 @@ class PermissionController
         try {
             // Endpoints de permissões requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'list_available_permissions']);
                 return;
             }
             
@@ -237,10 +229,7 @@ class PermissionController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'list_user_permissions', 'user_id' => $id]);
                 return;
             }
 
@@ -248,19 +237,13 @@ class PermissionController
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'list_user_permissions', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'list_user_permissions', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
@@ -285,29 +268,23 @@ class PermissionController
                 ];
             }, $grantedPermissions);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'user' => [
-                        'id' => $user['id'],
-                        'email' => $user['email'],
-                        'name' => $user['name'],
-                        'role' => $user['role']
-                    ],
-                    'permissions' => $formattedPermissions,
-                    'count' => count($formattedPermissions)
-                ]
+            ResponseHelper::sendSuccess([
+                'user' => [
+                    'id' => $user['id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'role' => $user['role']
+                ],
+                'permissions' => $formattedPermissions,
+                'count' => count($formattedPermissions)
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar permissões do usuário", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao listar permissões',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar permissões do usuário',
+                'PERMISSION_LIST_USER_ERROR',
+                ['action' => 'list_user_permissions', 'user_id' => $id]
+            );
         }
     }
 
@@ -325,10 +302,7 @@ class PermissionController
         try {
             // Endpoints de permissões requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'list_available_permissions']);
                 return;
             }
             
@@ -338,10 +312,7 @@ class PermissionController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'list_user_permissions', 'user_id' => $id]);
                 return;
             }
 
@@ -351,7 +322,7 @@ class PermissionController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'grant_permission', 'user_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -359,10 +330,11 @@ class PermissionController
             
             // Validações obrigatórias
             if (empty($data['permission'])) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Campo permission é obrigatório'
-                ]));
+                ResponseHelper::sendValidationError(
+                    'Campo permission é obrigatório',
+                    ['permission' => 'Obrigatório'],
+                    ['action' => 'grant_permission', 'user_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -372,10 +344,11 @@ class PermissionController
             $validPermissions = self::getValidPermissions();
             
             if (!in_array($permission, $validPermissions)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Permissão inválida',
-                    'message' => "A permissão '{$permission}' não é válida. Use GET /v1/permissions para ver todas as permissões disponíveis."
-                ]));
+                ResponseHelper::sendValidationError(
+                    "A permissão '{$permission}' não é válida",
+                    ['permission' => "Use GET /v1/permissions para ver todas as permissões disponíveis"],
+                    ['action' => 'grant_permission', 'user_id' => $id, 'tenant_id' => $tenantId, 'invalid_permission' => $permission]
+                );
                 return;
             }
             
@@ -390,30 +363,13 @@ class PermissionController
             ]);
             
             if (!$user) {
-                Logger::error("Usuário não encontrado ao conceder permissão", [
-                    'user_id' => $id,
-                    'permission' => $permission,
-                    'tenant_id' => $tenantId
-                ]);
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'grant_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Logger::error("Tentativa de conceder permissão a usuário de outro tenant", [
-                    'user_id' => $id,
-                    'user_tenant_id' => $user['tenant_id'],
-                    'request_tenant_id' => $tenantId,
-                    'permission' => $permission
-                ]);
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'grant_permission', 'user_id' => $id, 'user_tenant_id' => $user['tenant_id'], 'request_tenant_id' => $tenantId, 'permission' => $permission]);
                 return;
             }
             
@@ -425,20 +381,16 @@ class PermissionController
                     'permission' => $permission,
                     'tenant_id' => $tenantId
                 ]);
-                Flight::json([
-                    'success' => true,  // ✅ CORREÇÃO: Retorna true com warning para indicar que é um aviso, não erro
-                    'message' => 'Usuários com role "admin" já possuem todas as permissões automaticamente. A permissão não foi salva no banco de dados.',
-                    'warning' => true,  // ✅ CORREÇÃO: Indica que é um aviso, não um erro
-                    'skipped' => true,  // ✅ CORREÇÃO: Indica que a operação foi pulada (não salva no banco)
-                    'data' => [
-                        'user_id' => $user['id'],
-                        'user_email' => $user['email'],
-                        'user_role' => $user['role'],
-                        'permission' => $permission,
-                        'granted' => true,
-                        'note' => 'Admins têm todas as permissões automaticamente. Não é necessário atribuir permissões específicas a usuários admin.'
-                    ]
-                ], 200);
+                ResponseHelper::sendSuccess([
+                    'user_id' => $user['id'],
+                    'user_email' => $user['email'],
+                    'user_role' => $user['role'],
+                    'permission' => $permission,
+                    'granted' => true,
+                    'warning' => true,
+                    'skipped' => true,
+                    'note' => 'Usuários com role "admin" já possuem todas as permissões automaticamente. A permissão não foi salva no banco de dados.'
+                ], 200, 'Usuários admin já possuem todas as permissões automaticamente');
                 return;
             }
             
@@ -458,10 +410,12 @@ class PermissionController
             ]);
             
             if (!$success) {
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao conceder permissão',
-                    'message' => 'Não foi possível conceder a permissão'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \Exception('Não foi possível conceder a permissão'),
+                    'Erro ao conceder permissão',
+                    'PERMISSION_GRANT_ERROR',
+                    ['action' => 'grant_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -469,47 +423,29 @@ class PermissionController
             $grantedPermission = $this->permissionModel->findByUserAndPermission((int)$id, $permission);
             
             if (!$grantedPermission) {
-                Logger::error("Permissão não encontrada após conceder", [
-                    'user_id' => $id,
-                    'permission' => $permission,
-                    'tenant_id' => $tenantId
-                ]);
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao conceder permissão',
-                    'message' => 'Permissão não foi salva corretamente no banco de dados'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \Exception('Permissão não foi salva corretamente no banco de dados'),
+                    'Erro ao conceder permissão',
+                    'PERMISSION_GRANT_SAVE_ERROR',
+                    ['action' => 'grant_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId]
+                );
                 return;
             }
-            
-            Logger::info("Permissão concedida com sucesso", [
-                'user_id' => $id,
-                'permission' => $permission,
-                'tenant_id' => $tenantId,
-                'permission_id' => $grantedPermission['id']
-            ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Permissão concedida com sucesso',
-                'data' => [
-                    'id' => $grantedPermission['id'],
-                    'user_id' => (int)$id,
-                    'permission' => $permission,
-                    'granted' => (bool)($grantedPermission['granted'] ?? true),
-                    'created_at' => $grantedPermission['created_at']
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $grantedPermission['id'],
+                'user_id' => (int)$id,
+                'permission' => $permission,
+                'granted' => (bool)($grantedPermission['granted'] ?? true),
+                'created_at' => $grantedPermission['created_at']
+            ], 'Permissão concedida com sucesso');
         } catch (\Exception $e) {
-            Logger::error("Erro ao conceder permissão", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'permission' => $data['permission'] ?? null,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao conceder permissão',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao conceder permissão',
+                'PERMISSION_GRANT_ERROR',
+                ['action' => 'grant_permission', 'user_id' => $id, 'permission' => $data['permission'] ?? null, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -522,10 +458,7 @@ class PermissionController
         try {
             // Endpoints de permissões requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'list_available_permissions']);
                 return;
             }
             
@@ -535,10 +468,7 @@ class PermissionController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'list_user_permissions', 'user_id' => $id]);
                 return;
             }
 
@@ -546,10 +476,11 @@ class PermissionController
             $validPermissions = self::getValidPermissions();
             
             if (!in_array($permission, $validPermissions)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Permissão inválida',
-                    'message' => "A permissão '{$permission}' não é válida. Use GET /v1/permissions para ver todas as permissões disponíveis."
-                ]));
+                ResponseHelper::sendValidationError(
+                    "A permissão '{$permission}' não é válida",
+                    ['permission' => "Use GET /v1/permissions para ver todas as permissões disponíveis"],
+                    ['action' => 'revoke_permission', 'user_id' => $id, 'tenant_id' => $tenantId, 'invalid_permission' => $permission]
+                );
                 return;
             }
             
@@ -557,35 +488,26 @@ class PermissionController
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'revoke_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'revoke_permission', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Admins têm todas as permissões por padrão
             // Não faz sentido revogar permissões de admin, mas podemos marcar como negado
             if ($user['role'] === 'admin') {
-                Flight::json([
-                    'success' => true,
-                    'message' => 'Admin possui todas as permissões por padrão. Permissão marcada como negada, mas admin ainda terá acesso.',
-                    'data' => [
-                        'user_id' => $user['id'],
-                        'permission' => $permission,
-                        'granted' => false,
-                        'note' => 'Admins têm todas as permissões automaticamente, mas a permissão foi marcada como negada no banco'
-                    ]
-                ]);
+                ResponseHelper::sendSuccess([
+                    'user_id' => $user['id'],
+                    'permission' => $permission,
+                    'granted' => false,
+                    'warning' => true,
+                    'note' => 'Admin possui todas as permissões por padrão. Permissão marcada como negada, mas admin ainda terá acesso.'
+                ], 200, 'Admin possui todas as permissões por padrão');
                 // Continua para marcar como negado no banco (para registro)
             }
             
@@ -593,44 +515,32 @@ class PermissionController
             $success = $this->permissionModel->revoke((int)$id, $permission);
             
             if (!$success) {
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao revogar permissão',
-                    'message' => 'Não foi possível revogar a permissão'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \Exception('Não foi possível revogar a permissão'),
+                    'Erro ao revogar permissão',
+                    'PERMISSION_REVOKE_ERROR',
+                    ['action' => 'revoke_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
             // Busca permissão revogada
             $revokedPermission = $this->permissionModel->findByUserAndPermission((int)$id, $permission);
-            
-            Logger::info("Permissão revogada", [
-                'user_id' => $id,
-                'permission' => $permission,
-                'tenant_id' => $tenantId
-            ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Permissão revogada com sucesso',
-                'data' => [
-                    'id' => $revokedPermission['id'] ?? null,
-                    'user_id' => (int)$id,
-                    'permission' => $permission,
-                    'granted' => false,
-                    'created_at' => $revokedPermission['created_at'] ?? null
-                ]
-            ]);
-        } catch (\Exception $e) {
-            Logger::error("Erro ao revogar permissão", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
+            ResponseHelper::sendSuccess([
+                'id' => $revokedPermission['id'] ?? null,
+                'user_id' => (int)$id,
                 'permission' => $permission,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao revogar permissão',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+                'granted' => false,
+                'created_at' => $revokedPermission['created_at'] ?? null
+            ], 200, 'Permissão revogada com sucesso');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao revogar permissão',
+                'PERMISSION_REVOKE_ERROR',
+                ['action' => 'revoke_permission', 'user_id' => $id, 'permission' => $permission, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

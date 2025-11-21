@@ -8,6 +8,7 @@ namespace App\Models;
 class Tenant extends BaseModel
 {
     protected string $table = 'tenants';
+    protected bool $usesSoftDeletes = true; // ✅ Ativa soft deletes
 
     /**
      * Busca tenant por API key

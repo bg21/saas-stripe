@@ -6,6 +6,7 @@ use App\Services\ReportService;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -39,7 +40,7 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
@@ -48,19 +49,14 @@ class ReportController
             
             $revenue = $this->reportService->getRevenue($tenantId, $period);
 
-            Flight::json([
-                'success' => true,
-                'data' => $revenue
-            ]);
+            ResponseHelper::sendSuccess($revenue);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter relatório de receita", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter relatório de receita',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter relatório de receita',
+                'REPORT_REVENUE_ERROR',
+                ['action' => 'get_revenue_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -81,7 +77,7 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
@@ -90,19 +86,14 @@ class ReportController
             
             $stats = $this->reportService->getSubscriptionsStats($tenantId, $period);
 
-            Flight::json([
-                'success' => true,
-                'data' => $stats
-            ]);
+            ResponseHelper::sendSuccess($stats);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter relatório de assinaturas", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter relatório de assinaturas',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter relatório de assinaturas',
+                'REPORT_SUBSCRIPTIONS_ERROR',
+                ['action' => 'get_subscriptions_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -123,7 +114,7 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
@@ -132,19 +123,14 @@ class ReportController
             
             $churn = $this->reportService->getChurnRate($tenantId, $period);
 
-            Flight::json([
-                'success' => true,
-                'data' => $churn
-            ]);
+            ResponseHelper::sendSuccess($churn);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter relatório de churn", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter relatório de churn',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter relatório de churn',
+                'REPORT_CHURN_ERROR',
+                ['action' => 'get_churn_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -165,7 +151,7 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
@@ -174,19 +160,14 @@ class ReportController
             
             $stats = $this->reportService->getCustomersStats($tenantId, $period);
 
-            Flight::json([
-                'success' => true,
-                'data' => $stats
-            ]);
+            ResponseHelper::sendSuccess($stats);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter relatório de clientes", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter relatório de clientes',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter relatório de clientes',
+                'REPORT_CUSTOMERS_ERROR',
+                ['action' => 'get_customers_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -207,7 +188,7 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
@@ -216,19 +197,14 @@ class ReportController
             
             $stats = $this->reportService->getPaymentsStats($tenantId, $period);
 
-            Flight::json([
-                'success' => true,
-                'data' => $stats
-            ]);
+            ResponseHelper::sendSuccess($stats);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter relatório de pagamentos", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter relatório de pagamentos',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter relatório de pagamentos',
+                'REPORT_PAYMENTS_ERROR',
+                ['action' => 'get_payments_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -244,25 +220,20 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
             $mrr = $this->reportService->getMRR($tenantId);
 
-            Flight::json([
-                'success' => true,
-                'data' => $mrr
-            ]);
+            ResponseHelper::sendSuccess($mrr);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter MRR", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter MRR',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter MRR',
+                'REPORT_MRR_ERROR',
+                ['action' => 'get_mrr_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -278,25 +249,20 @@ class ReportController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_revenue_report']);
                 return;
             }
 
             $arr = $this->reportService->getARR($tenantId);
 
-            Flight::json([
-                'success' => true,
-                'data' => $arr
-            ]);
+            ResponseHelper::sendSuccess($arr);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter ARR", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter ARR',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter ARR',
+                'REPORT_ARR_ERROR',
+                ['action' => 'get_arr_report', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 }

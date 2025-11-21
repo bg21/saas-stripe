@@ -6,6 +6,7 @@ use App\Utils\Database;
 use App\Services\CacheService;
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
 use Config;
 use Flight;
 
@@ -26,7 +27,7 @@ class HealthCheckController
      */
     public function basic(): void
     {
-        Flight::json([
+        ResponseHelper::sendSuccess([
             'status' => 'ok',
             'timestamp' => date('Y-m-d H:i:s'),
             'environment' => Config::env()
@@ -68,14 +69,27 @@ class HealthCheckController
 
         $totalTime = round((microtime(true) - $startTime) * 1000, 2);
 
-        Flight::json([
+        $responseData = [
             'status' => $overallStatus,
             'timestamp' => date('Y-m-d H:i:s'),
             'environment' => Config::env(),
             'version' => '1.0.0',
             'response_time_ms' => $totalTime,
             'checks' => $checks
-        ], $overallStatus === 'healthy' ? 200 : 503);
+        ];
+        
+        if ($overallStatus === 'healthy') {
+            ResponseHelper::sendSuccess($responseData);
+        } else {
+            ResponseHelper::sendError(
+                503,
+                'Sistema não saudável',
+                'Uma ou mais dependências estão com problemas',
+                'HEALTH_CHECK_UNHEALTHY',
+                $responseData,
+                ['action' => 'detailed_health_check']
+            );
+        }
     }
 
     /**

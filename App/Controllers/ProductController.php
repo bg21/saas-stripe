@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -38,7 +40,7 @@ class ProductController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['tenant_id' => null]);
                 return;
             }
 
@@ -48,7 +50,7 @@ class ProductController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -56,7 +58,11 @@ class ProductController
 
             // Validações obrigatórias
             if (empty($data['name'])) {
-                Flight::json(['error' => 'Campo name é obrigatório'], 400);
+                ResponseHelper::sendValidationError(
+                    'O campo name é obrigatório',
+                    ['name' => 'Campo name é obrigatório'],
+                    ['tenant_id' => $tenantId, 'data' => array_keys($data)]
+                );
                 return;
             }
 
@@ -64,7 +70,11 @@ class ProductController
             if (isset($data['images']) && is_array($data['images'])) {
                 $imagesErrors = \App\Utils\Validator::validateArraySize($data['images'], 'images', 20);
                 if (!empty($imagesErrors)) {
-                    Flight::json(['error' => 'Dados inválidos', 'errors' => $imagesErrors], 400);
+                    ResponseHelper::sendValidationError(
+                        'Dados inválidos',
+                        $imagesErrors,
+                        ['tenant_id' => $tenantId, 'field' => 'images']
+                    );
                     return;
                 }
             }
@@ -73,7 +83,11 @@ class ProductController
             if (isset($data['metadata']) && is_array($data['metadata'])) {
                 $metadataErrors = \App\Utils\Validator::validateMetadata($data['metadata'], 'metadata', 50);
                 if (!empty($metadataErrors)) {
-                    Flight::json(['error' => 'Dados inválidos', 'errors' => $metadataErrors], 400);
+                    ResponseHelper::sendValidationError(
+                        'Dados inválidos',
+                        $metadataErrors,
+                        ['tenant_id' => $tenantId, 'field' => 'metadata']
+                    );
                     return;
                 }
             }
@@ -86,48 +100,37 @@ class ProductController
 
             $product = $this->stripeService->createProduct($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'description' => $product->description ?? null,
-                    'active' => $product->active,
-                    'images' => $product->images ?? [],
-                    'statement_descriptor' => $product->statement_descriptor ?? null,
-                    'unit_label' => $product->unit_label ?? null,
-                    'created' => date('Y-m-d H:i:s', $product->created),
-                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
-                    'metadata' => $product->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $product->id,
+                'name' => $product->name,
+                'description' => $product->description ?? null,
+                'active' => $product->active,
+                'images' => $product->images ?? [],
+                'statement_descriptor' => $product->statement_descriptor ?? null,
+                'unit_label' => $product->unit_label ?? null,
+                'created' => date('Y-m-d H:i:s', $product->created),
+                'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                'metadata' => $product->metadata->toArray()
+            ]);
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao criar produto", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendValidationError(
+                'Erro de validação ao criar produto',
+                ['validation' => $e->getMessage()],
+                ['tenant_id' => $tenantId ?? null, 'exception' => get_class($e)]
+            );
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao criar produto no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar produto',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar produto no Stripe',
+                ['tenant_id' => $tenantId ?? null, 'action' => 'create_product']
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao criar produto", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar produto',
+                'PRODUCT_CREATE_ERROR',
+                ['tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -147,7 +150,7 @@ class ProductController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_products']);
                 return;
             }
 
@@ -295,23 +298,18 @@ class ProductController
             
             Flight::json($response);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao listar produtos", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar produtos',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar produtos',
+                ['tenant_id' => $tenantId ?? null, 'action' => 'list_products']
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar produtos", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar produtos',
+                'PRODUCT_LIST_ERROR',
+                ['tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -325,7 +323,7 @@ class ProductController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_products']);
                 return;
             }
 
@@ -333,41 +331,39 @@ class ProductController
 
             // Valida se o produto pertence ao tenant (via metadata)
             if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'description' => $product->description ?? null,
-                    'active' => $product->active,
-                    'images' => $product->images ?? [],
-                    'statement_descriptor' => $product->statement_descriptor ?? null,
-                    'unit_label' => $product->unit_label ?? null,
-                    'created' => date('Y-m-d H:i:s', $product->created),
-                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
-                    'metadata' => $product->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $product->id,
+                'name' => $product->name,
+                'description' => $product->description ?? null,
+                'active' => $product->active,
+                'images' => $product->images ?? [],
+                'statement_descriptor' => $product->statement_descriptor ?? null,
+                'unit_label' => $product->unit_label ?? null,
+                'created' => date('Y-m-d H:i:s', $product->created),
+                'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                'metadata' => $product->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId ?? null]);
             } else {
-                Logger::error("Erro ao obter produto", ['error' => $e->getMessage()]);
-                Flight::json([
-                    'error' => 'Erro ao obter produto',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter produto',
+                    ['product_id' => $id, 'tenant_id' => $tenantId ?? null, 'action' => 'get_product']
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter produto", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter produto',
+                'PRODUCT_GET_ERROR',
+                ['product_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -390,7 +386,7 @@ class ProductController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_products']);
                 return;
             }
 
@@ -398,7 +394,7 @@ class ProductController
             $product = $this->stripeService->getProduct($id);
             
             if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -408,7 +404,7 @@ class ProductController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['product_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -421,37 +417,35 @@ class ProductController
 
             $product = $this->stripeService->updateProduct($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $product->id,
-                    'name' => $product->name,
-                    'description' => $product->description ?? null,
-                    'active' => $product->active,
-                    'images' => $product->images ?? [],
-                    'statement_descriptor' => $product->statement_descriptor ?? null,
-                    'unit_label' => $product->unit_label ?? null,
-                    'created' => date('Y-m-d H:i:s', $product->created),
-                    'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
-                    'metadata' => $product->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $product->id,
+                'name' => $product->name,
+                'description' => $product->description ?? null,
+                'active' => $product->active,
+                'images' => $product->images ?? [],
+                'statement_descriptor' => $product->statement_descriptor ?? null,
+                'unit_label' => $product->unit_label ?? null,
+                'created' => date('Y-m-d H:i:s', $product->created),
+                'updated' => date('Y-m-d H:i:s', $product->updated ?? $product->created),
+                'metadata' => $product->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId ?? null]);
             } else {
-                Logger::error("Erro ao atualizar produto", ['error' => $e->getMessage()]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar produto',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar produto',
+                    ['product_id' => $id, 'tenant_id' => $tenantId ?? null, 'action' => 'update_product']
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar produto", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar produto',
+                'PRODUCT_UPDATE_ERROR',
+                ['product_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -467,7 +461,7 @@ class ProductController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_products']);
                 return;
             }
 
@@ -475,7 +469,7 @@ class ProductController
             $product = $this->stripeService->getProduct($id);
             
             if (isset($product->metadata->tenant_id) && (string)$product->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -485,31 +479,28 @@ class ProductController
             $wasDeleted = isset($product->deleted) && $product->deleted === true;
             $isActive = isset($product->active) ? $product->active : false;
 
-            Flight::json([
-                'success' => true,
-                'message' => $wasDeleted ? 'Produto deletado com sucesso' : 'Produto desativado com sucesso (tem preços associados)',
-                'data' => [
-                    'id' => $product->id,
-                    'deleted' => $wasDeleted,
-                    'active' => $isActive
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $product->id,
+                'deleted' => $wasDeleted,
+                'active' => $isActive
+            ], 200, $wasDeleted ? 'Produto deletado com sucesso' : 'Produto desativado com sucesso (tem preços associados)');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Produto não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Produto', ['product_id' => $id, 'tenant_id' => $tenantId ?? null]);
             } else {
-                Logger::error("Erro ao deletar produto", ['error' => $e->getMessage()]);
-                Flight::json([
-                    'error' => 'Erro ao deletar produto',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao deletar produto',
+                    ['product_id' => $id, 'tenant_id' => $tenantId ?? null, 'action' => 'delete_product']
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao deletar produto", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao deletar produto',
+                'PRODUCT_DELETE_ERROR',
+                ['product_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

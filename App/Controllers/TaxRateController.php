@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -42,7 +44,7 @@ class TaxRateController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_tax_rate']);
                 return;
             }
 
@@ -52,20 +54,20 @@ class TaxRateController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_tax_rate', 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
-            if (empty($data['display_name'])) {
-                Flight::json(['error' => 'Campo display_name é obrigatório'], 400);
-                return;
-            }
-
-            if (!isset($data['percentage']) || !is_numeric($data['percentage'])) {
-                Flight::json(['error' => 'Campo percentage é obrigatório e deve ser numérico'], 400);
+            // ✅ Validação consistente usando Validator
+            $errors = Validator::validateTaxRateCreate($data);
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_tax_rate', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -77,40 +79,32 @@ class TaxRateController
 
             $taxRate = $this->stripeService->createTaxRate($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $taxRate->id,
-                    'display_name' => $taxRate->display_name,
-                    'description' => $taxRate->description ?? null,
-                    'percentage' => $taxRate->percentage,
-                    'inclusive' => $taxRate->inclusive,
-                    'active' => $taxRate->active,
-                    'country' => $taxRate->country ?? null,
-                    'state' => $taxRate->state ?? null,
-                    'jurisdiction' => $taxRate->jurisdiction ?? null,
-                    'created' => date('Y-m-d H:i:s', $taxRate->created),
-                    'metadata' => $taxRate->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $taxRate->id,
+                'display_name' => $taxRate->display_name,
+                'description' => $taxRate->description ?? null,
+                'percentage' => $taxRate->percentage,
+                'inclusive' => $taxRate->inclusive,
+                'active' => $taxRate->active,
+                'country' => $taxRate->country ?? null,
+                'state' => $taxRate->state ?? null,
+                'jurisdiction' => $taxRate->jurisdiction ?? null,
+                'created' => date('Y-m-d H:i:s', $taxRate->created),
+                'metadata' => $taxRate->metadata->toArray()
+            ], 'Tax rate criado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao criar tax rate no Stripe", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar tax rate',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar tax rate no Stripe',
+                ['action' => 'create_tax_rate', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar tax rate", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar tax rate',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar tax rate',
+                'TAX_RATE_CREATE_ERROR',
+                ['action' => 'create_tax_rate', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -131,7 +125,7 @@ class TaxRateController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_tax_rates']);
                 return;
             }
 
@@ -180,21 +174,18 @@ class TaxRateController
                 }
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $taxRates,
+            ResponseHelper::sendSuccess([
+                'tax_rates' => $taxRates,
                 'count' => count($taxRates),
                 'has_more' => $collection->has_more
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar tax rates", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar tax rates',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar tax rates',
+                'TAX_RATE_LIST_ERROR',
+                ['action' => 'list_tax_rates', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -208,7 +199,7 @@ class TaxRateController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_tax_rates']);
                 return;
             }
 
@@ -217,53 +208,40 @@ class TaxRateController
             // Valida se pertence ao tenant (via metadata)
             if (isset($taxRate->metadata->tenant_id) && 
                 (string)$taxRate->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Tax rate não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Tax rate', ['action' => 'get_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $taxRate->id,
-                    'display_name' => $taxRate->display_name,
-                    'description' => $taxRate->description ?? null,
-                    'percentage' => $taxRate->percentage,
-                    'inclusive' => $taxRate->inclusive,
-                    'active' => $taxRate->active,
-                    'country' => $taxRate->country ?? null,
-                    'state' => $taxRate->state ?? null,
-                    'jurisdiction' => $taxRate->jurisdiction ?? null,
-                    'created' => date('Y-m-d H:i:s', $taxRate->created),
-                    'metadata' => $taxRate->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $taxRate->id,
+                'display_name' => $taxRate->display_name,
+                'description' => $taxRate->description ?? null,
+                'percentage' => $taxRate->percentage,
+                'inclusive' => $taxRate->inclusive,
+                'active' => $taxRate->active,
+                'country' => $taxRate->country ?? null,
+                'state' => $taxRate->state ?? null,
+                'jurisdiction' => $taxRate->jurisdiction ?? null,
+                'created' => date('Y-m-d H:i:s', $taxRate->created),
+                'metadata' => $taxRate->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Logger::error("Tax rate não encontrado", ['tax_rate_id' => $id]);
-                Flight::json([
-                    'error' => 'Tax rate não encontrado',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 404);
+                ResponseHelper::sendNotFoundError('Tax rate', ['action' => 'get_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao obter tax rate", [
-                    'error' => $e->getMessage(),
-                    'tax_rate_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao obter tax rate',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter tax rate',
+                    ['action' => 'get_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter tax rate", [
-                'error' => $e->getMessage(),
-                'tax_rate_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter tax rate',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter tax rate',
+                'TAX_RATE_GET_ERROR',
+                ['action' => 'get_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -285,7 +263,7 @@ class TaxRateController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_tax_rates']);
                 return;
             }
 
@@ -304,53 +282,119 @@ class TaxRateController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
             }
+            
+            // Valida que há dados para atualizar
+            if (empty($data)) {
+                ResponseHelper::sendValidationError(
+                    'Nenhum dado fornecido para atualização',
+                    [],
+                    ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
+            // Valida campos permitidos (apenas display_name, description, active, metadata)
+            $allowedFields = ['display_name', 'description', 'active', 'metadata'];
+            $invalidFields = array_diff(array_keys($data), $allowedFields);
+            if (!empty($invalidFields)) {
+                ResponseHelper::sendValidationError(
+                    'Campos inválidos para atualização',
+                    ['fields' => 'Apenas display_name, description, active e metadata podem ser atualizados. Campos inválidos: ' . implode(', ', $invalidFields)],
+                    ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId, 'invalid_fields' => $invalidFields]
+                );
+                return;
+            }
+            
+            // Valida display_name se fornecido
+            if (isset($data['display_name'])) {
+                if (!is_string($data['display_name']) || strlen(trim($data['display_name'])) === 0) {
+                    ResponseHelper::sendValidationError(
+                        'display_name inválido',
+                        ['display_name' => 'Deve ser uma string não vazia'],
+                        ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                    );
+                    return;
+                }
+                if (strlen($data['display_name']) > 255) {
+                    ResponseHelper::sendValidationError(
+                        'display_name muito longo',
+                        ['display_name' => 'Máximo 255 caracteres'],
+                        ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                    );
+                    return;
+                }
+            }
+            
+            // Valida description se fornecido
+            if (isset($data['description']) && strlen($data['description']) > 500) {
+                ResponseHelper::sendValidationError(
+                    'description muito longo',
+                    ['description' => 'Máximo 500 caracteres'],
+                    ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
+            // Valida active se fornecido
+            if (isset($data['active']) && !is_bool($data['active'])) {
+                ResponseHelper::sendValidationError(
+                    'active inválido',
+                    ['active' => 'Deve ser true ou false'],
+                    ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
+            // Valida metadata se fornecido
+            if (isset($data['metadata'])) {
+                $metadataErrors = Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataErrors)) {
+                    ResponseHelper::sendValidationError(
+                        'metadata inválido',
+                        $metadataErrors,
+                        ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                    );
+                    return;
+                }
+            }
 
             $taxRate = $this->stripeService->updateTaxRate($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $taxRate->id,
-                    'display_name' => $taxRate->display_name,
-                    'description' => $taxRate->description ?? null,
-                    'percentage' => $taxRate->percentage,
-                    'inclusive' => $taxRate->inclusive,
-                    'active' => $taxRate->active,
-                    'country' => $taxRate->country ?? null,
-                    'state' => $taxRate->state ?? null,
-                    'jurisdiction' => $taxRate->jurisdiction ?? null,
-                    'created' => date('Y-m-d H:i:s', $taxRate->created),
-                    'metadata' => $taxRate->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $taxRate->id,
+                'display_name' => $taxRate->display_name,
+                'description' => $taxRate->description ?? null,
+                'percentage' => $taxRate->percentage,
+                'inclusive' => $taxRate->inclusive,
+                'active' => $taxRate->active,
+                'country' => $taxRate->country ?? null,
+                'state' => $taxRate->state ?? null,
+                'jurisdiction' => $taxRate->jurisdiction ?? null,
+                'created' => date('Y-m-d H:i:s', $taxRate->created),
+                'metadata' => $taxRate->metadata->toArray()
+            ], 200, 'Tax rate atualizado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Tax rate não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Tax rate', ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]);
             } else {
-                Logger::error("Erro ao atualizar tax rate", [
-                    'error' => $e->getMessage(),
-                    'tax_rate_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar tax rate',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar tax rate',
+                    ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar tax rate", [
-                'error' => $e->getMessage(),
-                'tax_rate_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao atualizar tax rate',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar tax rate',
+                'TAX_RATE_UPDATE_ERROR',
+                ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

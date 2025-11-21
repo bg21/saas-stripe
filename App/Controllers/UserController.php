@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
 use App\Utils\Validator;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -81,20 +82,17 @@ class UserController
             // Reindexa array
             $users = array_values($users);
 
-            Flight::json([
-                'success' => true,
-                'data' => $users,
+            ResponseHelper::sendSuccess([
+                'users' => $users,
                 'count' => count($users)
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar usuários", [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao listar usuários',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar usuários',
+                'USER_LIST_ERROR',
+                ['action' => 'list_users', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -107,10 +105,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'get_user', 'user_id' => $id]);
                 return;
             }
             
@@ -120,49 +115,34 @@ class UserController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'get_user', 'user_id' => $id]);
                 return;
             }
 
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'get_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'get_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Remove senha do retorno
             unset($user['password_hash']);
 
-            Flight::json([
-                'success' => true,
-                'data' => $user
-            ]);
+            ResponseHelper::sendSuccess($user);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter usuário", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao obter usuário',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter usuário',
+                'USER_GET_ERROR',
+                ['action' => 'get_user', 'user_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -183,10 +163,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'create_user']);
                 return;
             }
             
@@ -196,10 +173,7 @@ class UserController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'create_user']);
                 return;
             }
             
@@ -207,28 +181,21 @@ class UserController
             $tenantModel = new \App\Models\Tenant();
             $tenant = $tenantModel->findById($tenantId);
             if (!$tenant) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Tenant não encontrado',
-                    'message' => 'O tenant especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Tenant', ['action' => 'create_user', 'tenant_id' => $tenantId]);
                 return;
             }
             if ($tenant['status'] !== 'active') {
-                Flight::halt(403, json_encode([
-                    'error' => 'Tenant inativo',
-                    'message' => 'O tenant está inativo. Não é possível criar usuários.'
-                ]));
+                ResponseHelper::sendForbiddenError('O tenant está inativo. Não é possível criar usuários.', ['action' => 'create_user', 'tenant_id' => $tenantId]);
                 return;
             }
 
-            // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
             // ✅ OTIMIZAÇÃO: Usa RequestCache para evitar múltiplas leituras
             $data = \App\Utils\RequestCache::getJsonInput();
             
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_user', 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -237,11 +204,11 @@ class UserController
             // Validação usando Validator
             $errors = Validator::validateUserCreate($data);
             if (!empty($errors)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Por favor, verifique os dados informados',
-                    'errors' => $errors
-                ]));
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_user', 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -251,10 +218,14 @@ class UserController
             // Verifica se o email já existe no tenant
             $existingUser = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
             if ($existingUser) {
-                Flight::halt(409, json_encode([
-                    'error' => 'Usuário já existe',
-                    'message' => 'Já existe um usuário com este email neste tenant'
-                ]));
+                ResponseHelper::sendError(
+                    409,
+                    'Usuário já existe',
+                    'Já existe um usuário com este email neste tenant',
+                    'USER_ALREADY_EXISTS',
+                    [],
+                    ['action' => 'create_user', 'tenant_id' => $tenantId, 'email' => $data['email']]
+                );
                 return;
             }
             
@@ -268,10 +239,14 @@ class UserController
                 $existingUserInTransaction = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
                 if ($existingUserInTransaction) {
                     $this->userModel->db->rollBack();
-                    Flight::halt(409, json_encode([
-                        'error' => 'Usuário já existe',
-                        'message' => 'Já existe um usuário com este email neste tenant'
-                    ]));
+                    ResponseHelper::sendError(
+                        409,
+                        'Usuário já existe',
+                        'Já existe um usuário com este email neste tenant',
+                        'USER_ALREADY_EXISTS',
+                        [],
+                        ['action' => 'create_user', 'tenant_id' => $tenantId, 'email' => $data['email']]
+                    );
                     return;
                 }
                 
@@ -293,10 +268,14 @@ class UserController
                 
                 // Verifica se é erro de constraint única (código 23000 = Integrity constraint violation)
                 if ($e->getCode() == 23000 || strpos($e->getMessage(), 'Duplicate entry') !== false || strpos($e->getMessage(), 'UNIQUE constraint') !== false) {
-                    Flight::halt(409, json_encode([
-                        'error' => 'Usuário já existe',
-                        'message' => 'Já existe um usuário com este email neste tenant'
-                    ]));
+                    ResponseHelper::sendError(
+                        409,
+                        'Usuário já existe',
+                        'Já existe um usuário com este email neste tenant',
+                        'USER_ALREADY_EXISTS',
+                        [],
+                        ['action' => 'create_user', 'tenant_id' => $tenantId, 'email' => $data['email'] ?? null]
+                    );
                     return;
                 }
                 
@@ -317,21 +296,14 @@ class UserController
                 'tenant_id' => $tenantId
             ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Usuário criado com sucesso',
-                'data' => $user
-            ], 201);
+            ResponseHelper::sendCreated($user, 'Usuário criado com sucesso');
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar usuário", [
-                'error' => $e->getMessage(),
-                'email' => $data['email'] ?? null,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao criar usuário',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar usuário',
+                'USER_CREATE_ERROR',
+                ['action' => 'create_user', 'tenant_id' => $tenantId ?? null, 'email' => $data['email'] ?? null]
+            );
         }
     }
 

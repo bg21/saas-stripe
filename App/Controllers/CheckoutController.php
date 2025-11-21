@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -36,27 +38,40 @@ class CheckoutController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_checkout']);
                     return;
                 }
                 $data = [];
             }
             $tenantId = Flight::get('tenant_id');
 
-            // Validações básicas
-            if (empty($data['success_url']) || empty($data['cancel_url'])) {
-                Flight::json(['error' => 'success_url e cancel_url são obrigatórios'], 400);
+            // ✅ Validação consistente usando Validator
+            $errors = \App\Utils\Validator::validateCheckoutCreate($data);
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['tenant_id' => $tenantId, 'action' => 'create_checkout']
+                );
                 return;
             }
             
-            // Valida URLs para prevenir SSRF e Open Redirect
+            // ✅ Valida URLs para prevenir SSRF e Open Redirect (validação adicional de segurança)
             if (!$this->validateRedirectUrl($data['success_url'], $tenantId)) {
-                Flight::json(['error' => 'success_url inválida ou não permitida'], 400);
+                ResponseHelper::sendValidationError(
+                    'A URL success_url é inválida ou não permitida',
+                    ['success_url' => 'URL inválida ou não permitida (verificação de segurança)'],
+                    ['tenant_id' => $tenantId, 'url' => $data['success_url']]
+                );
                 return;
             }
             
             if (!$this->validateRedirectUrl($data['cancel_url'], $tenantId)) {
-                Flight::json(['error' => 'cancel_url inválida ou não permitida'], 400);
+                ResponseHelper::sendValidationError(
+                    'A URL cancel_url é inválida ou não permitida',
+                    ['cancel_url' => 'URL inválida ou não permitida (verificação de segurança)'],
+                    ['tenant_id' => $tenantId, 'url' => $data['cancel_url']]
+                );
                 return;
             }
 
@@ -81,14 +96,22 @@ class CheckoutController
 
             // Validação: precisa ter line_items agora
             if (empty($data['line_items']) || !is_array($data['line_items'])) {
-                Flight::json(['error' => 'line_items ou price_id é obrigatório'], 400);
+                ResponseHelper::sendValidationError(
+                    'O campo line_items ou price_id é obrigatório',
+                    ['line_items' => 'Campo obrigatório'],
+                    ['tenant_id' => $tenantId, 'action' => 'create_checkout']
+                );
                 return;
             }
             
             // ✅ SEGURANÇA: Valida tamanho máximo de line_items (prevenção de DoS)
             $lineItemsErrors = \App\Utils\Validator::validateArraySize($data['line_items'], 'line_items', 100);
             if (!empty($lineItemsErrors)) {
-                Flight::json(['error' => 'Dados inválidos', 'errors' => $lineItemsErrors], 400);
+                ResponseHelper::sendValidationError(
+                    'Dados inválidos',
+                    $lineItemsErrors,
+                    ['tenant_id' => $tenantId, 'field' => 'line_items']
+                );
                 return;
             }
             
@@ -96,7 +119,11 @@ class CheckoutController
             if (isset($data['payment_method_types']) && is_array($data['payment_method_types'])) {
                 $paymentMethodsErrors = \App\Utils\Validator::validateArraySize($data['payment_method_types'], 'payment_method_types', 10);
                 if (!empty($paymentMethodsErrors)) {
-                    Flight::json(['error' => 'Dados inválidos', 'errors' => $paymentMethodsErrors], 400);
+                    ResponseHelper::sendValidationError(
+                        'Dados inválidos',
+                        $paymentMethodsErrors,
+                        ['tenant_id' => $tenantId, 'field' => 'payment_method_types']
+                    );
                     return;
                 }
             }
@@ -110,7 +137,11 @@ class CheckoutController
                 $customer = $customerModel->findByTenantAndId($tenantId, (int)$data['customer_id']);
                 
                 if (!$customer) {
-                    Flight::json(['error' => 'Cliente não encontrado'], 404);
+                    ResponseHelper::sendNotFoundError('Cliente', [
+                        'customer_id' => $data['customer_id'],
+                        'tenant_id' => $tenantId,
+                        'action' => 'create_checkout'
+                    ]);
                     return;
                 }
                 
@@ -125,19 +156,23 @@ class CheckoutController
 
             $session = $this->stripeService->createCheckoutSession($data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'session_id' => $session->id,
-                    'url' => $session->url
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'session_id' => $session->id,
+                'url' => $session->url
+            ]);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar sessão de checkout',
+                ['tenant_id' => $tenantId ?? null, 'action' => 'create_checkout']
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar sessão de checkout", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao criar sessão de checkout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar sessão de checkout',
+                'CHECKOUT_CREATE_ERROR',
+                ['tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -151,8 +186,7 @@ class CheckoutController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                http_response_code(401);
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['session_id' => $id, 'action' => 'get_checkout']);
                 return;
             }
 
@@ -161,8 +195,10 @@ class CheckoutController
 
             // Valida se a sessão pertence ao tenant (via metadata)
             if (isset($session->metadata->tenant_id) && (int)$session->metadata->tenant_id !== $tenantId) {
-                http_response_code(403);
-                Flight::json(['error' => 'Sessão não pertence ao tenant'], 403);
+                ResponseHelper::sendForbiddenError(
+                    'Sessão não pertence ao tenant',
+                    ['session_id' => $id, 'tenant_id' => $tenantId, 'session_tenant_id' => $session->metadata->tenant_id]
+                );
                 return;
             }
 
@@ -200,24 +236,24 @@ class CheckoutController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $responseData
-            ]);
+            ResponseHelper::sendSuccess($responseData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Sessão de checkout não encontrada", ['session_id' => $id]);
-            http_response_code(404);
-            Flight::json([
-                'error' => 'Sessão de checkout não encontrada',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 404);
+            if ($e->getStripeCode() === 'resource_missing') {
+                ResponseHelper::sendNotFoundError('Sessão de checkout', ['session_id' => $id, 'tenant_id' => $tenantId ?? null]);
+            } else {
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter sessão de checkout',
+                    ['session_id' => $id, 'tenant_id' => $tenantId ?? null, 'action' => 'get_checkout']
+                );
+            }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter sessão de checkout", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao obter sessão de checkout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter sessão de checkout',
+                'CHECKOUT_GET_ERROR',
+                ['session_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
     

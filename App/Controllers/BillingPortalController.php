@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -32,7 +33,7 @@ class BillingPortalController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_billing_portal', 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -40,14 +41,20 @@ class BillingPortalController
             $tenantId = Flight::get('tenant_id');
 
             if (empty($data['customer_id'])) {
-                http_response_code(400);
-                Flight::json(['error' => 'customer_id é obrigatório'], 400);
+                ResponseHelper::sendValidationError(
+                    'customer_id é obrigatório',
+                    ['customer_id' => 'Campo obrigatório'],
+                    ['action' => 'create_billing_portal', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
             if (empty($data['return_url'])) {
-                http_response_code(400);
-                Flight::json(['error' => 'return_url é obrigatório'], 400);
+                ResponseHelper::sendValidationError(
+                    'return_url é obrigatório',
+                    ['return_url' => 'Campo obrigatório'],
+                    ['action' => 'create_billing_portal', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -58,15 +65,17 @@ class BillingPortalController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$data['customer_id']);
 
             if (!$customer) {
-                http_response_code(404);
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'create_billing_portal', 'customer_id' => $data['customer_id'], 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Valida return_url para prevenir SSRF e Open Redirect
             if (!$this->validateRedirectUrl($data['return_url'], $tenantId)) {
-                http_response_code(400);
-                Flight::json(['error' => 'return_url inválida ou não permitida'], 400);
+                ResponseHelper::sendValidationError(
+                    'return_url inválida ou não permitida',
+                    ['return_url' => 'URL inválida ou não permitida'],
+                    ['action' => 'create_billing_portal', 'tenant_id' => $tenantId, 'url' => $data['return_url']]
+                );
                 return;
             }
 
@@ -110,36 +119,34 @@ class BillingPortalController
                 $responseData['locale'] = $options['locale'];
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $responseData
-            ], 201);
+            ResponseHelper::sendCreated($responseData, 'Sessão de portal criada com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao criar sessão de portal", ['error' => $e->getMessage()]);
-            
             // Mensagem específica para configuração não encontrada
             $errorMessage = $e->getMessage();
             if (strpos($errorMessage, 'No configuration provided') !== false) {
-                http_response_code(400);
-                Flight::json([
-                    'error' => 'Billing Portal não configurado',
-                    'message' => 'O Billing Portal precisa ser configurado no Stripe Dashboard. Acesse: https://dashboard.stripe.com/test/settings/billing/portal',
-                    'stripe_error' => Config::isDevelopment() ? $errorMessage : null
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'O Billing Portal precisa ser configurado no Stripe Dashboard. Acesse: https://dashboard.stripe.com/test/settings/billing/portal',
+                    [],
+                    [
+                        'action' => 'create_billing_portal',
+                        'tenant_id' => $tenantId ?? null,
+                        'stripe_error' => Config::isDevelopment() ? $errorMessage : null
+                    ]
+                );
             } else {
-                http_response_code(500);
-                Flight::json([
-                    'error' => 'Erro ao criar sessão de portal',
-                    'message' => Config::isDevelopment() ? $errorMessage : null
-                ], 500);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao criar sessão de portal',
+                    ['action' => 'create_billing_portal', 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao criar sessão de portal", ['error' => $e->getMessage()]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao criar sessão de portal',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar sessão de portal',
+                'BILLING_PORTAL_CREATE_ERROR',
+                ['action' => 'create_billing_portal', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
     

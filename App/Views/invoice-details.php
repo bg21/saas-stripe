@@ -70,6 +70,24 @@ if (!invoiceId) {
     window.location.href = '/invoices';
 }
 
+// ✅ Valida formato de invoice_id da URL
+if (typeof validateStripeId === 'function') {
+    const invoiceIdError = validateStripeId(invoiceId, 'invoice_id', true);
+    if (invoiceIdError) {
+        showAlert('ID de fatura inválido na URL: ' + invoiceIdError, 'danger');
+        window.location.href = '/invoices';
+        throw new Error('Invalid invoice_id format');
+    }
+} else {
+    // Fallback: validação básica
+    const invoiceIdPattern = /^in_[a-zA-Z0-9]+$/;
+    if (!invoiceIdPattern.test(invoiceId)) {
+        showAlert('Formato de Invoice ID inválido na URL. Use: in_xxxxx', 'danger');
+        window.location.href = '/invoices';
+        throw new Error('Invalid invoice_id format');
+    }
+}
+
 let invoiceData = null;
 
 document.addEventListener('DOMContentLoaded', () => {

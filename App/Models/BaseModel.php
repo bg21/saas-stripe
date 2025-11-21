@@ -14,6 +14,7 @@ abstract class BaseModel
     protected string $table;
     protected string $primaryKey = 'id';
     protected PDO $db;
+    protected bool $usesSoftDeletes = false; // Models podem sobrescrever para ativar soft deletes
 
     public function __construct()
     {
@@ -25,10 +26,20 @@ abstract class BaseModel
      * 
      * ✅ OTIMIZAÇÃO: Por padrão, ainda usa SELECT * para compatibilidade
      * Para melhor performance, use findByIdSelect() com campos específicos
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados se soft deletes estiver ativo
      */
     public function findById(int $id): ?array
     {
-        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE {$this->primaryKey} = :id LIMIT 1");
+        $sql = "SELECT * FROM {$this->table} WHERE {$this->primaryKey} = :id";
+        
+        // Se soft deletes estiver ativo, exclui registros deletados
+        if ($this->usesSoftDeletes) {
+            $sql .= " AND deleted_at IS NULL";
+        }
+        
+        $sql .= " LIMIT 1";
+        
+        $stmt = $this->db->prepare($sql);
         $stmt->execute(['id' => $id]);
         $result = $stmt->fetch();
 
@@ -191,14 +202,21 @@ abstract class BaseModel
 
     /**
      * Busca todos os registros
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados se soft deletes estiver ativo
      */
     public function findAll(array $conditions = [], array $orderBy = [], int $limit = null, int $offset = 0): array
     {
         $sql = "SELECT * FROM {$this->table}";
         $params = [];
+        
+        $where = [];
+        
+        // Se soft deletes estiver ativo, adiciona condição para excluir deletados
+        if ($this->usesSoftDeletes) {
+            $where[] = "deleted_at IS NULL";
+        }
 
         if (!empty($conditions)) {
-            $where = [];
             foreach ($conditions as $key => $value) {
                 if ($key === 'OR') {
                     // Suporte para condições OR
@@ -305,9 +323,15 @@ abstract class BaseModel
     ): array {
         $sql = "SELECT *, COUNT(*) OVER() as _total FROM {$this->table}";
         $params = [];
+        
+        $where = [];
+        
+        // Se soft deletes estiver ativo, adiciona condição para excluir deletados
+        if ($this->usesSoftDeletes) {
+            $where[] = "deleted_at IS NULL";
+        }
 
         if (!empty($conditions)) {
-            $where = [];
             foreach ($conditions as $key => $value) {
                 if ($key === 'OR') {
                     $orConditions = [];
@@ -335,6 +359,9 @@ abstract class BaseModel
                     $params[$paramKey] = $value;
                 }
             }
+        }
+        
+        if (!empty($where)) {
             $sql .= " WHERE " . implode(' AND ', $where);
         }
 
@@ -405,14 +432,21 @@ abstract class BaseModel
     
     /**
      * Conta registros com condições
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados se soft deletes estiver ativo
      */
     public function count(array $conditions = []): int
     {
         $sql = "SELECT COUNT(*) as total FROM {$this->table}";
         $params = [];
+        
+        $where = [];
+        
+        // Se soft deletes estiver ativo, adiciona condição para excluir deletados
+        if ($this->usesSoftDeletes) {
+            $where[] = "deleted_at IS NULL";
+        }
 
         if (!empty($conditions)) {
-            $where = [];
             foreach ($conditions as $key => $value) {
                 if ($key === 'OR') {
                     $orConditions = [];
@@ -440,6 +474,9 @@ abstract class BaseModel
                     $params[$paramKey] = $value;
                 }
             }
+        }
+        
+        if (!empty($where)) {
             $sql .= " WHERE " . implode(' AND ', $where);
         }
 
@@ -454,9 +491,11 @@ abstract class BaseModel
 
     /**
      * Insere um novo registro
-     * ✅ CORREÇÃO: Garante que exceções sejam lançadas corretamente
+     * ✅ CORREÇÃO: Suporta tabelas com e sem AUTO_INCREMENT
+     * Se a chave primária estiver presente nos dados, retorna o valor fornecido
+     * Caso contrário, usa lastInsertId() para obter o ID gerado
      */
-    public function insert(array $data): int
+    public function insert(array $data): int|string
     {
         $fields = array_keys($data);
         $placeholders = array_map(fn($field) => ":{$field}", $fields);
@@ -473,14 +512,23 @@ abstract class BaseModel
         // ✅ CORREÇÃO: Execute lança exceção se falhar (PDO::ERRMODE_EXCEPTION)
         $stmt->execute();
         
-        $insertId = (int) $this->db->lastInsertId();
-        
-        // ✅ CORREÇÃO: Valida se o insert foi bem-sucedido
-        if ($insertId <= 0) {
-            throw new \RuntimeException("Falha ao inserir registro: lastInsertId retornou {$insertId}");
+        // ✅ CORREÇÃO: Verifica se a chave primária foi fornecida manualmente
+        // Se sim, retorna o valor fornecido (suporta strings como IDs)
+        if (isset($data[$this->primaryKey])) {
+            return $data[$this->primaryKey];
         }
         
-        return $insertId;
+        // Se não foi fornecida, usa lastInsertId() (para AUTO_INCREMENT)
+        $insertId = $this->db->lastInsertId();
+        
+        // ✅ CORREÇÃO: Valida se o insert foi bem-sucedido
+        // lastInsertId() pode retornar string vazia ou "0" se não houver AUTO_INCREMENT
+        if (empty($insertId) || $insertId === '0') {
+            throw new \RuntimeException("Falha ao inserir registro: lastInsertId retornou '{$insertId}'. Verifique se a tabela possui AUTO_INCREMENT na chave primária ou forneça o ID manualmente.");
+        }
+        
+        // Retorna como int se for numérico, caso contrário como string
+        return is_numeric($insertId) ? (int) $insertId : $insertId;
     }
 
     /**
@@ -506,16 +554,264 @@ abstract class BaseModel
 
     /**
      * Deleta um registro
+     * ✅ SOFT DELETES: Se soft deletes estiver ativo, marca como deletado em vez de remover fisicamente
      */
     public function delete(int $id): bool
     {
+        if ($this->usesSoftDeletes) {
+            // Soft delete: marca deleted_at com timestamp atual
+            return $this->update($id, ['deleted_at' => date('Y-m-d H:i:s')]);
+        }
+        
+        // Hard delete: remove fisicamente do banco
         $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE {$this->primaryKey} = :id");
         $stmt->bindValue(':id', $id, PDO::PARAM_INT);
         return $stmt->execute();
     }
+    
+    /**
+     * Restaura um registro deletado (soft delete)
+     * 
+     * @param int $id ID do registro
+     * @return bool Sucesso da operação
+     * @throws \RuntimeException Se soft deletes não estiver ativo
+     */
+    public function restore(int $id): bool
+    {
+        if (!$this->usesSoftDeletes) {
+            throw new \RuntimeException("Soft deletes não está ativo para este model");
+        }
+        
+        return $this->update($id, ['deleted_at' => null]);
+    }
+    
+    /**
+     * Busca registros incluindo os deletados (soft delete)
+     * 
+     * @param array $conditions Condições WHERE
+     * @param array $orderBy Ordenação
+     * @param int|null $limit Limite
+     * @param int $offset Offset
+     * @return array Lista de registros
+     */
+    public function withTrashed(array $conditions = [], array $orderBy = [], int $limit = null, int $offset = 0): array
+    {
+        if (!$this->usesSoftDeletes) {
+            // Se não usa soft deletes, retorna findAll normal
+            return $this->findAll($conditions, $orderBy, $limit, $offset);
+        }
+        
+        // Busca todos, incluindo deletados (ignora condição deleted_at)
+        $sql = "SELECT * FROM {$this->table}";
+        $params = [];
+        
+        if (!empty($conditions)) {
+            $where = [];
+            foreach ($conditions as $key => $value) {
+                // Ignora deleted_at se presente nas condições
+                if ($key === 'deleted_at') {
+                    continue;
+                }
+                
+                if ($key === 'OR') {
+                    $orConditions = [];
+                    foreach ($value as $orKey => $orValue) {
+                        if (strpos($orKey, ' LIKE') !== false) {
+                            $field = str_replace(' LIKE', '', $orKey);
+                            $paramKey = 'or_' . str_replace('.', '_', $field);
+                            $orConditions[] = "{$field} LIKE :{$paramKey}";
+                            $params[$paramKey] = $orValue;
+                        } else {
+                            $paramKey = 'or_' . str_replace('.', '_', $orKey);
+                            $orConditions[] = "{$orKey} = :{$paramKey}";
+                            $params[$paramKey] = $orValue;
+                        }
+                    }
+                    $where[] = '(' . implode(' OR ', $orConditions) . ')';
+                } elseif (strpos($key, ' LIKE') !== false) {
+                    $field = str_replace(' LIKE', '', $key);
+                    $paramKey = str_replace('.', '_', $field);
+                    $where[] = "{$field} LIKE :{$paramKey}";
+                    $params[$paramKey] = $value;
+                } else {
+                    $paramKey = str_replace('.', '_', $key);
+                    $where[] = "{$key} = :{$paramKey}";
+                    $params[$paramKey] = $value;
+                }
+            }
+            if (!empty($where)) {
+                $sql .= " WHERE " . implode(' AND ', $where);
+            }
+        }
+        
+        if (!empty($orderBy)) {
+            $order = [];
+            $allowedFields = $this->getAllowedOrderFields();
+            $allowedDirections = ['ASC', 'DESC'];
+            
+            foreach ($orderBy as $field => $direction) {
+                if (!empty($allowedFields) && !in_array($field, $allowedFields, true)) {
+                    continue;
+                }
+                
+                $field = preg_replace('/[^a-zA-Z0-9_]/', '', $field);
+                if (empty($field)) {
+                    continue;
+                }
+                
+                $direction = strtoupper(trim($direction));
+                if (!in_array($direction, $allowedDirections, true)) {
+                    $direction = 'ASC';
+                }
+                
+                $order[] = "`{$field}` {$direction}";
+            }
+            
+            if (!empty($order)) {
+                $sql .= " ORDER BY " . implode(', ', $order);
+            }
+        }
+        
+        if ($limit !== null) {
+            $sql .= " LIMIT :limit";
+            if ($offset > 0) {
+                $sql .= " OFFSET :offset";
+            }
+        }
+        
+        $stmt = $this->db->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":{$key}", $value);
+        }
+        
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            if ($offset > 0) {
+                $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            }
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Busca apenas registros deletados (soft delete)
+     * 
+     * @param array $conditions Condições WHERE adicionais
+     * @param array $orderBy Ordenação
+     * @param int|null $limit Limite
+     * @param int $offset Offset
+     * @return array Lista de registros deletados
+     */
+    public function onlyTrashed(array $conditions = [], array $orderBy = [], int $limit = null, int $offset = 0): array
+    {
+        if (!$this->usesSoftDeletes) {
+            // Se não usa soft deletes, retorna array vazio
+            return [];
+        }
+        
+        // Adiciona condição para buscar apenas deletados
+        $conditions['deleted_at'] = ['IS NOT', null];
+        
+        // Usa método findAll mas com condição modificada
+        $sql = "SELECT * FROM {$this->table}";
+        $params = [];
+        
+        $where = ["deleted_at IS NOT NULL"];
+        
+        if (!empty($conditions)) {
+            foreach ($conditions as $key => $value) {
+                if ($key === 'deleted_at') {
+                    continue; // Já adicionado acima
+                }
+                
+                if ($key === 'OR') {
+                    $orConditions = [];
+                    foreach ($value as $orKey => $orValue) {
+                        if (strpos($orKey, ' LIKE') !== false) {
+                            $field = str_replace(' LIKE', '', $orKey);
+                            $paramKey = 'or_' . str_replace('.', '_', $field);
+                            $orConditions[] = "{$field} LIKE :{$paramKey}";
+                            $params[$paramKey] = $orValue;
+                        } else {
+                            $paramKey = 'or_' . str_replace('.', '_', $orKey);
+                            $orConditions[] = "{$orKey} = :{$paramKey}";
+                            $params[$paramKey] = $orValue;
+                        }
+                    }
+                    $where[] = '(' . implode(' OR ', $orConditions) . ')';
+                } elseif (strpos($key, ' LIKE') !== false) {
+                    $field = str_replace(' LIKE', '', $key);
+                    $paramKey = str_replace('.', '_', $field);
+                    $where[] = "{$field} LIKE :{$paramKey}";
+                    $params[$paramKey] = $value;
+                } else {
+                    $paramKey = str_replace('.', '_', $key);
+                    $where[] = "{$key} = :{$paramKey}";
+                    $params[$paramKey] = $value;
+                }
+            }
+        }
+        
+        $sql .= " WHERE " . implode(' AND ', $where);
+        
+        if (!empty($orderBy)) {
+            $order = [];
+            $allowedFields = $this->getAllowedOrderFields();
+            $allowedDirections = ['ASC', 'DESC'];
+            
+            foreach ($orderBy as $field => $direction) {
+                if (!empty($allowedFields) && !in_array($field, $allowedFields, true)) {
+                    continue;
+                }
+                
+                $field = preg_replace('/[^a-zA-Z0-9_]/', '', $field);
+                if (empty($field)) {
+                    continue;
+                }
+                
+                $direction = strtoupper(trim($direction));
+                if (!in_array($direction, $allowedDirections, true)) {
+                    $direction = 'ASC';
+                }
+                
+                $order[] = "`{$field}` {$direction}";
+            }
+            
+            if (!empty($order)) {
+                $sql .= " ORDER BY " . implode(', ', $order);
+            }
+        }
+        
+        if ($limit !== null) {
+            $sql .= " LIMIT :limit";
+            if ($offset > 0) {
+                $sql .= " OFFSET :offset";
+            }
+        }
+        
+        $stmt = $this->db->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":{$key}", $value);
+        }
+        
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            if ($offset > 0) {
+                $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            }
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
 
     /**
      * Busca um registro por campo único
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados se soft deletes estiver ativo
      */
     public function findBy(string $field, $value): ?array
     {
@@ -525,7 +821,16 @@ abstract class BaseModel
             return null;
         }
         
-        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE `{$field}` = :value LIMIT 1");
+        $sql = "SELECT * FROM {$this->table} WHERE `{$field}` = :value";
+        
+        // Se soft deletes estiver ativo, exclui registros deletados
+        if ($this->usesSoftDeletes) {
+            $sql .= " AND deleted_at IS NULL";
+        }
+        
+        $sql .= " LIMIT 1";
+        
+        $stmt = $this->db->prepare($sql);
         $stmt->execute(['value' => $value]);
         $result = $stmt->fetch();
 

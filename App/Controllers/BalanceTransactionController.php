@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -113,30 +115,24 @@ class BalanceTransactionController
                 ];
             }
             
-            Flight::json([
-                'success' => true,
-                'data' => $formattedTransactions,
+            ResponseHelper::sendSuccess([
+                'balance_transactions' => $formattedTransactions,
                 'has_more' => $balanceTransactions->has_more,
                 'count' => count($formattedTransactions)
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao listar balance transactions", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar balance transactions',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar balance transactions',
+                ['action' => 'list_balance_transactions', 'tenant_id' => Flight::get('tenant_id')]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao listar balance transactions", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar balance transactions',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar balance transactions',
+                'BALANCE_TRANSACTION_LIST_ERROR',
+                ['action' => 'list_balance_transactions', 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 
@@ -157,8 +153,14 @@ class BalanceTransactionController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('view_balance_transactions');
             
-            if (empty($id)) {
-                Flight::halt(400, json_encode(['error' => 'ID da balance transaction é obrigatório']));
+            // Valida ID
+            $idErrors = Validator::validateStripeId($id, 'balance_transaction_id');
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID da balance transaction inválido',
+                    $idErrors,
+                    ['action' => 'get_balance_transaction', 'balance_transaction_id' => $id]
+                );
                 return;
             }
 
@@ -330,39 +332,25 @@ class BalanceTransactionController
                 }
             }
             
-            Flight::json([
-                'success' => true,
-                'data' => $data
-            ]);
+            ResponseHelper::sendSuccess($data);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao obter balance transaction", [
-                'balance_transaction_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            
             // Se não encontrado, retorna 404
             if ($e->getHttpStatus() === 404) {
-                Flight::json([
-                    'error' => 'Balance transaction não encontrada',
-                    'message' => $e->getMessage()
-                ], 404);
+                ResponseHelper::sendNotFoundError('Balance transaction', ['action' => 'get_balance_transaction', 'balance_transaction_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
             } else {
-                Flight::json([
-                    'error' => 'Erro ao obter balance transaction',
-                    'message' => $e->getMessage()
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter balance transaction',
+                    ['action' => 'get_balance_transaction', 'balance_transaction_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao obter balance transaction", [
-                'balance_transaction_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id')
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter balance transaction',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter balance transaction',
+                'BALANCE_TRANSACTION_GET_ERROR',
+                ['action' => 'get_balance_transaction', 'balance_transaction_id' => $id, 'tenant_id' => Flight::get('tenant_id')]
+            );
         }
     }
 }

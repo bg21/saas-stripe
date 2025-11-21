@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Models\AuditLog;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -47,7 +48,7 @@ class AuditLogController
             $tenantId = Flight::get('tenant_id');
             
             if (!$isMaster && $tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_audit_logs']);
                 return;
             }
 
@@ -91,9 +92,8 @@ class AuditLogController
                 $total = $this->auditLogModel->countByTenant($tenantId, $filters);
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $logs,
+            ResponseHelper::sendSuccess([
+                'logs' => $logs,
                 'pagination' => [
                     'total' => $total,
                     'limit' => $limit,
@@ -103,14 +103,12 @@ class AuditLogController
                 'filters' => $filters
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar logs de auditoria", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar logs de auditoria',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar logs de auditoria',
+                'AUDIT_LOG_LIST_ERROR',
+                ['action' => 'list_audit_logs', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -133,7 +131,7 @@ class AuditLogController
             $logId = $id;
             
             if (!$isMaster && $tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_audit_logs']);
                 return;
             }
 
@@ -141,32 +139,24 @@ class AuditLogController
             $log = $this->auditLogModel->findById((int) $logId);
 
             if ($log === null) {
-                http_response_code(404);
-                Flight::json(['error' => 'Log não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Log de auditoria', ['action' => 'get_audit_log', 'log_id' => $logId, 'tenant_id' => $tenantId]);
                 return;
             }
 
             // Verifica se o log pertence ao tenant (a menos que seja master key)
             if (!$isMaster && (int) $log['tenant_id'] !== (int) $tenantId) {
-                http_response_code(403);
-                Flight::json(['error' => 'Acesso negado'], 403);
+                ResponseHelper::sendForbiddenError('Acesso negado. Este log não pertence ao seu tenant.', ['action' => 'get_audit_log', 'log_id' => $logId, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => $log
-            ]);
+            ResponseHelper::sendSuccess($log);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter log de auditoria", [
-                'error' => $e->getMessage(),
-                'log_id' => $logId ?? null,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter log de auditoria',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter log de auditoria',
+                'AUDIT_LOG_GET_ERROR',
+                ['action' => 'get_audit_log', 'log_id' => $logId ?? null, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

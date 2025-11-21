@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Services\StripeService;
 use App\Services\Logger;
 use App\Utils\PermissionHelper;
+use App\Utils\ResponseHelper;
+use App\Utils\Validator;
 use Flight;
 use Config;
 
@@ -44,7 +46,7 @@ class PayoutController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_payouts']);
                 return;
             }
 
@@ -127,28 +129,24 @@ class PayoutController
                 ];
             }
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess([
+                'payouts' => $response['data'],
+                'has_more' => $response['has_more'],
+                'count' => $response['count']
+            ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao listar payouts", [
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao listar payouts',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar payouts',
+                ['action' => 'list_payouts', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao listar payouts", [
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao listar payouts',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar payouts',
+                'PAYOUT_LIST_ERROR',
+                ['action' => 'list_payouts', 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -165,12 +163,18 @@ class PayoutController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_payouts']);
                 return;
             }
             
-            if (empty($id)) {
-                Flight::halt(400, json_encode(['error' => 'ID do payout é obrigatório']));
+            // Valida ID
+            $idErrors = Validator::validateStripeId($id, 'payout_id');
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID do payout inválido',
+                    $idErrors,
+                    ['action' => 'get_payout', 'payout_id' => $id]
+                );
                 return;
             }
 
@@ -201,38 +205,25 @@ class PayoutController
                 ]
             ];
 
-            Flight::json($response);
+            ResponseHelper::sendSuccess($response['data']);
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao obter payout", [
-                'payout_id' => $id,
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            
             // Se não encontrado, retorna 404
             if ($e->getHttpStatus() === 404) {
-                Flight::json([
-                    'error' => 'Payout não encontrado',
-                    'message' => $e->getMessage()
-                ], 404);
+                ResponseHelper::sendNotFoundError('Payout', ['action' => 'get_payout', 'payout_id' => $id, 'tenant_id' => Flight::get('tenant_id')]);
             } else {
-                Flight::json([
-                    'error' => 'Erro ao obter payout',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter payout',
+                    ['action' => 'get_payout', 'payout_id' => $id, 'tenant_id' => Flight::get('tenant_id') ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao obter payout", [
-                'payout_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => Flight::get('tenant_id') ?? null
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao obter payout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter payout',
+                'PAYOUT_GET_ERROR',
+                ['action' => 'get_payout', 'payout_id' => $id, 'tenant_id' => Flight::get('tenant_id') ?? null]
+            );
         }
     }
 
@@ -257,7 +248,7 @@ class PayoutController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_payouts']);
                 return;
             }
 
@@ -267,20 +258,43 @@ class PayoutController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_payout', 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
             }
 
-            // Validações obrigatórias
+            // ✅ Validação consistente
+            $errors = [];
             if (empty($data['amount']) || !is_numeric($data['amount'])) {
-                Flight::json(['error' => 'Campo amount é obrigatório e deve ser numérico'], 400);
-                return;
+                $errors['amount'] = 'Obrigatório e deve ser numérico';
+            } else {
+                $amount = (int)$data['amount'];
+                if ($amount < 1) {
+                    $errors['amount'] = 'Deve ser maior que zero';
+                }
             }
 
             if (empty($data['currency'])) {
-                Flight::json(['error' => 'Campo currency é obrigatório'], 400);
+                $errors['currency'] = 'Obrigatório';
+            } elseif (!is_string($data['currency']) || strlen($data['currency']) !== 3) {
+                $errors['currency'] = 'Deve ser um código de moeda válido (3 letras, ex: BRL, USD)';
+            }
+            
+            // Valida metadata se fornecido
+            if (isset($data['metadata'])) {
+                $metadataErrors = Validator::validateMetadata($data['metadata'], 'metadata');
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_payout', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -293,54 +307,39 @@ class PayoutController
             // Cria payout
             $payout = $this->stripeService->createPayout($data);
 
-            // Prepara resposta
-            Flight::json([
-                'success' => true,
-                'message' => 'Payout criado com sucesso',
-                'data' => [
-                    'id' => $payout->id,
-                    'amount' => $payout->amount,
-                    'amount_formatted' => number_format($payout->amount / 100, 2, ',', '.'),
-                    'currency' => strtoupper($payout->currency),
-                    'status' => $payout->status,
-                    'arrival_date' => $payout->arrival_date ? date('Y-m-d H:i:s', $payout->arrival_date) : null,
-                    'created' => date('Y-m-d H:i:s', $payout->created),
-                    'description' => $payout->description ?? null,
-                    'destination' => $payout->destination ?? null,
-                    'method' => $payout->method ?? null,
-                    'type' => $payout->type ?? null,
-                    'metadata' => $payout->metadata->toArray()
-                ]
-            ], 201);
+            ResponseHelper::sendCreated([
+                'id' => $payout->id,
+                'amount' => $payout->amount,
+                'amount_formatted' => number_format($payout->amount / 100, 2, ',', '.'),
+                'currency' => strtoupper($payout->currency),
+                'status' => $payout->status,
+                'arrival_date' => $payout->arrival_date ? date('Y-m-d H:i:s', $payout->arrival_date) : null,
+                'created' => date('Y-m-d H:i:s', $payout->created),
+                'description' => $payout->description ?? null,
+                'destination' => $payout->destination ?? null,
+                'method' => $payout->method ?? null,
+                'type' => $payout->type ?? null,
+                'metadata' => $payout->metadata->toArray()
+            ], 'Payout criado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao criar payout", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'create_payout', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao criar payout", [
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar payout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao criar payout',
+                ['action' => 'create_payout', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao criar payout", [
-                'error' => $e->getMessage(),
-                'trace' => Config::isDevelopment() ? $e->getTraceAsString() : null,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao criar payout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar payout',
+                'PAYOUT_CREATE_ERROR',
+                ['action' => 'create_payout', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -357,73 +356,62 @@ class PayoutController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_payouts']);
                 return;
             }
             
-            if (empty($id)) {
-                Flight::halt(400, json_encode(['error' => 'ID do payout é obrigatório']));
+            // Valida ID
+            $idErrors = Validator::validateStripeId($id, 'payout_id');
+            if (!empty($idErrors)) {
+                ResponseHelper::sendValidationError(
+                    'ID do payout inválido',
+                    $idErrors,
+                    ['action' => 'get_payout', 'payout_id' => $id]
+                );
                 return;
             }
 
             // Cancela payout
             $payout = $this->stripeService->cancelPayout($id);
 
-            // Prepara resposta
-            Flight::json([
-                'success' => true,
-                'message' => 'Payout cancelado com sucesso',
-                'data' => [
-                    'id' => $payout->id,
-                    'amount' => $payout->amount,
-                    'amount_formatted' => number_format($payout->amount / 100, 2, ',', '.'),
-                    'currency' => strtoupper($payout->currency),
-                    'status' => $payout->status,
-                    'arrival_date' => $payout->arrival_date ? date('Y-m-d H:i:s', $payout->arrival_date) : null,
-                    'created' => date('Y-m-d H:i:s', $payout->created),
-                    'description' => $payout->description ?? null,
-                    'destination' => $payout->destination ?? null,
-                    'method' => $payout->method ?? null,
-                    'type' => $payout->type ?? null,
-                    'metadata' => $payout->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $payout->id,
+                'amount' => $payout->amount,
+                'amount_formatted' => number_format($payout->amount / 100, 2, ',', '.'),
+                'currency' => strtoupper($payout->currency),
+                'status' => $payout->status,
+                'arrival_date' => $payout->arrival_date ? date('Y-m-d H:i:s', $payout->arrival_date) : null,
+                'created' => date('Y-m-d H:i:s', $payout->created),
+                'description' => $payout->description ?? null,
+                'destination' => $payout->destination ?? null,
+                'method' => $payout->method ?? null,
+                'type' => $payout->type ?? null,
+                'metadata' => $payout->metadata->toArray()
+            ], 200, 'Payout cancelado com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            Logger::error("Erro ao cancelar payout", [
-                'payout_id' => $id,
-                'error' => $e->getMessage(),
-                'stripe_error' => $e->getStripeCode(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            
             // Se não encontrado, retorna 404
             if ($e->getHttpStatus() === 404) {
-                Flight::json([
-                    'error' => 'Payout não encontrado',
-                    'message' => $e->getMessage()
-                ], 404);
+                ResponseHelper::sendNotFoundError('Payout', ['action' => 'cancel_payout', 'payout_id' => $id, 'tenant_id' => $tenantId]);
             } elseif ($e->getStripeCode() === 'payout_cannot_be_canceled') {
-                Flight::json([
-                    'error' => 'Payout não pode ser cancelado',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : 'Apenas payouts pendentes podem ser cancelados'
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Payout não pode ser cancelado',
+                    ['payout_id' => 'Apenas payouts pendentes podem ser cancelados'],
+                    ['action' => 'cancel_payout', 'payout_id' => $id, 'tenant_id' => $tenantId]
+                );
             } else {
-                Flight::json([
-                    'error' => 'Erro ao cancelar payout',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao cancelar payout',
+                    ['action' => 'cancel_payout', 'payout_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro inesperado ao cancelar payout", [
-                'payout_id' => $id,
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            
-            Flight::json([
-                'error' => 'Erro ao cancelar payout',
-                'message' => Config::isDevelopment() ? $e->getMessage() : 'Erro ao processar requisição'
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao cancelar payout',
+                'PAYOUT_CANCEL_ERROR',
+                ['action' => 'cancel_payout', 'payout_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

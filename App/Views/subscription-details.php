@@ -128,6 +128,24 @@ if (!subscriptionId) {
     window.location.href = '/subscriptions';
 }
 
+// ✅ Valida formato de subscription_id da URL
+if (typeof validateStripeId === 'function') {
+    const subscriptionIdError = validateStripeId(subscriptionId, 'subscription_id', true);
+    if (subscriptionIdError) {
+        showAlert('ID de assinatura inválido na URL: ' + subscriptionIdError, 'danger');
+        window.location.href = '/subscriptions';
+        throw new Error('Invalid subscription_id format');
+    }
+} else {
+    // Fallback: validação básica
+    const subscriptionIdPattern = /^sub_[a-zA-Z0-9]+$/;
+    if (!subscriptionIdPattern.test(subscriptionId)) {
+        showAlert('Formato de Subscription ID inválido na URL. Use: sub_xxxxx', 'danger');
+        window.location.href = '/subscriptions';
+        throw new Error('Invalid subscription_id format');
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadSubscriptionDetails();
 });
@@ -249,6 +267,23 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
 
     const priceId = document.getElementById('editSubscriptionPrice').value;
     if (priceId) {
+        // ✅ Valida formato de price_id se validations.js estiver disponível
+        if (typeof validateStripeId === 'function') {
+            const priceIdError = validateStripeId(priceId, 'price_id', false);
+            if (priceIdError) {
+                showAlert(priceIdError, 'danger');
+                document.getElementById('editSubscriptionPrice').classList.add('is-invalid');
+                return;
+            }
+        } else {
+            // Fallback: validação básica
+            const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+            if (!priceIdPattern.test(priceId)) {
+                showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+                document.getElementById('editSubscriptionPrice').classList.add('is-invalid');
+                return;
+            }
+        }
         formData.price_id = priceId;
     }
 

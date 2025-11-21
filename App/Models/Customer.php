@@ -8,13 +8,32 @@ namespace App\Models;
 class Customer extends BaseModel
 {
     protected string $table = 'customers';
+    protected bool $usesSoftDeletes = true; // ✅ Ativa soft deletes
 
     /**
      * Busca cliente por Stripe Customer ID
+     * ✅ SOFT DELETES: Exclui automaticamente registros deletados
      */
     public function findByStripeId(string $stripeCustomerId): ?array
     {
         return $this->findBy('stripe_customer_id', $stripeCustomerId);
+    }
+    
+    /**
+     * Busca cliente por Stripe Customer ID incluindo deletados
+     * 
+     * @param string $stripeCustomerId ID do Stripe Customer
+     * @return array|null Cliente encontrado ou null
+     */
+    public function findByStripeIdWithTrashed(string $stripeCustomerId): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM {$this->table} WHERE stripe_customer_id = :stripe_customer_id LIMIT 1"
+        );
+        $stmt->execute(['stripe_customer_id' => $stripeCustomerId]);
+        $result = $stmt->fetch();
+        
+        return $result ?: null;
     }
 
     /**
@@ -93,9 +112,17 @@ class Customer extends BaseModel
 
     /**
      * Cria ou atualiza cliente
+     * ✅ VALIDAÇÃO: Valida se tenant_id existe antes de criar
      */
     public function createOrUpdate(int $tenantId, string $stripeCustomerId, array $data): int
     {
+        // ✅ Validação de relacionamento: verifica se tenant existe
+        $tenantModel = new Tenant();
+        $tenant = $tenantModel->findById($tenantId);
+        if (!$tenant) {
+            throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
+        }
+        
         $existing = $this->findByStripeId($stripeCustomerId);
 
         $customerData = [

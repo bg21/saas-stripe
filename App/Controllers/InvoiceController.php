@@ -4,6 +4,8 @@ namespace App\Controllers;
 
 use App\Services\StripeService;
 use App\Services\Logger;
+use App\Utils\ResponseHelper;
+use App\Utils\ErrorHandler;
 use Flight;
 use Config;
 
@@ -28,31 +30,22 @@ class InvoiceController
         try {
             $invoice = $this->stripeService->getInvoice($id);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $invoice->id,
-                    'customer' => $invoice->customer,
-                    'amount_paid' => $invoice->amount_paid / 100,
-                    'amount_due' => $invoice->amount_due / 100,
-                    'currency' => strtoupper($invoice->currency),
-                    'status' => $invoice->status,
-                    'paid' => $invoice->paid,
-                    'invoice_pdf' => $invoice->invoice_pdf,
-                    'hosted_invoice_url' => $invoice->hosted_invoice_url,
-                    'created' => date('Y-m-d H:i:s', $invoice->created)
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $invoice->id,
+                'customer' => $invoice->customer,
+                'amount_paid' => $invoice->amount_paid / 100,
+                'amount_due' => $invoice->amount_due / 100,
+                'currency' => strtoupper($invoice->currency),
+                'status' => $invoice->status,
+                'paid' => $invoice->paid,
+                'invoice_pdf' => $invoice->invoice_pdf,
+                'hosted_invoice_url' => $invoice->hosted_invoice_url,
+                'created' => date('Y-m-d H:i:s', $invoice->created)
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Fatura não encontrada", ['invoice_id' => $id]);
-            http_response_code(404);
-            Flight::json(['error' => 'Fatura não encontrada'], 404);
+            ResponseHelper::sendNotFoundError('Fatura', ['action' => 'get_invoice', 'invoice_id' => $id]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter fatura", ['error' => $e->getMessage()]);
-            Flight::json([
-                'error' => 'Erro ao obter fatura',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao obter fatura', 'INVOICE_GET_ERROR', ['action' => 'get_invoice', 'invoice_id' => $id]);
         }
     }
 }

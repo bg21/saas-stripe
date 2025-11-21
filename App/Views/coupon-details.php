@@ -124,6 +124,12 @@ function renderCouponInfo(coupon) {
 }
 
 async function deleteCoupon() {
+    // ✅ Validação básica: cupom ID não pode estar vazio
+    if (!couponId || couponId.trim() === '') {
+        showAlert('ID do cupom inválido', 'danger');
+        return;
+    }
+    
     const confirmed = await showConfirmModal(
         'Tem certeza que deseja remover este cupom? Esta ação não pode ser desfeita.',
         'Confirmar Exclusão',

@@ -8,6 +8,7 @@ use App\Services\Logger;
 use App\Utils\PermissionHelper;
 use App\Utils\Validator;
 use App\Utils\ErrorHandler;
+use App\Utils\ResponseHelper;
 use Flight;
 use Config;
 
@@ -50,7 +51,7 @@ class SubscriptionController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'create_subscription']);
                     return;
                 }
                 $data = [];
@@ -60,11 +61,11 @@ class SubscriptionController
             // Validação rigorosa de inputs
             $errors = Validator::validateSubscriptionCreate($data);
             if (!empty($errors)) {
-                Flight::json([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Por favor, verifique os dados informados',
-                    'errors' => $errors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'create_subscription', 'tenant_id' => $tenantId]
+                );
                 return;
             }
 
@@ -81,16 +82,11 @@ class SubscriptionController
             // ✅ Invalida cache de listagem
             \App\Services\CacheService::invalidateSubscriptionCache($tenantId);
 
-            Flight::json([
-                'success' => true,
-                'data' => $subscription
-            ], 201);
+            ResponseHelper::sendCreated($subscription, 'Assinatura criada com sucesso');
         } catch (\Stripe\Exception\ApiErrorException $e) {
-            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao criar assinatura no Stripe');
-            Flight::json($response, 500);
+            ResponseHelper::sendStripeError($e, 'Erro ao criar assinatura no Stripe', ['action' => 'create_subscription', 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao criar assinatura', 'SUBSCRIPTION_CREATE_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao criar assinatura', 'SUBSCRIPTION_CREATE_ERROR', ['action' => 'create_subscription', 'tenant_id' => $tenantId]);
         }
     }
 
@@ -182,10 +178,11 @@ class SubscriptionController
             // Valida ID
             $idErrors = Validator::validateId($id, 'id');
             if (!empty($idErrors)) {
-                Flight::json([
-                    'error' => 'ID inválido',
-                    'errors' => $idErrors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'ID inválido',
+                    $idErrors,
+                    ['action' => 'cancel_subscription', 'subscription_id' => $id]
+                );
                 return;
             }
             
@@ -193,7 +190,7 @@ class SubscriptionController
             
             // VALIDAÇÃO RIGOROSA: tenant_id não pode ser null
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_subscription', 'subscription_id' => $id]);
                 return;
             }
             
@@ -203,7 +200,7 @@ class SubscriptionController
             $subscription = $subscriptionModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$subscription) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -270,10 +267,9 @@ class SubscriptionController
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Logger::warning("Assinatura não encontrada no Stripe", ['subscription_id' => (int)$id]);
-            Flight::json(['error' => 'Assinatura não encontrada'], 404);
+            ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao obter assinatura', 'SUBSCRIPTION_GET_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao obter assinatura', 'SUBSCRIPTION_GET_ERROR', ['action' => 'get_subscription', 'subscription_id' => $id]);
         }
     }
 
@@ -299,10 +295,11 @@ class SubscriptionController
             // Valida ID
             $idErrors = Validator::validateId($id, 'id');
             if (!empty($idErrors)) {
-                Flight::json([
-                    'error' => 'ID inválido',
-                    'errors' => $idErrors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'ID inválido',
+                    $idErrors,
+                    ['action' => 'cancel_subscription', 'subscription_id' => $id]
+                );
                 return;
             }
             
@@ -312,7 +309,7 @@ class SubscriptionController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_subscription', 'subscription_id' => $id]);
                     return;
                 }
                 $data = [];
@@ -322,11 +319,11 @@ class SubscriptionController
             // Validação rigorosa de inputs
             $errors = Validator::validateSubscriptionUpdate($data);
             if (!empty($errors)) {
-                Flight::json([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Por favor, verifique os dados informados',
-                    'errors' => $errors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'update_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -341,13 +338,17 @@ class SubscriptionController
             }
 
             if (!$hasUpdates) {
-                Flight::json(['error' => 'Nenhum campo válido para atualização fornecido'], 400);
+                ResponseHelper::sendValidationError(
+                    'Nenhum campo válido para atualização fornecido',
+                    [],
+                    ['action' => 'update_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
             // VALIDAÇÃO RIGOROSA: tenant_id não pode ser null
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'update_subscription', 'subscription_id' => $id]);
                 return;
             }
             
@@ -357,7 +358,7 @@ class SubscriptionController
             $subscription = $subscriptionModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$subscription) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -424,33 +425,27 @@ class SubscriptionController
             // ✅ Invalida cache de listagem e cache específico
             \App\Services\CacheService::invalidateSubscriptionCache($tenantId, (int)$id);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Assinatura atualizada com sucesso',
-                'data' => [
-                    'id' => $updatedSubscription['id'],
-                    'stripe_subscription_id' => $stripeSubscription->id,
-                    'status' => $stripeSubscription->status,
-                    'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
-                    'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
-                    'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
-                    'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null,
-                    'items' => array_map(function($item) {
-                        return [
-                            'id' => $item->id,
-                            'price_id' => $item->price->id,
-                            'quantity' => $item->quantity
-                        ];
-                    }, $stripeSubscription->items->data),
-                    'metadata' => $stripeSubscription->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $updatedSubscription['id'],
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'status' => $stripeSubscription->status,
+                'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
+                'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
+                'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
+                'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null,
+                'items' => array_map(function($item) {
+                    return [
+                        'id' => $item->id,
+                        'price_id' => $item->price->id,
+                        'quantity' => $item->quantity
+                    ];
+                }, $stripeSubscription->items->data),
+                'metadata' => $stripeSubscription->metadata->toArray()
+            ], 200, 'Assinatura atualizada com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao atualizar assinatura no Stripe');
-            Flight::json($response, 400);
+            ResponseHelper::sendStripeError($e, 'Erro ao atualizar assinatura no Stripe', ['action' => 'update_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao atualizar assinatura', 'SUBSCRIPTION_UPDATE_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao atualizar assinatura', 'SUBSCRIPTION_UPDATE_ERROR', ['action' => 'update_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -467,10 +462,11 @@ class SubscriptionController
             // Valida ID
             $idErrors = Validator::validateId($id, 'id');
             if (!empty($idErrors)) {
-                Flight::json([
-                    'error' => 'ID inválido',
-                    'errors' => $idErrors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'ID inválido',
+                    $idErrors,
+                    ['action' => 'cancel_subscription', 'subscription_id' => $id]
+                );
                 return;
             }
             
@@ -478,7 +474,7 @@ class SubscriptionController
             
             // VALIDAÇÃO RIGOROSA: tenant_id não pode ser null
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_subscription', 'subscription_id' => $id]);
                 return;
             }
             
@@ -488,7 +484,7 @@ class SubscriptionController
             $subscription = $subscriptionModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$subscription) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -537,23 +533,18 @@ class SubscriptionController
             // ✅ Invalida cache de listagem e cache específico
             \App\Services\CacheService::invalidateSubscriptionCache($tenantId, (int)$id);
 
-            Flight::json([
-                'success' => true,
-                'message' => $immediately 
-                    ? 'Assinatura cancelada imediatamente' 
-                    : 'Assinatura será cancelada no final do período',
-                'data' => [
-                    'id' => $updatedSubscription['id'],
-                    'stripe_subscription_id' => $stripeSubscription->id,
-                    'status' => $stripeSubscription->status,
-                    'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
-                    'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null,
-                    'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $updatedSubscription['id'],
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'status' => $stripeSubscription->status,
+                'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
+                'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null,
+                'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null
+            ], 200, $immediately 
+                ? 'Assinatura cancelada imediatamente' 
+                : 'Assinatura será cancelada no final do período');
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao cancelar assinatura', 'SUBSCRIPTION_CANCEL_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao cancelar assinatura', 'SUBSCRIPTION_CANCEL_ERROR', ['action' => 'cancel_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -575,10 +566,11 @@ class SubscriptionController
             // Valida ID
             $idErrors = Validator::validateId($id, 'id');
             if (!empty($idErrors)) {
-                Flight::json([
-                    'error' => 'ID inválido',
-                    'errors' => $idErrors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'ID inválido',
+                    $idErrors,
+                    ['action' => 'cancel_subscription', 'subscription_id' => $id]
+                );
                 return;
             }
             
@@ -586,7 +578,7 @@ class SubscriptionController
             
             // VALIDAÇÃO RIGOROSA: tenant_id não pode ser null
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_subscription', 'subscription_id' => $id]);
                 return;
             }
             
@@ -596,7 +588,7 @@ class SubscriptionController
             $subscription = $subscriptionModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$subscription) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -605,11 +597,11 @@ class SubscriptionController
             
             // Valida se pode ser reativada
             if ($currentStripeSubscription->status === 'canceled') {
-                http_response_code(400);
-                Flight::json([
-                    'error' => 'Assinatura já está cancelada',
-                    'message' => 'Assinaturas canceladas não podem ser reativadas. Crie uma nova assinatura.'
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'Assinaturas canceladas não podem ser reativadas. Crie uma nova assinatura.',
+                    ['status' => 'Assinatura já está cancelada'],
+                    ['action' => 'reactivate_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId, 'current_status' => 'canceled']
+                );
                 return;
             }
 
@@ -713,10 +705,11 @@ class SubscriptionController
             // Valida ID
             $idErrors = Validator::validateId($id, 'id');
             if (!empty($idErrors)) {
-                Flight::json([
-                    'error' => 'ID inválido',
-                    'errors' => $idErrors
-                ], 400);
+                ResponseHelper::sendValidationError(
+                    'ID inválido',
+                    $idErrors,
+                    ['action' => 'cancel_subscription', 'subscription_id' => $id]
+                );
                 return;
             }
             

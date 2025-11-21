@@ -114,6 +114,24 @@ if (!priceId) {
     window.location.href = '/prices';
 }
 
+// ✅ Valida formato de price_id da URL
+if (typeof validateStripeId === 'function') {
+    const priceIdError = validateStripeId(priceId, 'price_id', true);
+    if (priceIdError) {
+        showAlert('ID de preço inválido na URL: ' + priceIdError, 'danger');
+        window.location.href = '/prices';
+        throw new Error('Invalid price_id format');
+    }
+} else {
+    // Fallback: validação básica
+    const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+    if (!priceIdPattern.test(priceId)) {
+        showAlert('Formato de Price ID inválido na URL. Use: price_xxxxx', 'danger');
+        window.location.href = '/prices';
+        throw new Error('Invalid price_id format');
+    }
+}
+
 let priceData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -193,6 +211,25 @@ document.getElementById('editPriceForm').addEventListener('submit', function(e) 
     e.preventDefault();
     
     const priceId = document.getElementById('editPriceId').value;
+    
+    // ✅ Valida formato de price_id antes de submeter
+    if (typeof validateStripeId === 'function') {
+        const priceIdError = validateStripeId(priceId, 'price_id', true);
+        if (priceIdError) {
+            showAlert(priceIdError, 'danger');
+            document.getElementById('editPriceId').classList.add('is-invalid');
+            return;
+        }
+    } else {
+        // Fallback: validação básica
+        const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
+        if (!priceIdPattern.test(priceId)) {
+            showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+            document.getElementById('editPriceId').classList.add('is-invalid');
+            return;
+        }
+    }
+    
     const formData = {
         active: document.getElementById('editPriceActive').checked
     };
