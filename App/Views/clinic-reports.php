@@ -320,18 +320,27 @@ function loadReports() {
 async function loadDashboard() {
     try {
         const response = await apiRequest('/v1/reports/clinic/dashboard');
-        // A resposta pode vir em response.data ou diretamente em response
-        const data = response.data || response;
+        // A resposta vem em response.data conforme ResponseHelper::sendSuccess
+        const data = response.data;
         
-        // Debug: log da estrutura da resposta
-        console.log('Dashboard response:', response);
-        console.log('Dashboard data:', data);
+        // Valida se os dados existem
+        if (!data) {
+            console.error('Resposta vazia do dashboard:', response);
+            showAlert('Erro: Resposta vazia do servidor', 'warning');
+            return;
+        }
         
-        // Atualiza cards
-        document.getElementById('todayAppointments').textContent = data.today?.total || 0;
-        document.getElementById('weekAppointments').textContent = data.week?.stats?.total || 0;
-        document.getElementById('occupationRate').textContent = (data.week?.occupation_rate || 0) + '%';
-        document.getElementById('upcomingAppointments').textContent = data.upcoming?.total || 0;
+        // Debug: log da estrutura da resposta (apenas em desenvolvimento)
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.log('Dashboard response:', response);
+            console.log('Dashboard data:', data);
+        }
+        
+        // Atualiza cards com valores padrão se não existirem
+        document.getElementById('todayAppointments').textContent = (data.today && data.today.total !== undefined) ? data.today.total : 0;
+        document.getElementById('weekAppointments').textContent = (data.week && data.week.stats && data.week.stats.total !== undefined) ? data.week.stats.total : 0;
+        document.getElementById('occupationRate').textContent = (data.week && data.week.occupation_rate !== undefined) ? data.week.occupation_rate + '%' : '0%';
+        document.getElementById('upcomingAppointments').textContent = (data.upcoming && data.upcoming.total !== undefined) ? data.upcoming.total : 0;
         
         // Estatísticas da semana
         if (data.week) {
