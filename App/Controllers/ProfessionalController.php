@@ -75,7 +75,7 @@ class ProfessionalController
                 }
             }
             
-            ResponseHelper::sendSuccess($professionals, 'Profissionais listados com sucesso');
+            ResponseHelper::sendSuccess($professionals, 200, 'Profissionais listados com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar profissionais', 'PROFESSIONALS_LIST_ERROR', ['action' => 'list_professionals', 'tenant_id' => Flight::get('tenant_id')]);
         }
@@ -181,7 +181,7 @@ class ProfessionalController
                 ];
             }
             
-            ResponseHelper::sendSuccess($professional, 'Profissional obtido com sucesso');
+            ResponseHelper::sendSuccess($professional, 200, 'Profissional obtido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter profissional', 'PROFESSIONAL_GET_ERROR', ['action' => 'get_professional', 'professional_id' => $id]);
         }
@@ -244,7 +244,7 @@ class ProfessionalController
                 $updated['metadata'] = json_decode($updated['metadata'], true);
             }
             
-            ResponseHelper::sendSuccess($updated, 'Profissional atualizado com sucesso');
+            ResponseHelper::sendSuccess($updated, 200, 'Profissional atualizado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao atualizar profissional', 'PROFESSIONAL_UPDATE_ERROR', ['action' => 'update_professional', 'professional_id' => $id]);
         }
@@ -275,7 +275,7 @@ class ProfessionalController
             
             $this->professionalModel->delete($id);
             
-            ResponseHelper::sendSuccess(null, 'Profissional deletado com sucesso');
+            ResponseHelper::sendSuccess(null, 200, 'Profissional deletado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao deletar profissional', 'PROFESSIONAL_DELETE_ERROR', ['action' => 'delete_professional', 'professional_id' => $id]);
         }
