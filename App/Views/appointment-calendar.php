@@ -418,7 +418,9 @@ function applyFilters() {
     currentFilters.status = document.getElementById('statusFilter').value;
     
     // Recarrega eventos com os novos filtros
-    calendar.refetchEvents();
+    if (calendar) {
+        calendar.refetchEvents();
+    }
 }
 
 async function loadProfessionalsForSelect() {
