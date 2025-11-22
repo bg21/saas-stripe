@@ -1460,6 +1460,16 @@ $app->route('GET /specialties', function() use ($app) {
     ], true);
 });
 
+// Rota de relatórios da clínica
+$app->route('GET /clinic-reports', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-reports', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Relatórios da Clínica', 'currentPage' => 'clinic-reports'
+    ], true);
+});
+
 // Rotas de Autenticação (públicas - não precisam de autenticação)
 $authController = new \App\Controllers\AuthController();
 $app->route('POST /v1/auth/login', [$authController, 'login']);
