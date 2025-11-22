@@ -1394,6 +1394,66 @@ $app->route('GET /pet-details', function() use ($app) {
     ], true);
 });
 
+// Rota de agendamentos
+$app->route('GET /appointments', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointments', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Agendamentos', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de detalhes do agendamento
+$app->route('GET /appointment-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointment-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Agendamento', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de calendário de agendamentos
+$app->route('GET /appointment-calendar', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointment-calendar', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Calendário de Agendamentos', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de agenda
+$app->route('GET /schedule', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('schedule', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Agenda', 'currentPage' => 'schedule'
+    ], true);
+});
+
+// Rota de configurações da clínica
+$app->route('GET /clinic-settings', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-settings', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Configurações da Clínica', 'currentPage' => 'clinic-settings'
+    ], true);
+});
+
+// Rota de especialidades
+$app->route('GET /specialties', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('specialties', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Especialidades', 'currentPage' => 'specialties'
+    ], true);
+});
+
 // Rotas de Autenticação (públicas - não precisam de autenticação)
 $authController = new \App\Controllers\AuthController();
 $app->route('POST /v1/auth/login', [$authController, 'login']);
