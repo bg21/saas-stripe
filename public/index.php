@@ -590,6 +590,38 @@ $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
 $swaggerController = new \App\Controllers\SwaggerController();
 
+// Inicializa Services para clínica veterinária
+$scheduleService = new \App\Services\ScheduleService(
+    new \App\Models\ClinicConfiguration(),
+    new \App\Models\Professional(),
+    new \App\Models\ProfessionalSchedule(),
+    new \App\Models\ScheduleBlock(),
+    new \App\Models\Appointment()
+);
+
+$appointmentService = new \App\Services\AppointmentService(
+    new \App\Models\Appointment(),
+    new \App\Models\AppointmentHistory(),
+    new \App\Models\Professional(),
+    new \App\Models\Client(),
+    new \App\Models\Pet(),
+    new \App\Models\ScheduleBlock(),
+    $scheduleService
+);
+
+// Inicializa controllers de clínica veterinária
+$clinicConfigController = new \App\Controllers\ClinicConfigurationController(new \App\Models\ClinicConfiguration());
+$specialtyController = new \App\Controllers\SpecialtyController(new \App\Models\Specialty());
+$professionalController = new \App\Controllers\ProfessionalController(new \App\Models\Professional());
+$clientController = new \App\Controllers\ClientController(new \App\Models\Client());
+$petController = new \App\Controllers\PetController(new \App\Models\Pet());
+$appointmentController = new \App\Controllers\AppointmentController($appointmentService, new \App\Models\Appointment());
+$scheduleController = new \App\Controllers\ScheduleController(
+    $scheduleService,
+    new \App\Models\ProfessionalSchedule(),
+    new \App\Models\ScheduleBlock()
+);
+
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
     $app->json([
@@ -1315,6 +1347,58 @@ $app->route('GET /v1/permissions', [$permissionController, 'listAvailable']);
 $app->route('GET /v1/users/@id/permissions', [$permissionController, 'listUserPermissions']);
 $app->route('POST /v1/users/@id/permissions', [$permissionController, 'grant']);
 $app->route('DELETE /v1/users/@id/permissions/@permission', [$permissionController, 'revoke']);
+
+// Rotas de Configurações da Clínica
+$app->route('GET /v1/clinic/configuration', [$clinicConfigController, 'get']);
+$app->route('PUT /v1/clinic/configuration', [$clinicConfigController, 'update']);
+
+// Rotas de Especialidades
+$app->route('GET /v1/specialties', [$specialtyController, 'list']);
+$app->route('POST /v1/specialties', [$specialtyController, 'create']);
+$app->route('GET /v1/specialties/@id', [$specialtyController, 'get']);
+$app->route('PUT /v1/specialties/@id', [$specialtyController, 'update']);
+$app->route('DELETE /v1/specialties/@id', [$specialtyController, 'delete']);
+
+// Rotas de Profissionais
+$app->route('GET /v1/professionals', [$professionalController, 'list']);
+$app->route('POST /v1/professionals', [$professionalController, 'create']);
+$app->route('GET /v1/professionals/@id', [$professionalController, 'get']);
+$app->route('PUT /v1/professionals/@id', [$professionalController, 'update']);
+$app->route('DELETE /v1/professionals/@id', [$professionalController, 'delete']);
+
+// Rotas de Clientes
+$app->route('GET /v1/clients', [$clientController, 'list']);
+$app->route('POST /v1/clients', [$clientController, 'create']);
+$app->route('GET /v1/clients/@id', [$clientController, 'get']);
+$app->route('PUT /v1/clients/@id', [$clientController, 'update']);
+$app->route('DELETE /v1/clients/@id', [$clientController, 'delete']);
+$app->route('GET /v1/clients/@id/pets', [$clientController, 'listPets']);
+
+// Rotas de Pets
+$app->route('GET /v1/pets', [$petController, 'list']);
+$app->route('POST /v1/pets', [$petController, 'create']);
+$app->route('GET /v1/pets/@id', [$petController, 'get']);
+$app->route('PUT /v1/pets/@id', [$petController, 'update']);
+$app->route('DELETE /v1/pets/@id', [$petController, 'delete']);
+$app->route('GET /v1/pets/@id/appointments', [$petController, 'listAppointments']);
+
+// Rotas de Agendamentos
+$app->route('GET /v1/appointments', [$appointmentController, 'list']);
+$app->route('POST /v1/appointments', [$appointmentController, 'create']);
+$app->route('GET /v1/appointments/@id', [$appointmentController, 'get']);
+$app->route('PUT /v1/appointments/@id', [$appointmentController, 'update']);
+$app->route('DELETE /v1/appointments/@id', [$appointmentController, 'cancel']);
+$app->route('POST /v1/appointments/@id/confirm', [$appointmentController, 'confirm']);
+$app->route('POST /v1/appointments/@id/complete', [$appointmentController, 'complete']);
+$app->route('GET /v1/appointments/available-slots', [$appointmentController, 'getAvailableSlots']);
+$app->route('GET /v1/appointments/@id/history', [$appointmentController, 'getHistory']);
+
+// Rotas de Agenda
+$app->route('GET /v1/professionals/@id/schedule', [$scheduleController, 'getSchedule']);
+$app->route('PUT /v1/professionals/@id/schedule', [$scheduleController, 'updateSchedule']);
+$app->route('GET /v1/professionals/@id/available-slots', [$scheduleController, 'getAvailableSlots']);
+$app->route('POST /v1/professionals/@id/schedule/blocks', [$scheduleController, 'createBlock']);
+$app->route('DELETE /v1/professionals/@id/schedule/blocks/@block_id', [$scheduleController, 'deleteBlock']);
 
 // Tratamento de erros
 $app->map('notFound', function() use ($app, $auditMiddleware) {
