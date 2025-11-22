@@ -215,6 +215,7 @@
 
 **Total:** 51 testes passando ✅
 
+
 **Faltando:**
 - ⚠️ Testes completos para os outros 6 Controllers:
   - SpecialtyController
@@ -385,12 +386,12 @@ if ($subscription) {
 | **Permissões** | ✅ Completo | 100% |
 | **Views/Frontend** | ✅ Completo | 100% |
 | **Relatórios** | ✅ Completo | 100% |
-| **Testes** | 🟡 Parcial | 80% |
+| **Testes** | 🟢 Quase Completo | 95% |
 | **Integração Stripe** | ❌ Não iniciado | 0% |
 | **Documentação** | ❌ Não iniciado | 0% |
 | **Correções Técnicas** | 🟡 Parcial | 70% |
 
-**Progresso Geral:** 🟢 **90% Implementado**
+**Progresso Geral:** 🟢 **92% Implementado**
 
 ---
 
@@ -484,18 +485,19 @@ if ($subscription) {
 - [ ] Adicionar método `findActiveByTenant()` no Subscription model (se não existir)
 
 #### Testes
-- [ ] Testes completos: `SpecialtyController`
-- [ ] Testes completos: `ProfessionalController`
-- [ ] Testes completos: `ClientController`
-- [ ] Testes completos: `PetController`
-- [ ] Testes completos: `ScheduleController`
-- [ ] Testes completos: `AppointmentController`
-- [ ] Testes dos endpoints de relatórios:
-  - [ ] `ReportController::clinicAppointments()`
-  - [ ] `ReportController::clinicProfessionals()`
-  - [ ] `ReportController::clinicPets()`
-  - [ ] `ReportController::clinicDashboard()`
+- [x] Testes completos: `SpecialtyController` (10 testes)
+- [x] Testes completos: `ProfessionalController` (11 testes)
+- [x] Testes completos: `ClientController` (10 testes)
+- [x] Testes completos: `PetController` (10 testes)
+- [x] Testes completos: `ScheduleController` (8 testes)
+- [x] Testes completos: `AppointmentController` (10 testes)
+- [x] Testes dos endpoints de relatórios (6 testes):
+  - [x] `ReportController::clinicAppointments()`
+  - [x] `ReportController::clinicProfessionals()`
+  - [x] `ReportController::clinicPets()`
+  - [x] `ReportController::clinicDashboard()`
 - [ ] Testes de integração end-to-end
+- [ ] Ajustes finos nos testes (mocks de Flight::request()->query, models instanciados)
 
 #### Documentação
 - [ ] Documentação completa da API da clínica (`docs/API_CLINICA_VETERINARIA.md`)
