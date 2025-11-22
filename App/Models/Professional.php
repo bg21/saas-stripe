@@ -72,15 +72,27 @@ class Professional extends BaseModel
      */
     public function createOrUpdate(int $tenantId, array $data): int
     {
-        // Valida tenant
-        $tenant = (new Tenant())->findById($tenantId);
+        // Valida tenant (usa o mesmo banco de dados)
+        $tenantModel = new Tenant();
+        $reflection = new \ReflectionClass($tenantModel);
+        $dbProperty = $reflection->getProperty('db');
+        $dbProperty->setAccessible(true);
+        $dbProperty->setValue($tenantModel, $this->db);
+        
+        $tenant = $tenantModel->findById($tenantId);
         if (!$tenant) {
             throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
         }
 
-        // Valida user_id se fornecido
+        // Valida user_id se fornecido (usa o mesmo banco de dados)
         if (isset($data['user_id'])) {
-            $user = (new User())->findById($data['user_id']);
+            $userModel = new User();
+            $reflection = new \ReflectionClass($userModel);
+            $dbProperty = $reflection->getProperty('db');
+            $dbProperty->setAccessible(true);
+            $dbProperty->setValue($userModel, $this->db);
+            
+            $user = $userModel->findById($data['user_id']);
             if (!$user) {
                 throw new \RuntimeException("Usuário com ID {$data['user_id']} não encontrado");
             }

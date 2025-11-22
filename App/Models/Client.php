@@ -63,8 +63,14 @@ class Client extends BaseModel
      */
     public function createOrUpdate(int $tenantId, array $data): int
     {
-        // Valida tenant
-        $tenant = (new Tenant())->findById($tenantId);
+        // Valida tenant (usa o mesmo banco de dados)
+        $tenantModel = new Tenant();
+        $reflection = new \ReflectionClass($tenantModel);
+        $dbProperty = $reflection->getProperty('db');
+        $dbProperty->setAccessible(true);
+        $dbProperty->setValue($tenantModel, $this->db);
+        
+        $tenant = $tenantModel->findById($tenantId);
         if (!$tenant) {
             throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
         }

@@ -79,15 +79,27 @@ class Pet extends BaseModel
      */
     public function createOrUpdate(int $tenantId, array $data): int
     {
-        // Valida tenant
-        $tenant = (new Tenant())->findById($tenantId);
+        // Valida tenant (usa o mesmo banco de dados)
+        $tenantModel = new Tenant();
+        $reflection = new \ReflectionClass($tenantModel);
+        $dbProperty = $reflection->getProperty('db');
+        $dbProperty->setAccessible(true);
+        $dbProperty->setValue($tenantModel, $this->db);
+        
+        $tenant = $tenantModel->findById($tenantId);
         if (!$tenant) {
             throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
         }
 
-        // Valida client_id se fornecido
+        // Valida client_id se fornecido (usa o mesmo banco de dados)
         if (isset($data['client_id'])) {
-            $client = (new Client())->findById($data['client_id']);
+            $clientModel = new Client();
+            $reflection = new \ReflectionClass($clientModel);
+            $dbProperty = $reflection->getProperty('db');
+            $dbProperty->setAccessible(true);
+            $dbProperty->setValue($clientModel, $this->db);
+            
+            $client = $clientModel->findById($data['client_id']);
             if (!$client) {
                 throw new \RuntimeException("Cliente com ID {$data['client_id']} não encontrado");
             }

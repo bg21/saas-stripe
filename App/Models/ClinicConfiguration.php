@@ -26,9 +26,13 @@ class ClinicConfiguration extends BaseModel
      * @param int $tenantId ID do tenant
      * @param array $data Dados da configuração
      * @return int ID da configuração
+     * @throws \RuntimeException Se tenant não existir
      */
     public function createOrUpdate(int $tenantId, array $data): int
     {
+        // Valida tenant
+        $this->validateTenant($tenantId);
+        
         $existing = $this->findByTenant($tenantId);
         
         if ($existing) {
@@ -48,7 +52,14 @@ class ClinicConfiguration extends BaseModel
      */
     protected function validateTenant(int $tenantId): void
     {
-        $tenant = (new Tenant())->findById($tenantId);
+        // Usa o mesmo banco de dados do modelo atual
+        $tenantModel = new Tenant();
+        $reflection = new \ReflectionClass($tenantModel);
+        $dbProperty = $reflection->getProperty('db');
+        $dbProperty->setAccessible(true);
+        $dbProperty->setValue($tenantModel, $this->db);
+        
+        $tenant = $tenantModel->findById($tenantId);
         if (!$tenant) {
             throw new \RuntimeException("Tenant com ID {$tenantId} não encontrado");
         }
