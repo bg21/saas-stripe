@@ -78,12 +78,11 @@ class ReportControllerClinicTest extends TestCase
         Flight::set('tenant_id', $tenantId);
         Flight::set('is_user_auth', false);
         $_GET = [];
-
-        // Mock ReportService
-        $mockReportService = $this->createMock(ReportService::class);
-        $mockReportService->expects($this->once())
-            ->method('processPeriodFilter')
-            ->willReturn(['start_date' => null, 'end_date' => null]);
+        
+        // Mock Flight::request()->query com método getData()
+        $mockQuery = $this->createMock(\stdClass::class);
+        $mockQuery->method('getData')->willReturn([]);
+        Flight::request()->query = $mockQuery;
 
         // Mock Appointment model
         $mockAppointmentModel = $this->createMock(Appointment::class);

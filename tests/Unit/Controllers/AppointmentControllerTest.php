@@ -63,6 +63,10 @@ class AppointmentControllerTest extends TestCase
         Flight::set('tenant_id', $tenantId);
         Flight::set('is_user_auth', false);
         $_GET = [];
+        
+        // Mock Flight::request()->query como array
+        $mockQuery = [];
+        Flight::request()->query = $mockQuery;
 
         $this->mockAppointmentModel->expects($this->once())
             ->method('findAllWithCount')
@@ -326,6 +330,10 @@ class AppointmentControllerTest extends TestCase
         $_GET['professional_id'] = '1';
         $_GET['date'] = '2024-01-15';
         $_GET['duration'] = '30';
+        
+        // Mock Flight::request()->query como array
+        $mockQuery = ['professional_id' => '1', 'date' => '2024-01-15', 'duration' => '30'];
+        Flight::request()->query = $mockQuery;
 
         $this->mockAppointmentService->expects($this->once())
             ->method('getAvailableSlots')

@@ -63,6 +63,10 @@ class ProfessionalControllerTest extends TestCase
 
         Flight::set('tenant_id', $tenantId);
         Flight::set('is_user_auth', false);
+        
+        // Mock Flight::request()->query como array
+        $mockQuery = [];
+        Flight::request()->query = $mockQuery;
 
         $this->mockProfessionalModel->expects($this->once())
             ->method('findByTenant')

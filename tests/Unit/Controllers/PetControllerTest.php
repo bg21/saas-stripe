@@ -56,6 +56,10 @@ class PetControllerTest extends TestCase
         Flight::set('tenant_id', $tenantId);
         Flight::set('is_user_auth', false);
         $_GET = [];
+        
+        // Mock Flight::request()->query como array
+        $mockQuery = [];
+        Flight::request()->query = $mockQuery;
 
         $this->mockPetModel->expects($this->once())
             ->method('findAllWithCount')

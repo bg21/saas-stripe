@@ -172,6 +172,10 @@ class ScheduleControllerTest extends TestCase
         Flight::set('is_user_auth', false);
         $_GET['date'] = $date;
         $_GET['duration'] = '30';
+        
+        // Mock Flight::request()->query como array
+        $mockQuery = ['date' => $date, 'duration' => '30'];
+        Flight::request()->query = $mockQuery;
 
         $this->mockScheduleService->expects($this->once())
             ->method('calculateAvailableSlots')
