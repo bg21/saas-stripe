@@ -41,11 +41,13 @@ class Specialty extends BaseModel
      * Lista todas as especialidades do tenant (ativas e inativas)
      * 
      * @param int $tenantId ID do tenant
+     * @param array $filters Filtros adicionais (ex: ['status' => 'active'])
      * @return array
      */
-    public function findByTenant(int $tenantId): array
+    public function findByTenant(int $tenantId, array $filters = []): array
     {
-        return $this->findAll(['tenant_id' => $tenantId]);
+        $conditions = array_merge(['tenant_id' => $tenantId], $filters);
+        return $this->findAll($conditions);
     }
 }
 
