@@ -707,6 +707,16 @@ class ReportController
             
             ResponseHelper::sendSuccess($result, 'Dashboard da clínica gerado com sucesso');
         } catch (\Exception $e) {
+            // Log detalhado do erro para debug
+            \App\Services\Logger::error('Erro ao obter dashboard da clínica', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+                'tenant_id' => Flight::get('tenant_id') ?? null
+            ]);
+            
             ResponseHelper::sendGenericError(
                 $e,
                 'Erro ao obter dashboard da clínica',
