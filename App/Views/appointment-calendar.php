@@ -272,7 +272,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('statusFilter').addEventListener('change', applyFilters);
     document.getElementById('viewFilter').addEventListener('change', function() {
         currentFilters.view = this.value;
-        calendar.changeView(this.value);
+        if (calendar) {
+            calendar.changeView(this.value);
+        }
         applyFilters();
     });
 });
