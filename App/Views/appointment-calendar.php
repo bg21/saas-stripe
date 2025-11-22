@@ -357,12 +357,26 @@ function initializeCalendar() {
         },
         eventClick: function(info) {
             const appointment = info.event.extendedProps.appointment;
-            showAppointmentDetails(appointment.id);
+            if (appointment && appointment.id) {
+                showAppointmentDetails(appointment.id);
+            } else {
+                // Fallback: tenta obter ID do evento
+                const eventId = parseInt(info.event.id);
+                if (eventId) {
+                    showAppointmentDetails(eventId);
+                }
+            }
+            info.jsEvent.preventDefault();
         },
         dateClick: function(info) {
             // Ao clicar em uma data, preenche o formulário de criação
-            const clickedDate = info.dateStr;
+            const clickedDate = info.dateStr.split('T')[0]; // Remove hora se houver
+            const clickedTime = info.dateStr.includes('T') ? info.dateStr.split('T')[1].substring(0, 5) : '';
+            
             document.getElementById('createAppointmentDate').value = clickedDate;
+            if (clickedTime) {
+                document.getElementById('createAppointmentTime').value = clickedTime;
+            }
             
             // Abre modal de criação
             const modal = new bootstrap.Modal(document.getElementById('createAppointmentModal'));
@@ -371,20 +385,22 @@ function initializeCalendar() {
         eventDidMount: function(info) {
             // Tooltip com informações do agendamento
             const apt = info.event.extendedProps.appointment;
-            const statusText = {
-                'scheduled': 'Marcado',
-                'confirmed': 'Confirmado',
-                'completed': 'Concluído',
-                'cancelled': 'Cancelado',
-                'no_show': 'Falta'
-            };
-            
-            info.el.setAttribute('title', 
-                `Profissional: #${apt.professional_id}\n` +
-                `Cliente: #${apt.client_id}\n` +
-                `Pet: #${apt.pet_id}\n` +
-                `Status: ${statusText[apt.status] || apt.status}`
-            );
+            if (apt) {
+                const statusText = {
+                    'scheduled': 'Marcado',
+                    'confirmed': 'Confirmado',
+                    'completed': 'Concluído',
+                    'cancelled': 'Cancelado',
+                    'no_show': 'Falta'
+                };
+                
+                info.el.setAttribute('title', 
+                    `Profissional: #${apt.professional_id || 'N/A'}\n` +
+                    `Cliente: #${apt.client_id || 'N/A'}\n` +
+                    `Pet: #${apt.pet_id || 'N/A'}\n` +
+                    `Status: ${statusText[apt.status] || apt.status || 'N/A'}`
+                );
+            }
         }
     });
     
