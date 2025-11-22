@@ -240,9 +240,16 @@ abstract class BaseModel
                     $paramKey = str_replace('.', '_', $field);
                     $where[] = "{$field} LIKE :{$paramKey}";
                     $params[$paramKey] = $value;
+                } elseif (preg_match('/^(.+?)\s*(>=|<=|>|<|!=|<>)\s*$/', $key, $matches)) {
+                    // Suporte para operadores de comparação (>=, <=, >, <, !=, <>)
+                    $field = trim($matches[1]);
+                    $operator = trim($matches[2]);
+                    $paramKey = str_replace(['.', ' ', '>=', '<=', '>', '<', '!=', '<>'], '_', $field . '_' . $operator);
+                    $where[] = "`{$field}` {$operator} :{$paramKey}";
+                    $params[$paramKey] = $value;
                 } else {
                     $paramKey = str_replace('.', '_', $key);
-                    $where[] = "{$key} = :{$paramKey}";
+                    $where[] = "`{$key}` = :{$paramKey}";
                     $params[$paramKey] = $value;
                 }
             }
