@@ -385,7 +385,7 @@ class ReportController
                 'appointments' => array_slice($appointments, 0, 100) // Limita a 100 para não sobrecarregar
             ];
             
-            ResponseHelper::sendSuccess($result, 'Relatório de agendamentos gerado com sucesso');
+            ResponseHelper::sendSuccess($result, 200, 'Relatório de agendamentos gerado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError(
                 $e,
@@ -477,7 +477,7 @@ class ReportController
                 ];
             }
             
-            ResponseHelper::sendSuccess($result, 'Relatório de profissionais gerado com sucesso');
+            ResponseHelper::sendSuccess($result, 200, 'Relatório de profissionais gerado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError(
                 $e,
@@ -583,7 +583,7 @@ class ReportController
                 }, $topSpecies, array_keys($topSpecies))
             ];
             
-            ResponseHelper::sendSuccess($result, 'Relatório de pets gerado com sucesso');
+            ResponseHelper::sendSuccess($result, 200, 'Relatório de pets gerado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError(
                 $e,
@@ -705,7 +705,7 @@ class ReportController
                 ]
             ];
             
-            ResponseHelper::sendSuccess($result, 'Dashboard da clínica gerado com sucesso');
+            ResponseHelper::sendSuccess($result, 200, 'Dashboard da clínica gerado com sucesso');
         } catch (\Exception $e) {
             // Log detalhado do erro para debug
             \App\Services\Logger::error('Erro ao obter dashboard da clínica', [
