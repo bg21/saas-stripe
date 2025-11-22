@@ -305,21 +305,62 @@ abstract class BaseModel
             }
         }
 
-        $stmt = $this->db->prepare($sql);
-
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":{$key}", $value);
+        // Log temporário para debug (apenas em desenvolvimento)
+        if (defined('Config') && \Config::isDevelopment() && $this->table === 'appointments') {
+            \App\Services\Logger::info('SQL gerado no BaseModel::findAll', [
+                'table' => $this->table,
+                'sql' => $sql,
+                'params' => $params,
+                'conditions' => $conditions
+            ]);
         }
 
-        if ($limit !== null) {
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-            if ($offset > 0) {
-                $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        try {
+            $stmt = $this->db->prepare($sql);
+        } catch (\PDOException $e) {
+            \App\Services\Logger::error('Erro ao preparar SQL no BaseModel::findAll', [
+                'sql' => $sql,
+                'params' => $params,
+                'error' => $e->getMessage(),
+                'error_code' => $e->getCode()
+            ]);
+            throw $e;
+        }
+
+        foreach ($params as $key => $value) {
+            try {
+                $stmt->bindValue(":{$key}", $value);
+            } catch (\PDOException $e) {
+                \App\Services\Logger::error('Erro ao fazer bind no BaseModel::findAll', [
+                    'key' => $key,
+                    'value' => is_string($value) ? substr($value, 0, 100) : $value,
+                    'sql' => $sql,
+                    'error' => $e->getMessage(),
+                    'error_code' => $e->getCode()
+                ]);
+                throw $e;
             }
         }
 
-        $stmt->execute();
-        return $stmt->fetchAll();
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+            if ($offset > 0) {
+                $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+            }
+        }
+
+        try {
+            $stmt->execute();
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            \App\Services\Logger::error('Erro ao executar SQL no BaseModel::findAll', [
+                'sql' => $sql,
+                'params' => $params,
+                'error' => $e->getMessage(),
+                'error_code' => $e->getCode()
+            ]);
+            throw $e;
+        }
     }
     
     /**
