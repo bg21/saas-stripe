@@ -112,16 +112,27 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Cliente *</label>
-                            <select class="form-select" name="client_id" id="createAppointmentClientId" required>
-                                <option value="">Selecione...</option>
-                            </select>
-                            <div class="invalid-feedback"></div>
+                            <div class="position-relative">
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="createAppointmentClientSearch" 
+                                       placeholder="Buscar por nome ou telefone..."
+                                       autocomplete="off"
+                                       required>
+                                <input type="hidden" name="client_id" id="createAppointmentClientId">
+                                <div class="invalid-feedback"></div>
+                                <!-- Dropdown de resultados -->
+                                <div id="clientSearchResults" class="list-group position-absolute w-100" style="z-index: 1000; max-height: 300px; overflow-y: auto; display: none;">
+                                    <!-- Resultados serão inseridos aqui -->
+                                </div>
+                            </div>
+                            <small class="text-muted">Digite o nome completo ou telefone do cliente</small>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Pet *</label>
-                            <select class="form-select" name="pet_id" id="createAppointmentPetId" required>
+                            <select class="form-select" name="pet_id" id="createAppointmentPetId" required disabled>
                                 <option value="">Selecione um cliente primeiro...</option>
                             </select>
                             <div class="invalid-feedback"></div>
@@ -179,14 +190,100 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         loadAppointments();
         loadProfessionalsForSelect();
-        loadClientsForSelect();
         loadSpecialtiesForSelect();
     }, 100);
     
-    // Carrega pets quando cliente é selecionado
-    document.getElementById('createAppointmentClientId').addEventListener('change', function() {
-        loadPetsForClient(this.value);
-    });
+    // Busca de clientes com autocomplete
+    let clientSearchTimeout;
+    let selectedClient = null;
+    
+    const clientSearchInput = document.getElementById('createAppointmentClientSearch');
+    const clientIdInput = document.getElementById('createAppointmentClientId');
+    const clientSearchResults = document.getElementById('clientSearchResults');
+    const petSelect = document.getElementById('createAppointmentPetId');
+    
+    if (clientSearchInput) {
+        clientSearchInput.addEventListener('input', function() {
+            const searchTerm = this.value.trim();
+            
+            // Limpa timeout anterior
+            clearTimeout(clientSearchTimeout);
+            
+            // Se o campo foi limpo, reseta a seleção
+            if (searchTerm === '') {
+                selectedClient = null;
+                clientIdInput.value = '';
+                petSelect.disabled = true;
+                petSelect.innerHTML = '<option value="">Selecione um cliente primeiro...</option>';
+                clientSearchResults.style.display = 'none';
+                return;
+            }
+            
+            // Debounce: aguarda 300ms antes de buscar
+            clientSearchTimeout = setTimeout(async () => {
+                await searchClients(searchTerm);
+            }, 300);
+        });
+        
+        // Fecha dropdown ao clicar fora
+        document.addEventListener('click', function(e) {
+            if (clientSearchInput && !clientSearchInput.contains(e.target) && 
+                clientSearchResults && !clientSearchResults.contains(e.target)) {
+                clientSearchResults.style.display = 'none';
+            }
+        });
+    }
+    
+    async function searchClients(searchTerm) {
+        try {
+            const response = await apiRequest(`/v1/clients?search=${encodeURIComponent(searchTerm)}&limit=10`);
+            const clients = Array.isArray(response.data?.clients) ? response.data.clients : 
+                          Array.isArray(response.data) ? response.data : [];
+            
+            if (clients.length === 0) {
+                clientSearchResults.innerHTML = '<div class="list-group-item text-muted">Nenhum cliente encontrado</div>';
+                clientSearchResults.style.display = 'block';
+                return;
+            }
+            
+            // Renderiza resultados
+            clientSearchResults.innerHTML = clients.map(client => {
+                const phone = client.phone || client.phone_alt || '';
+                const displayText = `${client.name}${phone ? ' - ' + phone : ''}${client.email ? ' (' + client.email + ')' : ''}`;
+                return `
+                    <a href="#" class="list-group-item list-group-item-action" data-client-id="${client.id}" data-client-name="${client.name}">
+                        <div class="fw-bold">${client.name}</div>
+                        ${phone ? `<small class="text-muted">${phone}</small>` : ''}
+                        ${client.email ? `<small class="text-muted d-block">${client.email}</small>` : ''}
+                    </a>
+                `;
+            }).join('');
+            
+            clientSearchResults.style.display = 'block';
+            
+            // Adiciona event listeners aos resultados
+            clientSearchResults.querySelectorAll('a').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const clientId = this.getAttribute('data-client-id');
+                    const clientName = this.getAttribute('data-client-name');
+                    
+                    selectedClient = { id: clientId, name: clientName };
+                    clientIdInput.value = clientId;
+                    clientSearchInput.value = clientName;
+                    clientSearchResults.style.display = 'none';
+                    
+                    // Habilita e carrega pets
+                    petSelect.disabled = false;
+                    loadPetsForClient(clientId);
+                });
+            });
+        } catch (error) {
+            console.error('Erro ao buscar clientes:', error);
+            clientSearchResults.innerHTML = '<div class="list-group-item text-danger">Erro ao buscar clientes</div>';
+            clientSearchResults.style.display = 'block';
+        }
+    }
     
     // Carrega horários disponíveis quando profissional e data são selecionados
     document.getElementById('createAppointmentProfessionalId').addEventListener('change', checkAvailableSlots);
@@ -240,6 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.reset();
             e.target.classList.remove('was-validated');
             document.getElementById('availableSlotsInfo').style.display = 'none';
+            
+            // Reseta seleção de cliente
+            selectedClient = null;
+            clientIdInput.value = '';
+            clientSearchInput.value = '';
+            petSelect.disabled = true;
+            petSelect.innerHTML = '<option value="">Selecione um cliente primeiro...</option>';
             
             setTimeout(async () => {
                 await loadAppointments(true);

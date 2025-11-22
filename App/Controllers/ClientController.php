@@ -44,11 +44,13 @@ class ClientController
             
             $filters = [];
             if (!empty($queryParams['search'])) {
-                // Busca por nome ou email
+                // Busca por nome, email ou telefone
                 $search = $queryParams['search'];
                 $filters['OR'] = [
                     'name LIKE' => "%{$search}%",
-                    'email LIKE' => "%{$search}%"
+                    'email LIKE' => "%{$search}%",
+                    'phone LIKE' => "%{$search}%",
+                    'phone_alt LIKE' => "%{$search}%"
                 ];
             }
             
