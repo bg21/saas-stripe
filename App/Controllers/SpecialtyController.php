@@ -39,12 +39,12 @@ class SpecialtyController
             $queryParams = Flight::request()->query;
             $status = $queryParams['status'] ?? null;
             
-            $filters = ['tenant_id' => $tenantId];
+            $filters = [];
             if ($status) {
                 $filters['status'] = $status;
             }
             
-            $specialties = $this->specialtyModel->findByTenant($tenantId);
+            $specialties = $this->specialtyModel->findByTenant($tenantId, $filters);
             
             ResponseHelper::sendSuccess($specialties, 'Especialidades listadas com sucesso');
         } catch (\Exception $e) {

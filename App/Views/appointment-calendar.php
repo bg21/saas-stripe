@@ -620,7 +620,10 @@ async function loadPetsForClient(clientId) {
 async function loadSpecialtiesForSelect() {
     try {
         const response = await apiRequest('/v1/specialties?status=active');
-        specialties = Array.isArray(response.data) ? response.data : [];
+        
+        // A API retorna { data: [...] } ou { data: { specialties: [...] } }
+        specialties = Array.isArray(response.data) ? response.data : 
+                     Array.isArray(response.data?.specialties) ? response.data.specialties : [];
         
         const select = document.getElementById('createAppointmentSpecialtyId');
         if (select) {
@@ -629,15 +632,21 @@ async function loadSpecialtiesForSelect() {
                 select.remove(1);
             }
             
-            specialties.forEach(spec => {
-                const option = document.createElement('option');
-                option.value = spec.id;
-                option.textContent = spec.name;
-                select.appendChild(option);
-            });
+            if (specialties.length === 0) {
+                // Se não houver especialidades, mantém apenas a opção "Geral / Todas"
+                console.log('Nenhuma especialidade cadastrada');
+            } else {
+                specialties.forEach(spec => {
+                    const option = document.createElement('option');
+                    option.value = spec.id;
+                    option.textContent = spec.name;
+                    select.appendChild(option);
+                });
+            }
         }
     } catch (error) {
         console.error('Erro ao carregar especialidades:', error);
+        // Em caso de erro, mantém apenas a opção "Geral / Todas"
     }
 }
 
