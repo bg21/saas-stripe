@@ -208,6 +208,12 @@
                                 <span>Configurações</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="/clinic-reports" class="nav-link <?php echo ($currentPage ?? '') === 'clinic-reports' ? 'active' : ''; ?>">
+                                <i class="bi bi-graph-up"></i>
+                                <span>Relatórios</span>
+                            </a>
+                        </li>
                     </ul>
                 </li>
                 <li class="nav-section">

@@ -822,6 +822,12 @@ $app->route('GET /v1/reports/payments', [$reportController, 'payments']);
 $app->route('GET /v1/reports/mrr', [$reportController, 'mrr']);
 $app->route('GET /v1/reports/arr', [$reportController, 'arr']);
 
+// Relatórios da Clínica Veterinária
+$app->route('GET /v1/reports/clinic/appointments', [$reportController, 'clinicAppointments']);
+$app->route('GET /v1/reports/clinic/professionals', [$reportController, 'clinicProfessionals']);
+$app->route('GET /v1/reports/clinic/pets', [$reportController, 'clinicPets']);
+$app->route('GET /v1/reports/clinic/dashboard', [$reportController, 'clinicDashboard']);
+
 // Rota de página de login (HTML)
 $app->route('GET /login', function() use ($app) {
     // Detecta URL base automaticamente
