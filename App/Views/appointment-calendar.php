@@ -754,6 +754,34 @@ async function showAppointmentDetails(appointmentId) {
     background-color: #f8f9fa;
 }
 
+/* Estilos para busca de clientes */
+#clientSearchResults {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    background-color: white;
+    margin-top: 0.25rem;
+}
+
+#clientSearchResults .list-group-item {
+    border: none;
+    border-bottom: 1px solid #dee2e6;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+}
+
+#clientSearchResults .list-group-item:last-child {
+    border-bottom: none;
+}
+
+#clientSearchResults .list-group-item:hover {
+    background-color: #f8f9fa;
+}
+
+#clientSearchResults .list-group-item:active {
+    background-color: #e9ecef;
+}
+
 /* Responsividade */
 @media (max-width: 768px) {
     .fc-toolbar {
