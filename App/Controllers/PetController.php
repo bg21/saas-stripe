@@ -201,7 +201,7 @@ class PetController
                 $pet['age_years'] = $this->petModel->calculateAge($pet['birth_date']);
             }
             
-            ResponseHelper::sendSuccess($pet, 'Pet obtido com sucesso');
+            ResponseHelper::sendSuccess($pet, 200, 'Pet obtido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter pet', 'PET_GET_ERROR', ['action' => 'get_pet', 'pet_id' => $id]);
         }
@@ -267,7 +267,7 @@ class PetController
                 $updated['age_years'] = $this->petModel->calculateAge($updated['birth_date']);
             }
             
-            ResponseHelper::sendSuccess($updated, 'Pet atualizado com sucesso');
+            ResponseHelper::sendSuccess($updated, 200, 'Pet atualizado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao atualizar pet', 'PET_UPDATE_ERROR', ['action' => 'update_pet', 'pet_id' => $id]);
         }
@@ -298,7 +298,7 @@ class PetController
             
             $this->petModel->delete($id);
             
-            ResponseHelper::sendSuccess(null, 'Pet deletado com sucesso');
+            ResponseHelper::sendSuccess(null, 200, 'Pet deletado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao deletar pet', 'PET_DELETE_ERROR', ['action' => 'delete_pet', 'pet_id' => $id]);
         }
@@ -329,7 +329,7 @@ class PetController
             
             $appointments = (new Appointment())->findByPet($id);
             
-            ResponseHelper::sendSuccess($appointments, 'Agendamentos do pet listados com sucesso');
+            ResponseHelper::sendSuccess($appointments, 200, 'Agendamentos do pet listados com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar agendamentos do pet', 'PET_APPOINTMENTS_LIST_ERROR', ['action' => 'list_pet_appointments', 'pet_id' => $id]);
         }

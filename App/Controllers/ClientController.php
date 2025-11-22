@@ -175,7 +175,7 @@ class ClientController
                 $client['metadata'] = json_decode($client['metadata'], true);
             }
             
-            ResponseHelper::sendSuccess($client, 'Cliente obtido com sucesso');
+            ResponseHelper::sendSuccess($client, 200, 'Cliente obtido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter cliente', 'CLIENT_GET_ERROR', ['action' => 'get_client', 'client_id' => $id]);
         }
@@ -243,7 +243,7 @@ class ClientController
                 $updated['metadata'] = json_decode($updated['metadata'], true);
             }
             
-            ResponseHelper::sendSuccess($updated, 'Cliente atualizado com sucesso');
+            ResponseHelper::sendSuccess($updated, 200, 'Cliente atualizado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao atualizar cliente', 'CLIENT_UPDATE_ERROR', ['action' => 'update_client', 'client_id' => $id]);
         }
@@ -274,7 +274,7 @@ class ClientController
             
             $this->clientModel->delete($id);
             
-            ResponseHelper::sendSuccess(null, 'Cliente deletado com sucesso');
+            ResponseHelper::sendSuccess(null, 200, 'Cliente deletado com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao deletar cliente', 'CLIENT_DELETE_ERROR', ['action' => 'delete_client', 'client_id' => $id]);
         }
@@ -305,7 +305,7 @@ class ClientController
             
             $pets = (new Pet())->findByClient($id);
             
-            ResponseHelper::sendSuccess($pets, 'Pets do cliente listados com sucesso');
+            ResponseHelper::sendSuccess($pets, 200, 'Pets do cliente listados com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar pets do cliente', 'CLIENT_PETS_LIST_ERROR', ['action' => 'list_client_pets', 'client_id' => $id]);
         }

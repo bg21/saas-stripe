@@ -159,7 +159,7 @@ class AppointmentController
                 $appointment['metadata'] = json_decode($appointment['metadata'], true);
             }
             
-            ResponseHelper::sendSuccess($appointment, 'Agendamento obtido com sucesso');
+            ResponseHelper::sendSuccess($appointment, 200, 'Agendamento obtido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter agendamento', 'APPOINTMENT_GET_ERROR', ['action' => 'get_appointment', 'appointment_id' => $id]);
         }
@@ -197,7 +197,7 @@ class AppointmentController
                 $appointment['metadata'] = json_decode($appointment['metadata'], true);
             }
             
-            ResponseHelper::sendSuccess($appointment, 'Agendamento atualizado com sucesso');
+            ResponseHelper::sendSuccess($appointment, 200, 'Agendamento atualizado com sucesso');
         } catch (\RuntimeException $e) {
             ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'update_appointment', 'appointment_id' => $id]);
         } catch (\Exception $e) {
@@ -228,7 +228,7 @@ class AppointmentController
             
             $appointment = $this->appointmentService->cancel($tenantId, $id, $reason, $userId);
             
-            ResponseHelper::sendSuccess($appointment, 'Agendamento cancelado com sucesso');
+            ResponseHelper::sendSuccess($appointment, 200, 'Agendamento cancelado com sucesso');
         } catch (\RuntimeException $e) {
             ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'cancel_appointment', 'appointment_id' => $id]);
         } catch (\Exception $e) {
@@ -256,7 +256,7 @@ class AppointmentController
             
             $appointment = $this->appointmentService->confirm($tenantId, $id, $userId);
             
-            ResponseHelper::sendSuccess($appointment, 'Agendamento confirmado com sucesso');
+            ResponseHelper::sendSuccess($appointment, 200, 'Agendamento confirmado com sucesso');
         } catch (\RuntimeException $e) {
             ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'confirm_appointment', 'appointment_id' => $id]);
         } catch (\Exception $e) {
@@ -284,7 +284,7 @@ class AppointmentController
             
             $appointment = $this->appointmentService->complete($tenantId, $id, $userId);
             
-            ResponseHelper::sendSuccess($appointment, 'Agendamento marcado como concluído');
+            ResponseHelper::sendSuccess($appointment, 200, 'Agendamento marcado como concluído');
         } catch (\RuntimeException $e) {
             ResponseHelper::sendValidationError($e->getMessage(), [], ['action' => 'complete_appointment', 'appointment_id' => $id]);
         } catch (\Exception $e) {
@@ -326,7 +326,7 @@ class AppointmentController
             
             $slots = $this->appointmentService->getAvailableSlots($tenantId, $professionalId, $date, $duration);
             
-            ResponseHelper::sendSuccess($slots, 'Horários disponíveis obtidos com sucesso');
+            ResponseHelper::sendSuccess($slots, 200, 'Horários disponíveis obtidos com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter horários disponíveis', 'AVAILABLE_SLOTS_ERROR', ['action' => 'get_available_slots', 'tenant_id' => Flight::get('tenant_id')]);
         }
@@ -357,7 +357,7 @@ class AppointmentController
             
             $history = (new AppointmentHistory())->findByAppointment($id);
             
-            ResponseHelper::sendSuccess($history, 'Histórico do agendamento obtido com sucesso');
+            ResponseHelper::sendSuccess($history, 200, 'Histórico do agendamento obtido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter histórico do agendamento', 'APPOINTMENT_HISTORY_ERROR', ['action' => 'get_appointment_history', 'appointment_id' => $id]);
         }

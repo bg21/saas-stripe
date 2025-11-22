@@ -55,7 +55,7 @@ class ScheduleController
             
             $schedules = $this->scheduleModel->findByTenantAndProfessional($tenantId, $id);
             
-            ResponseHelper::sendSuccess($schedules, 'Agenda obtida com sucesso');
+            ResponseHelper::sendSuccess($schedules, 200, 'Agenda obtida com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter agenda', 'SCHEDULE_GET_ERROR', ['action' => 'get_schedule', 'professional_id' => $id]);
         }
@@ -122,7 +122,7 @@ class ScheduleController
                 $created[] = $this->scheduleModel->findById($scheduleId);
             }
             
-            ResponseHelper::sendSuccess($created, 'Agenda atualizada com sucesso');
+            ResponseHelper::sendSuccess($created, 200, 'Agenda atualizada com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao atualizar agenda', 'SCHEDULE_UPDATE_ERROR', ['action' => 'update_schedule', 'professional_id' => $id]);
         }
@@ -156,7 +156,7 @@ class ScheduleController
             
             $slots = $this->scheduleService->calculateAvailableSlots($tenantId, $id, $date, $duration);
             
-            ResponseHelper::sendSuccess($slots, 'Horários disponíveis obtidos com sucesso');
+            ResponseHelper::sendSuccess($slots, 200, 'Horários disponíveis obtidos com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter horários disponíveis', 'AVAILABLE_SLOTS_ERROR', ['action' => 'get_available_slots', 'professional_id' => $id]);
         }
@@ -233,7 +233,7 @@ class ScheduleController
             
             $this->scheduleService->removeBlock($blockId);
             
-            ResponseHelper::sendSuccess(null, 'Bloqueio removido com sucesso');
+            ResponseHelper::sendSuccess(null, 200, 'Bloqueio removido com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao remover bloqueio', 'SCHEDULE_BLOCK_DELETE_ERROR', ['action' => 'delete_schedule_block', 'block_id' => $blockId]);
         }

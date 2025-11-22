@@ -46,7 +46,7 @@ class SpecialtyController
             
             $specialties = $this->specialtyModel->findByTenant($tenantId, $filters);
             
-            ResponseHelper::sendSuccess($specialties, 'Especialidades listadas com sucesso');
+            ResponseHelper::sendSuccess($specialties, 200, 'Especialidades listadas com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar especialidades', 'SPECIALTIES_LIST_ERROR', ['action' => 'list_specialties', 'tenant_id' => Flight::get('tenant_id')]);
         }
@@ -120,7 +120,7 @@ class SpecialtyController
                 return;
             }
             
-            ResponseHelper::sendSuccess($specialty, 'Especialidade obtida com sucesso');
+            ResponseHelper::sendSuccess($specialty, 200, 'Especialidade obtida com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao obter especialidade', 'SPECIALTY_GET_ERROR', ['action' => 'get_specialty', 'specialty_id' => $id]);
         }
@@ -167,7 +167,7 @@ class SpecialtyController
             $this->specialtyModel->update($id, $updateData);
             $updated = $this->specialtyModel->findById($id);
             
-            ResponseHelper::sendSuccess($updated, 'Especialidade atualizada com sucesso');
+            ResponseHelper::sendSuccess($updated, 200, 'Especialidade atualizada com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao atualizar especialidade', 'SPECIALTY_UPDATE_ERROR', ['action' => 'update_specialty', 'specialty_id' => $id]);
         }
@@ -198,7 +198,7 @@ class SpecialtyController
             
             $this->specialtyModel->delete($id);
             
-            ResponseHelper::sendSuccess(null, 'Especialidade deletada com sucesso');
+            ResponseHelper::sendSuccess(null, 200, 'Especialidade deletada com sucesso');
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao deletar especialidade', 'SPECIALTY_DELETE_ERROR', ['action' => 'delete_specialty', 'specialty_id' => $id]);
         }
