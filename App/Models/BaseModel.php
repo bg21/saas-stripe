@@ -240,13 +240,18 @@ abstract class BaseModel
                     $paramKey = str_replace('.', '_', $field);
                     $where[] = "{$field} LIKE :{$paramKey}";
                     $params[$paramKey] = $value;
-                } elseif (preg_match('/^(.+?)\s*(>=|<=|>|<|!=|<>)\s*$/', trim($key), $matches)) {
+                } elseif (preg_match('/^(.+?)\s*(>=|<=|>|<|!=|<>)\s*$/', $key, $matches)) {
                     // Suporte para operadores de comparação (>=, <=, >, <, !=, <>)
                     $field = trim($matches[1]);
                     $operator = trim($matches[2]);
-                    // Sanitiza o nome do campo
+                    // Sanitiza o nome do campo (remove caracteres perigosos, mas mantém underscore)
                     $field = preg_replace('/[^a-zA-Z0-9_]/', '', $field);
-                    $paramKey = str_replace(['.', ' ', '>=', '<=', '>', '<', '!=', '<>'], '_', $field . '_' . $operator);
+                    if (empty($field)) {
+                        continue; // Ignora se o campo estiver vazio após sanitização
+                    }
+                    // Cria nome de parâmetro único e seguro
+                    $paramKey = str_replace(['>=', '<=', '!=', '<>'], ['gte', 'lte', 'ne', 'ne2'], $operator);
+                    $paramKey = $field . '_' . $paramKey;
                     $paramKey = preg_replace('/[^a-zA-Z0-9_]/', '', $paramKey);
                     $where[] = "`{$field}` {$operator} :{$paramKey}";
                     $params[$paramKey] = $value;
