@@ -51,7 +51,22 @@ class PermissionController
             // Payouts
             'view_payouts', 'manage_payouts',
             // Administrativas
-            'manage_users', 'manage_permissions'
+            'manage_users', 'manage_permissions',
+            // Clínica Veterinária - Profissionais
+            'view_professionals', 'create_professionals', 'update_professionals', 'delete_professionals',
+            // Clínica Veterinária - Clientes
+            'view_clients', 'create_clients', 'update_clients', 'delete_clients',
+            // Clínica Veterinária - Pets
+            'view_pets', 'create_pets', 'update_pets', 'delete_pets',
+            // Clínica Veterinária - Agendamentos
+            'view_appointments', 'create_appointments', 'update_appointments', 'delete_appointments',
+            'confirm_appointments', 'cancel_appointments',
+            // Clínica Veterinária - Agenda
+            'view_schedules', 'manage_schedules',
+            // Clínica Veterinária - Especialidades
+            'view_specialties', 'create_specialties', 'update_specialties', 'delete_specialties',
+            // Clínica Veterinária - Configurações
+            'manage_clinic_settings'
         ];
     }
 
@@ -184,6 +199,145 @@ class PermissionController
                     'name' => 'manage_permissions',
                     'description' => 'Gerenciar permissões',
                     'category' => 'admin'
+                ],
+                
+                // Permissões de Clínica Veterinária - Profissionais
+                'view_professionals' => [
+                    'name' => 'view_professionals',
+                    'description' => 'Visualizar profissionais',
+                    'category' => 'veterinary'
+                ],
+                'create_professionals' => [
+                    'name' => 'create_professionals',
+                    'description' => 'Criar profissionais',
+                    'category' => 'veterinary'
+                ],
+                'update_professionals' => [
+                    'name' => 'update_professionals',
+                    'description' => 'Atualizar profissionais',
+                    'category' => 'veterinary'
+                ],
+                'delete_professionals' => [
+                    'name' => 'delete_professionals',
+                    'description' => 'Deletar profissionais',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Clientes
+                'view_clients' => [
+                    'name' => 'view_clients',
+                    'description' => 'Visualizar clientes',
+                    'category' => 'veterinary'
+                ],
+                'create_clients' => [
+                    'name' => 'create_clients',
+                    'description' => 'Criar clientes',
+                    'category' => 'veterinary'
+                ],
+                'update_clients' => [
+                    'name' => 'update_clients',
+                    'description' => 'Atualizar clientes',
+                    'category' => 'veterinary'
+                ],
+                'delete_clients' => [
+                    'name' => 'delete_clients',
+                    'description' => 'Deletar clientes',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Pets
+                'view_pets' => [
+                    'name' => 'view_pets',
+                    'description' => 'Visualizar pets',
+                    'category' => 'veterinary'
+                ],
+                'create_pets' => [
+                    'name' => 'create_pets',
+                    'description' => 'Criar pets',
+                    'category' => 'veterinary'
+                ],
+                'update_pets' => [
+                    'name' => 'update_pets',
+                    'description' => 'Atualizar pets',
+                    'category' => 'veterinary'
+                ],
+                'delete_pets' => [
+                    'name' => 'delete_pets',
+                    'description' => 'Deletar pets',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Agendamentos
+                'view_appointments' => [
+                    'name' => 'view_appointments',
+                    'description' => 'Visualizar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                'create_appointments' => [
+                    'name' => 'create_appointments',
+                    'description' => 'Criar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                'update_appointments' => [
+                    'name' => 'update_appointments',
+                    'description' => 'Atualizar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                'delete_appointments' => [
+                    'name' => 'delete_appointments',
+                    'description' => 'Deletar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                'confirm_appointments' => [
+                    'name' => 'confirm_appointments',
+                    'description' => 'Confirmar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                'cancel_appointments' => [
+                    'name' => 'cancel_appointments',
+                    'description' => 'Cancelar agendamentos',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Agenda
+                'view_schedules' => [
+                    'name' => 'view_schedules',
+                    'description' => 'Visualizar agendas',
+                    'category' => 'veterinary'
+                ],
+                'manage_schedules' => [
+                    'name' => 'manage_schedules',
+                    'description' => 'Gerenciar agendas (criar/editar bloqueios)',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Especialidades
+                'view_specialties' => [
+                    'name' => 'view_specialties',
+                    'description' => 'Visualizar especialidades',
+                    'category' => 'veterinary'
+                ],
+                'create_specialties' => [
+                    'name' => 'create_specialties',
+                    'description' => 'Criar especialidades',
+                    'category' => 'veterinary'
+                ],
+                'update_specialties' => [
+                    'name' => 'update_specialties',
+                    'description' => 'Atualizar especialidades',
+                    'category' => 'veterinary'
+                ],
+                'delete_specialties' => [
+                    'name' => 'delete_specialties',
+                    'description' => 'Deletar especialidades',
+                    'category' => 'veterinary'
+                ],
+                
+                // Permissões de Clínica Veterinária - Configurações
+                'manage_clinic_settings' => [
+                    'name' => 'manage_clinic_settings',
+                    'description' => 'Gerenciar configurações da clínica',
+                    'category' => 'veterinary'
                 ]
             ];
 
@@ -197,7 +351,8 @@ class PermissionController
                     'disputes' => 'Permissões de Disputas',
                     'finance' => 'Permissões Financeiras',
                     'reports' => 'Permissões de Relatórios',
-                    'admin' => 'Permissões Administrativas'
+                    'admin' => 'Permissões Administrativas',
+                    'veterinary' => 'Permissões de Clínica Veterinária'
                 ]
             ]);
         } catch (\Exception $e) {

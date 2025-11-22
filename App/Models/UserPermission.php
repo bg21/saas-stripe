@@ -57,7 +57,8 @@ class UserPermission extends BaseModel
     {
         return [
             'admin' => [
-                // Admin tem todas as permissões
+                // Admin tem todas as permissões (implícitas)
+                // Listadas aqui apenas para referência
                 'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
                 'cancel_subscriptions', 'reactivate_subscriptions',
                 'view_customers', 'create_customers', 'update_customers',
@@ -66,7 +67,16 @@ class UserPermission extends BaseModel
                 'view_balance_transactions',
                 'view_charges', 'manage_charges',
                 'view_reports',
-                'view_payouts', 'manage_payouts'
+                'view_payouts', 'manage_payouts',
+                // Clínica Veterinária - Admin tem todas
+                'view_professionals', 'create_professionals', 'update_professionals', 'delete_professionals',
+                'view_clients', 'create_clients', 'update_clients', 'delete_clients',
+                'view_pets', 'create_pets', 'update_pets', 'delete_pets',
+                'view_appointments', 'create_appointments', 'update_appointments', 'delete_appointments',
+                'confirm_appointments', 'cancel_appointments',
+                'view_schedules', 'manage_schedules',
+                'view_specialties', 'create_specialties', 'update_specialties', 'delete_specialties',
+                'manage_clinic_settings'
             ],
             'editor' => [
                 'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
@@ -74,11 +84,23 @@ class UserPermission extends BaseModel
                 'view_disputes',
                 'view_balance_transactions',
                 'view_charges',
-                'view_reports'
+                'view_reports',
+                // Clínica Veterinária - Editor (Veterinário/Atendente)
+                'view_professionals', 'view_clients', 'view_pets',
+                'create_clients', 'update_clients',
+                'create_pets', 'update_pets',
+                'view_appointments', 'create_appointments', 'update_appointments',
+                'confirm_appointments', 'cancel_appointments',
+                'view_schedules', 'manage_schedules', // Própria agenda
+                'view_specialties'
             ],
             'viewer' => [
                 'view_subscriptions', 'view_customers',
-                'view_charges'
+                'view_charges',
+                // Clínica Veterinária - Viewer (Recepcionista)
+                'view_professionals', 'view_clients', 'view_pets',
+                'view_appointments', 'create_appointments', 'confirm_appointments',
+                'view_schedules'
             ]
         ];
     }
