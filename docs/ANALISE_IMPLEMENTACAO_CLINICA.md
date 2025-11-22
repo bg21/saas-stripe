@@ -2,7 +2,7 @@
 
 **Data da Análise:** 2025-01-22 (Atualizado)  
 **Branch:** `feature/veterinary-clinic`  
-**Status Geral:** 🟢 **85% Implementado**
+**Status Geral:** 🟢 **90% Implementado**
 
 ---
 
@@ -51,6 +51,7 @@
 - ✅ Soft deletes onde necessário
 - ✅ Métodos específicos (findByTenantAndId, findByClient, etc.)
 - ✅ Validação de CPF no ClientController
+- ✅ Suporte a operadores de comparação (>=, <=, >, <) no BaseModel::findAll
 
 ---
 
@@ -162,7 +163,50 @@
 
 ---
 
-### 7. Testes (80% ✅)
+### 7. Relatórios Específicos da Clínica (100% ✅) - **IMPLEMENTADO**
+
+**Endpoints Implementados:**
+- ✅ `GET /v1/reports/clinic/appointments` - Relatório de agendamentos
+  - ✅ Por período (dia, semana, mês, ano, personalizado)
+  - ✅ Por profissional
+  - ✅ Por status
+  - ✅ Taxa de cancelamento
+  - ✅ Gráficos por status, profissional e data
+
+- ✅ `GET /v1/reports/clinic/professionals` - Relatório de profissionais
+  - ✅ Consultas por profissional
+  - ✅ Horas trabalhadas
+  - ✅ Taxa de ocupação
+  - ✅ Tabela detalhada de desempenho
+
+- ✅ `GET /v1/reports/clinic/pets` - Relatório de pets atendidos
+  - ✅ Pets únicos atendidos
+  - ✅ Espécies mais atendidas
+  - ✅ Taxa de retorno de clientes
+
+- ✅ `GET /v1/reports/clinic/dashboard` - Dashboard da clínica
+  - ✅ Agendamentos hoje
+  - ✅ Agendamentos da semana
+  - ✅ Taxa de ocupação
+  - ✅ Próximos agendamentos (7 dias)
+
+**View de Relatórios:**
+- ✅ `App/Views/clinic-reports.php` - Página completa de relatórios
+- ✅ Gráficos Chart.js (pizza, barras, linha)
+- ✅ Filtros de período (hoje, semana, mês, ano, personalizado)
+- ✅ Alternância entre tipos de relatório
+- ✅ Cards de resumo do dashboard
+- ✅ Tabelas detalhadas de profissionais
+
+**Melhorias Técnicas:**
+- ✅ Suporte a operadores de comparação no BaseModel (>=, <=, >, <)
+- ✅ Logs detalhados para debug de erros SQL
+- ✅ Tratamento completo de erros PDO
+- ✅ Validação de estrutura de resposta da API
+
+---
+
+### 8. Testes (80% ✅)
 
 **Testes Implementados:**
 - ✅ **Models (29 testes):** ClinicConfiguration, Specialty, Client, Pet, Professional
@@ -172,8 +216,15 @@
 **Total:** 51 testes passando ✅
 
 **Faltando:**
-- ⚠️ Testes completos para os outros 6 Controllers
+- ⚠️ Testes completos para os outros 6 Controllers:
+  - SpecialtyController
+  - ProfessionalController
+  - ClientController
+  - PetController
+  - ScheduleController
+  - AppointmentController
 - ⚠️ Testes de integração end-to-end
+- ⚠️ Testes dos endpoints de relatórios
 
 ---
 
@@ -189,7 +240,14 @@
   - Profissional: Até 10 profissionais, agendamentos ilimitados, 5 atendentes
   - Premium: Ilimitado
 
-#### 1.2. Verificação de Limites nos Controllers
+#### 1.2. Service para Gerenciar Limites
+- ❌ Criar `App\Services\PlanLimitsService` ou método helper:
+  - Método `getPlanLimits(string $priceId): array` para mapear planos Stripe
+  - Método `checkProfessionalLimit(int $tenantId): bool`
+  - Método `checkAppointmentLimit(int $tenantId, string $month): bool`
+  - Método `checkUserLimit(int $tenantId): bool`
+
+#### 1.3. Verificação de Limites nos Controllers
 - ❌ Implementar verificação de limites em:
   - `ProfessionalController::create()` - Verificar limite de profissionais
   - `AppointmentController::create()` - Verificar limite de agendamentos mensais
@@ -198,89 +256,61 @@
 **Exemplo de implementação necessária:**
 ```php
 // Em ProfessionalController::create()
-$subscription = (new Subscription())->findActiveByTenant($tenantId);
-$planLimits = $this->getPlanLimits($subscription['stripe_price_id']);
+$subscriptionModel = new \App\Models\Subscription();
+$subscription = $subscriptionModel->findActiveByTenant($tenantId);
 
-$currentProfessionals = (new Professional())->count(['tenant_id' => $tenantId]);
-if ($currentProfessionals >= $planLimits['max_professionals']) {
-    ResponseHelper::sendValidationError(
-        'Limite de profissionais atingido para seu plano',
-        ['upgrade_required' => true]
-    );
-    return;
+if ($subscription) {
+    $planLimitsService = new \App\Services\PlanLimitsService();
+    $limits = $planLimitsService->getPlanLimits($subscription['plan_id']);
+    
+    $currentProfessionals = $this->professionalModel->count(['tenant_id' => $tenantId, 'status' => 'active']);
+    if ($currentProfessionals >= $limits['max_professionals']) {
+        ResponseHelper::sendValidationError(
+            'Limite de profissionais atingido para seu plano',
+            ['upgrade_required' => true, 'current' => $currentProfessionals, 'limit' => $limits['max_professionals']]
+        );
+        return;
+    }
 }
 ```
 
-#### 1.3. Método Helper para Obter Limites
-- ❌ Criar método `getPlanLimits(string $priceId): array` em um Service ou Helper
-- ❌ Mapear planos Stripe para limites da clínica
+#### 1.4. Métodos no Model Subscription
+- ❌ Adicionar método `findActiveByTenant(int $tenantId): ?array` se não existir
+- ❌ Adicionar método para obter plano atual do tenant
 
 ---
 
-### 2. Relatórios Específicos da Clínica (0% ❌) - **PRIORIDADE BAIXA**
+### 2. Melhorias e Funcionalidades Adicionais (0% ❌) - **PRIORIDADE BAIXA**
 
-**Relatórios a Implementar:**
-
-#### 2.1. Estender ReportController
-- ❌ `GET /v1/reports/clinic/appointments` - Relatório de agendamentos
-  - Por período (dia, semana, mês)
-  - Por profissional
-  - Por status
-  - Taxa de cancelamento
-
-- ❌ `GET /v1/reports/clinic/professionals` - Relatório de profissionais
-  - Consultas por profissional
-  - Horas trabalhadas
-  - Taxa de ocupação
-
-- ❌ `GET /v1/reports/clinic/pets` - Relatório de pets atendidos
-  - Pets únicos atendidos
-  - Espécies mais atendidas
-  - Retorno de clientes
-
-- ❌ `GET /v1/reports/clinic/dashboard` - Dashboard da clínica
-  - Agendamentos hoje
-  - Agendamentos da semana
-  - Taxa de ocupação
-  - Próximos agendamentos
-
-#### 2.2. Views de Relatórios
-- ❌ `App/Views/clinic-reports.php` - Página de relatórios
-- ❌ Gráficos e visualizações (usar Chart.js ou similar)
-
----
-
-### 3. Melhorias e Funcionalidades Adicionais (0% ❌) - **PRIORIDADE BAIXA**
-
-#### 3.1. Notificações
+#### 2.1. Notificações
 - ❌ Sistema de notificações para:
   - Lembretes de agendamentos (24h antes)
   - Confirmação de agendamentos
   - Cancelamentos
   - Novos agendamentos para profissionais
 
-#### 3.2. Histórico Médico do Pet
+#### 2.2. Histórico Médico do Pet
 - ❌ Expandir campo `medical_history` em `pets`:
   - Interface para adicionar consultas ao histórico
   - Visualização cronológica
   - Anexos (fotos, exames)
 
-#### 3.3. Recorrência de Agendamentos
+#### 2.3. Recorrência de Agendamentos
 - ❌ Permitir criar agendamentos recorrentes:
   - Semanal, quinzenal, mensal
   - Até uma data específica ou número de ocorrências
 
-#### 3.4. Exportação de Dados
+#### 2.4. Exportação de Dados
 - ❌ Exportar agendamentos para PDF
 - ❌ Exportar relatórios para Excel/CSV
 - ❌ Imprimir agenda do dia
 
 ---
 
-### 4. Documentação da API (0% ❌) - **PRIORIDADE MÉDIA**
+### 3. Documentação da API (0% ❌) - **PRIORIDADE MÉDIA**
 
 **Documentação Necessária:**
-- ❌ Documentar todos os 38 endpoints da clínica
+- ❌ Documentar todos os 42 endpoints da clínica (38 + 4 de relatórios)
 - ❌ Adicionar exemplos de requisições/respostas
 - ❌ Documentar códigos de erro específicos
 - ❌ Atualizar Swagger/OpenAPI com endpoints da clínica
@@ -288,10 +318,11 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 **Arquivos:**
 - ❌ `docs/API_CLINICA_VETERINARIA.md`
 - ❌ Atualizar `docs/SWAGGER_OPENAPI.md`
+- ❌ Adicionar exemplos de uso dos relatórios
 
 ---
 
-### 5. Testes Adicionais (20% ⚠️) - **PRIORIDADE MÉDIA**
+### 4. Testes Adicionais (20% ⚠️) - **PRIORIDADE MÉDIA**
 
 **Testes Faltando:**
 - ⚠️ Testes completos para os outros 6 Controllers:
@@ -302,10 +333,44 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
   - ScheduleController
   - AppointmentController
 
+- ⚠️ Testes dos endpoints de relatórios:
+  - ReportController::clinicAppointments()
+  - ReportController::clinicProfessionals()
+  - ReportController::clinicPets()
+  - ReportController::clinicDashboard()
+
 - ⚠️ Testes de integração end-to-end:
   - Fluxo completo de criação de agendamento
   - Fluxo de cancelamento
   - Validação de permissões
+  - Fluxo de relatórios
+
+---
+
+### 5. Correções e Melhorias Técnicas (PRIORIDADE ALTA) 🔴
+
+#### 5.1. Correção de Erros Conhecidos
+- ⚠️ **Erro SQL com operadores de comparação** - Parcialmente corrigido
+  - ✅ Suporte a operadores adicionado no BaseModel
+  - ⚠️ Verificar se está funcionando corretamente em todos os casos
+  - ⚠️ Testar com diferentes formatos de data
+
+#### 5.2. Melhorias de Performance
+- ❌ Otimizar queries de relatórios (pode ser lento com muitos dados)
+- ❌ Adicionar índices adicionais se necessário:
+  - `appointments(appointment_date, status)`
+  - `appointments(professional_id, appointment_date)`
+  - `appointments(client_id, appointment_date)`
+
+#### 5.3. Validações Adicionais
+- ❌ Validação de horários de funcionamento da clínica ao criar agendamento
+- ❌ Validação de disponibilidade do profissional antes de criar agendamento
+- ❌ Validação de CPF duplicado ao criar cliente
+
+#### 5.4. Tratamento de Erros
+- ⚠️ Melhorar mensagens de erro para o usuário final
+- ⚠️ Adicionar códigos de erro específicos para cada tipo de problema
+- ❌ Implementar retry automático para operações críticas
 
 ---
 
@@ -319,43 +384,51 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 | **Controllers** | ✅ Completo | 100% |
 | **Permissões** | ✅ Completo | 100% |
 | **Views/Frontend** | ✅ Completo | 100% |
+| **Relatórios** | ✅ Completo | 100% |
 | **Testes** | 🟡 Parcial | 80% |
 | **Integração Stripe** | ❌ Não iniciado | 0% |
-| **Relatórios** | ❌ Não iniciado | 0% |
 | **Documentação** | ❌ Não iniciado | 0% |
+| **Correções Técnicas** | 🟡 Parcial | 70% |
 
-**Progresso Geral:** 🟢 **85% Implementado**
+**Progresso Geral:** 🟢 **90% Implementado**
 
 ---
 
 ## 🎯 PRIORIDADES DE IMPLEMENTAÇÃO
 
+### 🔴 PRIORIDADE ALTA (Próximos 3-5 dias)
+
+1. **Correções Técnicas**
+   - ✅ Corrigir erro SQL com operadores (já implementado, precisa testar)
+   - ⚠️ Verificar se todos os casos estão funcionando
+   - ⚠️ Testar relatórios com dados reais
+   - ⚠️ Corrigir qualquer erro que aparecer nos logs
+   - Estimativa: 1-2 dias
+   - Impacto: Alto - Bloqueador para uso em produção
+
 ### 🟡 PRIORIDADE MÉDIA (Próximas 2-3 semanas)
 
-1. **Integração Stripe - Limites por Plano**
+2. **Integração Stripe - Limites por Plano**
+   - Criar PlanLimitsService
    - Implementar verificação de limites
    - Configurar planos específicos
    - Estimativa: 3-5 dias
    - Impacto: Médio - Importante para monetização
 
-2. **Documentação da API**
-   - Documentar todos os endpoints
+3. **Documentação da API**
+   - Documentar todos os 42 endpoints
+   - Adicionar exemplos de requisições/respostas
    - Atualizar Swagger
    - Estimativa: 2-3 dias
    - Impacto: Médio - Importante para integração
 
-3. **Testes Completos dos Controllers**
+4. **Testes Completos dos Controllers**
    - Completar testes dos 6 Controllers restantes
+   - Adicionar testes dos endpoints de relatórios
    - Estimativa: 3-5 dias
    - Impacto: Médio - Importante para qualidade
 
 ### 🟢 PRIORIDADE BAIXA (Futuro)
-
-4. **Relatórios Específicos**
-   - Estender ReportController
-   - Criar views de relatórios
-   - Estimativa: 1 semana
-   - Impacto: Baixo - Funcionalidade adicional
 
 5. **Melhorias e Funcionalidades Extras**
    - Notificações
@@ -378,7 +451,7 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 - [x] AppointmentService completo
 - [x] ScheduleService completo
 - [x] Todos os 7 Controllers criados
-- [x] Todos os ~38 endpoints implementados
+- [x] Todos os ~42 endpoints implementados (38 + 4 relatórios)
 - [x] 25 novas permissões adicionadas
 - [x] Permissões distribuídas por role
 - [x] Testes de Models (29 testes)
@@ -392,23 +465,23 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 - [x] **Validação e formatação de CPF**
 - [x] **Filtro de profissionais por especialidade**
 - [x] **Carregamento dinâmico de especialidades**
+- [x] **4 endpoints de relatórios implementados**
+- [x] **View clinic-reports.php com gráficos Chart.js**
+- [x] **Suporte a operadores de comparação no BaseModel**
+- [x] **Logs detalhados para debug**
 
 ### ❌ FALTANDO
 
 #### Integração Stripe
-- [ ] Configurar planos específicos para clínicas
-- [ ] Método `getPlanLimits()` para obter limites
-- [ ] Verificação de limite de profissionais em `ProfessionalController`
-- [ ] Verificação de limite de agendamentos em `AppointmentController`
-- [ ] Verificação de limite de atendentes em `UserController` (se aplicável)
-
-#### Relatórios
-- [ ] Endpoint: `GET /v1/reports/clinic/appointments`
-- [ ] Endpoint: `GET /v1/reports/clinic/professionals`
-- [ ] Endpoint: `GET /v1/reports/clinic/pets`
-- [ ] Endpoint: `GET /v1/reports/clinic/dashboard`
-- [ ] View: `clinic-reports.php`
-- [ ] Gráficos e visualizações
+- [ ] Criar `App\Services\PlanLimitsService`
+- [ ] Método `getPlanLimits(string $priceId): array`
+- [ ] Método `checkProfessionalLimit(int $tenantId): bool`
+- [ ] Método `checkAppointmentLimit(int $tenantId, string $month): bool`
+- [ ] Método `checkUserLimit(int $tenantId): bool`
+- [ ] Verificação de limite de profissionais em `ProfessionalController::create()`
+- [ ] Verificação de limite de agendamentos em `AppointmentController::create()`
+- [ ] Verificação de limite de atendentes em `UserController::create()` (se aplicável)
+- [ ] Adicionar método `findActiveByTenant()` no Subscription model (se não existir)
 
 #### Testes
 - [ ] Testes completos: `SpecialtyController`
@@ -417,46 +490,74 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 - [ ] Testes completos: `PetController`
 - [ ] Testes completos: `ScheduleController`
 - [ ] Testes completos: `AppointmentController`
+- [ ] Testes dos endpoints de relatórios:
+  - [ ] `ReportController::clinicAppointments()`
+  - [ ] `ReportController::clinicProfessionals()`
+  - [ ] `ReportController::clinicPets()`
+  - [ ] `ReportController::clinicDashboard()`
 - [ ] Testes de integração end-to-end
 
 #### Documentação
-- [ ] Documentação completa da API da clínica
+- [ ] Documentação completa da API da clínica (`docs/API_CLINICA_VETERINARIA.md`)
 - [ ] Exemplos de requisições/respostas
 - [ ] Atualização do Swagger/OpenAPI
 - [ ] Guia de integração
+- [ ] Documentação dos relatórios
+
+#### Correções Técnicas
+- [ ] Testar operadores de comparação em todos os casos
+- [ ] Verificar performance das queries de relatórios
+- [ ] Adicionar índices adicionais se necessário
+- [ ] Melhorar validações de horários e disponibilidade
+- [ ] Melhorar mensagens de erro para usuário final
+
+#### Melhorias e Funcionalidades Extras
+- [ ] Sistema de notificações
+- [ ] Histórico médico expandido do pet
+- [ ] Recorrência de agendamentos
+- [ ] Exportação de dados (PDF, Excel, CSV)
 
 ---
 
 ## 🚀 PRÓXIMOS PASSOS RECOMENDADOS
 
-### Semana 1-2: Integração Stripe e Documentação (PRIORIDADE MÉDIA)
-1. Configurar planos específicos para clínicas
-2. Implementar método `getPlanLimits()`
-3. Adicionar verificações de limites nos Controllers
+### Semana 1: Correções e Testes (PRIORIDADE ALTA)
+1. Testar todos os relatórios com dados reais
+2. Verificar e corrigir erros SQL se houver
+3. Testar operadores de comparação em diferentes cenários
+4. Verificar logs e corrigir problemas encontrados
+
+### Semana 2-3: Integração Stripe e Documentação (PRIORIDADE MÉDIA)
+1. Criar `PlanLimitsService`
+2. Implementar verificação de limites nos Controllers
+3. Configurar planos específicos para clínicas
 4. Testar limites com diferentes planos
 5. Documentar API completa
 6. Atualizar Swagger
 
-### Semana 3: Testes (PRIORIDADE MÉDIA)
+### Semana 4: Testes (PRIORIDADE MÉDIA)
 1. Completar testes dos Controllers
-2. Criar testes de integração end-to-end
-3. Aumentar cobertura de testes
+2. Adicionar testes dos endpoints de relatórios
+3. Criar testes de integração end-to-end
+4. Aumentar cobertura de testes
 
-### Semana 4+: Melhorias (PRIORIDADE BAIXA)
-1. Implementar relatórios específicos
-2. Adicionar funcionalidades extras conforme necessidade
+### Semana 5+: Melhorias (PRIORIDADE BAIXA)
+1. Implementar funcionalidades extras conforme necessidade
+2. Otimizar performance
+3. Adicionar melhorias de UX
 
 ---
 
 ## 📊 ESTIMATIVA DE CONCLUSÃO
 
 **Para 100% de implementação (MVP completo):**
+- **Correções Técnicas:** 1-2 dias (PRIORIDADE ALTA)
 - **Integração Stripe:** 3-5 dias (PRIORIDADE MÉDIA)
 - **Documentação:** 2-3 dias (PRIORIDADE MÉDIA)
 - **Testes:** 3-5 dias (PRIORIDADE MÉDIA)
-- **Relatórios:** 1 semana (PRIORIDADE BAIXA)
+- **Melhorias Extras:** 2-3 semanas (PRIORIDADE BAIXA)
 
-**Total estimado:** 2-3 semanas para versão MVP completa (sem relatórios e melhorias extras)
+**Total estimado:** 2-3 semanas para versão MVP completa (sem melhorias extras)
 
 ---
 
@@ -470,8 +571,28 @@ if ($currentProfessionals >= $planLimits['max_professionals']) {
 5. ✅ **Filtro por Especialidade** - Profissionais filtrados dinamicamente
 6. ✅ **UX Melhorada** - Fluxo intuitivo de criação de agendamentos
 7. ✅ **Rotas e Menu** - Navegação completa no sistema
+8. ✅ **Relatórios Completos** - 4 endpoints + view com gráficos Chart.js
+9. ✅ **Suporte a Operadores SQL** - BaseModel agora suporta >=, <=, >, <
+10. ✅ **Logs Detalhados** - Sistema de debug melhorado
+
+---
+
+## 🔍 PROBLEMAS CONHECIDOS E SOLUÇÕES
+
+### Problema 1: Erro SQL com Operadores de Comparação
+**Status:** ✅ Corrigido (parcialmente)
+**Solução:** Adicionado suporte a operadores >=, <=, >, < no BaseModel::findAll
+**Ação:** Testar com dados reais para garantir que funciona em todos os casos
+
+### Problema 2: Erro de Tipo no ResponseHelper::sendSuccess
+**Status:** ✅ Corrigido
+**Solução:** Corrigida ordem dos argumentos (data, statusCode, message)
+
+### Problema 3: Header Authorization não sendo enviado
+**Status:** ✅ Corrigido
+**Solução:** Adicionada regra no .htaccess e verificação no dashboard.js
 
 ---
 
 **Última Atualização:** 2025-01-22  
-**Versão do Documento:** 2.0.0
+**Versão do Documento:** 3.0.0
