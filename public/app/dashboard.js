@@ -230,6 +230,11 @@ async function apiRequest(endpoint, options = {}) {
         }
     };
     
+    // Garante que Authorization está presente e no formato correto
+    if (!mergedOptions.headers['Authorization'] && !mergedOptions.headers['authorization']) {
+        mergedOptions.headers['Authorization'] = 'Bearer ' + sessionId;
+    }
+    
     // ✅ OTIMIZAÇÃO: Retry automático para falhas de rede
     let retries = options.retries || 0;
     let lastError;
