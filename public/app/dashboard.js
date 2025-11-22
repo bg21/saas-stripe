@@ -236,10 +236,26 @@ async function apiRequest(endpoint, options = {}) {
     
     while (retries >= 0) {
         try {
+            // Debug: log do header Authorization (apenas em desenvolvimento)
+            if (typeof window !== 'undefined' && window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                console.log('Request:', {
+                    url: API_URL + endpoint,
+                    hasAuth: !!mergedOptions.headers['Authorization'],
+                    authHeader: mergedOptions.headers['Authorization'] ? mergedOptions.headers['Authorization'].substring(0, 20) + '...' : 'none'
+                });
+            }
+            
             const response = await fetch(API_URL + endpoint, mergedOptions);
             const data = await response.json();
             
             if (!response.ok) {
+                // Log detalhado do erro
+                console.error('API Error:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: data,
+                    endpoint: endpoint
+                });
                 throw new Error(data.message || data.error || 'Erro na requisição');
             }
             

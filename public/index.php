@@ -203,7 +203,7 @@ $app->before('start', function() use ($app) {
         // Rotas da Clínica Veterinária
         '/professionals', '/professional-details', '/clinic-clients', '/clinic-client-details',
         '/pets', '/pet-details', '/appointments', '/appointment-details', '/appointment-calendar',
-        '/schedule', '/schedule-config', '/clinic-settings', '/specialties'
+        '/schedule', '/schedule-config', '/clinic-settings', '/specialties', '/clinic-reports'
     ];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
@@ -251,6 +251,17 @@ $app->before('start', function() use ($app) {
             }
         } catch (\Exception $e) {
             // Ignora
+        }
+    }
+    
+    // Fallback adicional: tenta obter via input stream (para alguns servidores)
+    if (!$authHeader && isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] !== 'GET') {
+        $input = file_get_contents('php://input');
+        if ($input) {
+            $data = json_decode($input, true);
+            if (isset($data['authorization']) || isset($data['Authorization'])) {
+                $authHeader = $data['authorization'] ?? $data['Authorization'];
+            }
         }
     }
     
