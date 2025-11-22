@@ -189,7 +189,6 @@ let specialties = [];
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         loadAppointments();
-        loadProfessionalsForSelect();
         loadSpecialtiesForSelect();
     }, 100);
     
@@ -249,11 +248,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Renderiza resultados
             clientSearchResults.innerHTML = clients.map(client => {
                 const phone = client.phone || client.phone_alt || '';
-                const displayText = `${client.name}${phone ? ' - ' + phone : ''}${client.email ? ' (' + client.email + ')' : ''}`;
+                const cpf = client.cpf || '';
                 return `
                     <a href="#" class="list-group-item list-group-item-action" data-client-id="${client.id}" data-client-name="${client.name}">
                         <div class="fw-bold">${client.name}</div>
-                        ${phone ? `<small class="text-muted">${phone}</small>` : ''}
+                        ${cpf ? `<small class="text-muted">CPF: ${cpf}</small>` : ''}
+                        ${phone ? `<small class="text-muted ${cpf ? ' ms-2' : ''}">Tel: ${phone}</small>` : ''}
                         ${client.email ? `<small class="text-muted d-block">${client.email}</small>` : ''}
                     </a>
                 `;
@@ -446,9 +446,14 @@ function renderAppointments() {
     }).join('');
 }
 
-async function loadProfessionalsForSelect() {
+async function loadProfessionalsForSelect(specialtyId = null) {
     try {
-        const response = await apiRequest('/v1/professionals');
+        let url = '/v1/professionals?status=active';
+        if (specialtyId) {
+            url += `&specialty_id=${specialtyId}`;
+        }
+        
+        const response = await apiRequest(url);
         professionals = Array.isArray(response.data) ? response.data : [];
         
         const createSelect = document.getElementById('createAppointmentProfessionalId');
@@ -456,14 +461,35 @@ async function loadProfessionalsForSelect() {
         
         [createSelect, filterSelect].forEach(select => {
             if (select) {
-                professionals.forEach(prof => {
-                    if (prof.status === 'active') {
-                        const option = document.createElement('option');
-                        option.value = prof.id;
-                        option.textContent = prof.name || 'Profissional #' + prof.id;
-                        select.appendChild(option);
+                // Limpa opções existentes (exceto a primeira)
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+                
+                if (professionals.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = select === createSelect 
+                        ? 'Nenhum profissional encontrado para esta especialidade' 
+                        : 'Nenhum profissional encontrado';
+                    select.appendChild(option);
+                    if (select === createSelect) {
+                        select.disabled = true;
                     }
-                });
+                } else {
+                    if (select === createSelect) {
+                        select.disabled = false;
+                    }
+                    professionals.forEach(prof => {
+                        if (prof.status === 'active') {
+                            const user = prof.user || {};
+                            const option = document.createElement('option');
+                            option.value = prof.id;
+                            option.textContent = user.name || prof.name || 'Profissional #' + prof.id;
+                            select.appendChild(option);
+                        }
+                    });
+                }
             }
         });
     } catch (error) {
@@ -521,6 +547,11 @@ async function loadSpecialtiesForSelect() {
         
         const select = document.getElementById('createAppointmentSpecialtyId');
         if (select) {
+            // Limpa opções existentes (exceto a primeira "Geral / Todas")
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
             specialties.forEach(spec => {
                 const option = document.createElement('option');
                 option.value = spec.id;

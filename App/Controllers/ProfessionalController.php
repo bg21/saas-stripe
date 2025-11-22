@@ -39,6 +39,7 @@ class ProfessionalController
             
             $queryParams = Flight::request()->query;
             $status = $queryParams['status'] ?? null;
+            $specialtyId = isset($queryParams['specialty_id']) ? (int)$queryParams['specialty_id'] : null;
             
             $filters = [];
             if ($status) {
@@ -46,6 +47,20 @@ class ProfessionalController
             }
             
             $professionals = $this->professionalModel->findByTenant($tenantId, $filters);
+            
+            // Filtra por especialidade se fornecida
+            if ($specialtyId !== null) {
+                $professionals = array_filter($professionals, function($prof) use ($specialtyId) {
+                    if (empty($prof['specialties'])) {
+                        return false;
+                    }
+                    $specialties = is_string($prof['specialties']) 
+                        ? json_decode($prof['specialties'], true) 
+                        : $prof['specialties'];
+                    return is_array($specialties) && in_array($specialtyId, $specialties);
+                });
+                $professionals = array_values($professionals); // Reindexa array
+            }
             
             // Enriquece com dados do usuário
             foreach ($professionals as &$professional) {

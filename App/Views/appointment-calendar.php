@@ -89,19 +89,28 @@
                 <div class="modal-body">
                     <div class="row">
                         <div class="col-md-6 mb-3">
+                            <label class="form-label">Especialidade</label>
+                            <select class="form-select" name="specialty_id" id="createAppointmentSpecialtyId">
+                                <option value="">Geral / Todas</option>
+                            </select>
+                            <small class="text-muted">Selecione a especialidade para filtrar profissionais</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Profissional *</label>
-                            <select class="form-select" name="professional_id" id="createAppointmentProfessionalId" required>
-                                <option value="">Selecione...</option>
+                            <select class="form-select" name="professional_id" id="createAppointmentProfessionalId" required disabled>
+                                <option value="">Selecione uma especialidade primeiro</option>
                             </select>
                             <div class="invalid-feedback"></div>
                         </div>
+                    </div>
+                    <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Cliente *</label>
                             <div class="position-relative">
                                 <input type="text" 
                                        class="form-control" 
                                        id="createAppointmentClientSearch" 
-                                       placeholder="Buscar por nome ou telefone..."
+                                       placeholder="Buscar por nome, CPF ou telefone..."
                                        autocomplete="off"
                                        required>
                                 <input type="hidden" name="client_id" id="createAppointmentClientId">
@@ -111,22 +120,14 @@
                                     <!-- Resultados serão inseridos aqui -->
                                 </div>
                             </div>
-                            <small class="text-muted">Digite o nome completo ou telefone do cliente</small>
+                            <small class="text-muted">Digite o nome completo, CPF ou telefone do cliente</small>
                         </div>
-                    </div>
-                    <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Pet *</label>
                             <select class="form-select" name="pet_id" id="createAppointmentPetId" required disabled>
                                 <option value="">Selecione um cliente primeiro...</option>
                             </select>
                             <div class="invalid-feedback"></div>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Especialidade</label>
-                            <select class="form-select" name="specialty_id" id="createAppointmentSpecialtyId">
-                                <option value="">Nenhuma</option>
-                            </select>
                         </div>
                     </div>
                     <div class="row">
@@ -266,11 +267,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Renderiza resultados
             clientSearchResults.innerHTML = clients.map(client => {
                 const phone = client.phone || client.phone_alt || '';
-                const displayText = `${client.name}${phone ? ' - ' + phone : ''}${client.email ? ' (' + client.email + ')' : ''}`;
+                const cpf = client.cpf || '';
                 return `
                     <a href="#" class="list-group-item list-group-item-action" data-client-id="${client.id}" data-client-name="${client.name}">
                         <div class="fw-bold">${client.name}</div>
-                        ${phone ? `<small class="text-muted">${phone}</small>` : ''}
+                        ${cpf ? `<small class="text-muted">CPF: ${cpf}</small>` : ''}
+                        ${phone ? `<small class="text-muted ${cpf ? ' ms-2' : ''}">Tel: ${phone}</small>` : ''}
                         ${client.email ? `<small class="text-muted d-block">${client.email}</small>` : ''}
                     </a>
                 `;
@@ -520,9 +522,14 @@ function applyFilters() {
     }
 }
 
-async function loadProfessionalsForSelect() {
+async function loadProfessionalsForSelect(specialtyId = null) {
     try {
-        const response = await apiRequest('/v1/professionals');
+        let url = '/v1/professionals?status=active';
+        if (specialtyId) {
+            url += `&specialty_id=${specialtyId}`;
+        }
+        
+        const response = await apiRequest(url);
         professionals = Array.isArray(response.data) ? response.data : [];
         
         const createSelect = document.getElementById('createAppointmentProfessionalId');
@@ -530,15 +537,35 @@ async function loadProfessionalsForSelect() {
         
         [createSelect, filterSelect].forEach(select => {
             if (select) {
-                professionals.forEach(prof => {
-                    if (prof.status === 'active') {
-                        const user = prof.user || {};
-                        const option = document.createElement('option');
-                        option.value = prof.id;
-                        option.textContent = user.name || 'Profissional #' + prof.id;
-                        select.appendChild(option);
+                // Limpa opções existentes (exceto a primeira)
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+                
+                if (professionals.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = select === createSelect 
+                        ? 'Nenhum profissional encontrado para esta especialidade' 
+                        : 'Nenhum profissional encontrado';
+                    select.appendChild(option);
+                    if (select === createSelect) {
+                        select.disabled = true;
                     }
-                });
+                } else {
+                    if (select === createSelect) {
+                        select.disabled = false;
+                    }
+                    professionals.forEach(prof => {
+                        if (prof.status === 'active') {
+                            const user = prof.user || {};
+                            const option = document.createElement('option');
+                            option.value = prof.id;
+                            option.textContent = user.name || 'Profissional #' + prof.id;
+                            select.appendChild(option);
+                        }
+                    });
+                }
             }
         });
     } catch (error) {
@@ -597,6 +624,11 @@ async function loadSpecialtiesForSelect() {
         
         const select = document.getElementById('createAppointmentSpecialtyId');
         if (select) {
+            // Limpa opções existentes (exceto a primeira "Geral / Todas")
+            while (select.options.length > 1) {
+                select.remove(1);
+            }
+            
             specialties.forEach(spec => {
                 const option = document.createElement('option');
                 option.value = spec.id;

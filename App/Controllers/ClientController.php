@@ -44,14 +44,20 @@ class ClientController
             
             $filters = [];
             if (!empty($queryParams['search'])) {
-                // Busca por nome, email ou telefone
+                // Busca por nome, CPF, email ou telefone
                 $search = $queryParams['search'];
+                // Remove formatação do CPF para busca
+                $searchClean = preg_replace('/[^0-9]/', '', $search);
                 $filters['OR'] = [
                     'name LIKE' => "%{$search}%",
                     'email LIKE' => "%{$search}%",
                     'phone LIKE' => "%{$search}%",
                     'phone_alt LIKE' => "%{$search}%"
                 ];
+                // Se a busca parece ser um CPF (só números ou com formatação), busca também por CPF
+                if (strlen($searchClean) >= 3) {
+                    $filters['OR']['cpf LIKE'] = "%{$searchClean}%";
+                }
             }
             
             $result = $this->clientModel->findAllWithCount($filters, ['created_at' => 'DESC'], $limit, $offset);
@@ -98,6 +104,17 @@ class ClientController
             if (empty($data['name'])) {
                 ResponseHelper::sendValidationError('Nome é obrigatório', ['name' => 'Obrigatório'], ['action' => 'create_client']);
                 return;
+            }
+            
+            // Valida e formata CPF se fornecido
+            if (!empty($data['cpf'])) {
+                $cpf = preg_replace('/[^0-9]/', '', $data['cpf']);
+                if (strlen($cpf) !== 11 || !$this->validateCPF($cpf)) {
+                    ResponseHelper::sendValidationError('CPF inválido', ['cpf' => 'CPF deve ter 11 dígitos e ser válido'], ['action' => 'create_client']);
+                    return;
+                }
+                // Formata CPF: 000.000.000-00
+                $data['cpf'] = substr($cpf, 0, 3) . '.' . substr($cpf, 3, 3) . '.' . substr($cpf, 6, 3) . '-' . substr($cpf, 9, 2);
             }
             
             $clientData = [
@@ -194,8 +211,19 @@ class ClientController
                 return;
             }
             
-            $allowedFields = ['name', 'email', 'phone', 'phone_alt', 'address', 'city', 'state', 'postal_code', 'notes', 'metadata'];
+            $allowedFields = ['name', 'cpf', 'email', 'phone', 'phone_alt', 'address', 'city', 'state', 'postal_code', 'notes', 'metadata'];
             $updateData = array_intersect_key($data ?? [], array_flip($allowedFields));
+            
+            // Valida e formata CPF se fornecido
+            if (!empty($updateData['cpf'])) {
+                $cpf = preg_replace('/[^0-9]/', '', $updateData['cpf']);
+                if (strlen($cpf) !== 11 || !$this->validateCPF($cpf)) {
+                    ResponseHelper::sendValidationError('CPF inválido', ['cpf' => 'CPF deve ter 11 dígitos e ser válido'], ['action' => 'update_client']);
+                    return;
+                }
+                // Formata CPF: 000.000.000-00
+                $updateData['cpf'] = substr($cpf, 0, 3) . '.' . substr($cpf, 3, 3) . '.' . substr($cpf, 6, 3) . '-' . substr($cpf, 9, 2);
+            }
             
             // Converte metadata para JSON
             if (isset($updateData['metadata'])) {
@@ -281,6 +309,41 @@ class ClientController
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar pets do cliente', 'CLIENT_PETS_LIST_ERROR', ['action' => 'list_client_pets', 'client_id' => $id]);
         }
+    }
+
+    /**
+     * Valida CPF brasileiro
+     * 
+     * @param string $cpf CPF sem formatação (apenas números)
+     * @return bool
+     */
+    private function validateCPF(string $cpf): bool
+    {
+        // Remove caracteres não numéricos
+        $cpf = preg_replace('/[^0-9]/', '', $cpf);
+        
+        // Verifica se tem 11 dígitos
+        if (strlen($cpf) !== 11) {
+            return false;
+        }
+        
+        // Verifica se todos os dígitos são iguais (CPF inválido)
+        if (preg_match('/(\d)\1{10}/', $cpf)) {
+            return false;
+        }
+        
+        // Valida dígitos verificadores
+        for ($t = 9; $t < 11; $t++) {
+            for ($d = 0, $c = 0; $c < $t; $c++) {
+                $d += $cpf[$c] * (($t + 1) - $c);
+            }
+            $d = ((10 * $d) % 11) % 10;
+            if ($cpf[$c] != $d) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 }
 
