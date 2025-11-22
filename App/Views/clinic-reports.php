@@ -320,7 +320,12 @@ function loadReports() {
 async function loadDashboard() {
     try {
         const response = await apiRequest('/v1/reports/clinic/dashboard');
-        const data = response.data;
+        // A resposta pode vir em response.data ou diretamente em response
+        const data = response.data || response;
+        
+        // Debug: log da estrutura da resposta
+        console.log('Dashboard response:', response);
+        console.log('Dashboard data:', data);
         
         // Atualiza cards
         document.getElementById('todayAppointments').textContent = data.today?.total || 0;
@@ -409,7 +414,8 @@ async function loadAppointmentsReport() {
     try {
         const queryParams = buildPeriodQuery();
         const response = await apiRequest(`/v1/reports/clinic/appointments?${queryParams}`);
-        const data = response.data;
+        // A resposta pode vir em response.data ou diretamente em response
+        const data = response.data || response;
         
         // Gráfico por status
         if (charts.appointmentsByStatus) {
@@ -545,7 +551,8 @@ async function loadProfessionalsReport() {
     try {
         const queryParams = buildPeriodQuery();
         const response = await apiRequest(`/v1/reports/clinic/professionals?${queryParams}`);
-        const data = response.data;
+        // A resposta pode vir em response.data ou diretamente em response
+        const data = Array.isArray(response.data) ? response.data : (Array.isArray(response) ? response : []);
         
         const tbody = document.getElementById('professionalsReportTableBody');
         if (data.length === 0) {
@@ -580,7 +587,8 @@ async function loadPetsReport() {
     try {
         const queryParams = buildPeriodQuery();
         const response = await apiRequest(`/v1/reports/clinic/pets?${queryParams}`);
-        const data = response.data;
+        // A resposta pode vir em response.data ou diretamente em response
+        const data = response.data || response;
         
         // Gráfico por espécie
         if (charts.petsBySpecies) {
