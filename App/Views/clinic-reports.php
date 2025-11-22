@@ -261,6 +261,13 @@ let currentPeriod = 'month';
 let currentReportType = 'dashboard';
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Verifica se SESSION_ID está disponível
+    if (!SESSION_ID) {
+        console.error('SESSION_ID não encontrado. Redirecionando para login...');
+        window.location.href = '/login';
+        return;
+    }
+    
     document.getElementById('periodFilter').addEventListener('change', function() {
         if (this.value === 'custom') {
             document.getElementById('customDateRange').style.display = 'block';

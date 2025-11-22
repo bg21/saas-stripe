@@ -191,6 +191,17 @@ const cache = {
 
 // ✅ OTIMIZAÇÃO: Helper para fazer requisições autenticadas com cache e retry
 async function apiRequest(endpoint, options = {}) {
+    // Verifica se SESSION_ID está disponível
+    const sessionId = SESSION_ID || localStorage.getItem('session_id');
+    if (!sessionId) {
+        console.error('SESSION_ID não encontrado. Redirecionando para login...');
+        localStorage.removeItem('session_id');
+        localStorage.removeItem('user');
+        localStorage.removeItem('tenant');
+        window.location.href = '/login';
+        throw new Error('Não autenticado');
+    }
+    
     const cacheKey = endpoint + (options.method || 'GET') + JSON.stringify(options.body || '');
     const useCache = !options.method || options.method === 'GET';
     const cacheTTL = options.cacheTTL || 30000; // 30 segundos padrão
@@ -205,7 +216,7 @@ async function apiRequest(endpoint, options = {}) {
     
     const defaultOptions = {
         headers: {
-            'Authorization': 'Bearer ' + SESSION_ID,
+            'Authorization': 'Bearer ' + sessionId,
             'Content-Type': 'application/json'
         }
     };
