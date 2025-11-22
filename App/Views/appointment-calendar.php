@@ -281,8 +281,9 @@ function initializeCalendar() {
     const calendarEl = document.getElementById('calendar');
     
     calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: 'dayGridMonth',
+        initialView: currentFilters.view || 'dayGridMonth',
         locale: 'pt-br',
+        firstDay: 1, // Segunda-feira como primeiro dia da semana
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
@@ -296,6 +297,11 @@ function initializeCalendar() {
             list: 'Lista'
         },
         height: 'auto',
+        editable: false, // Não permite arrastar eventos (pode ser habilitado depois)
+        selectable: true, // Permite selecionar datas
+        selectMirror: true,
+        dayMaxEvents: true, // Mostra "+X mais" quando há muitos eventos
+        weekends: true,
         events: async function(info, successCallback, failureCallback) {
             try {
                 document.getElementById('loadingCalendar').style.display = 'block';
@@ -629,5 +635,42 @@ async function showAppointmentDetails(appointmentId) {
 
 .fc-day-today {
     background-color: #f8f9fa !important;
+}
+
+.fc-daygrid-event {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fc-timegrid-event {
+    border-radius: 4px;
+}
+
+.fc-list-event {
+    cursor: pointer;
+}
+
+.fc-list-event:hover {
+    background-color: #f8f9fa;
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    .fc-toolbar {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .fc-toolbar-chunk {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+    }
+    
+    .fc-button {
+        font-size: 0.875rem;
+        padding: 0.25rem 0.5rem;
+    }
 }
 </style>
