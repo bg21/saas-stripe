@@ -164,6 +164,53 @@
                     </ul>
                 </li>
                 <li class="nav-section">
+                    <span class="nav-section-title">Clínica Veterinária</span>
+                    <ul class="nav-menu">
+                        <li class="nav-item">
+                            <a href="/professionals" class="nav-link <?php echo ($currentPage ?? '') === 'professionals' ? 'active' : ''; ?>">
+                                <i class="bi bi-person-badge"></i>
+                                <span>Profissionais</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/clinic-clients" class="nav-link <?php echo ($currentPage ?? '') === 'clinic-clients' ? 'active' : ''; ?>">
+                                <i class="bi bi-person-heart"></i>
+                                <span>Clientes</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/pets" class="nav-link <?php echo ($currentPage ?? '') === 'pets' ? 'active' : ''; ?>">
+                                <i class="bi bi-paw"></i>
+                                <span>Pets</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/appointments" class="nav-link <?php echo ($currentPage ?? '') === 'appointments' ? 'active' : ''; ?>">
+                                <i class="bi bi-calendar-check"></i>
+                                <span>Agendamentos</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/schedule" class="nav-link <?php echo ($currentPage ?? '') === 'schedule' ? 'active' : ''; ?>">
+                                <i class="bi bi-calendar-week"></i>
+                                <span>Agenda</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/specialties" class="nav-link <?php echo ($currentPage ?? '') === 'specialties' ? 'active' : ''; ?>">
+                                <i class="bi bi-heart-pulse"></i>
+                                <span>Especialidades</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/clinic-settings" class="nav-link <?php echo ($currentPage ?? '') === 'clinic-settings' ? 'active' : ''; ?>">
+                                <i class="bi bi-gear"></i>
+                                <span>Configurações</span>
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+                <li class="nav-section">
                     <span class="nav-section-title">Promoções</span>
                     <ul class="nav-menu">
                         <li class="nav-item">

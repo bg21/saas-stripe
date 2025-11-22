@@ -199,7 +199,11 @@ $app->before('start', function() use ($app) {
         '/product-details', '/price-details', '/user-details', '/invoice-details', '/coupon-details', // ✅ CORREÇÃO: Adicionadas rotas de detalhes
         '/invoices', '/refunds', '/coupons', '/promotion-codes', '/settings',
         '/transactions', '/transaction-details', '/disputes', '/charges', '/payouts',
-        '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal'
+        '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal',
+        // Rotas da Clínica Veterinária
+        '/professionals', '/professional-details', '/clinic-clients', '/clinic-client-details',
+        '/pets', '/pet-details', '/appointments', '/appointment-details', '/appointment-calendar',
+        '/schedule', '/schedule-config', '/clinic-settings', '/specialties'
     ];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
@@ -1323,6 +1327,70 @@ $app->route('GET /billing-portal', function() use ($app) {
     \App\Utils\View::render('billing-portal', [
         'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
         'title' => 'Portal de Cobrança', 'currentPage' => 'billing-portal'
+    ], true);
+});
+
+// ============================================
+// ROTAS DA CLÍNICA VETERINÁRIA
+// ============================================
+
+// Rota de profissionais
+$app->route('GET /professionals', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('professionals', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Profissionais', 'currentPage' => 'professionals'
+    ], true);
+});
+
+// Rota de detalhes do profissional
+$app->route('GET /professional-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('professional-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Profissional', 'currentPage' => 'professionals'
+    ], true);
+});
+
+// Rota de clientes da clínica
+$app->route('GET /clinic-clients', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-clients', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Clientes', 'currentPage' => 'clinic-clients'
+    ], true);
+});
+
+// Rota de detalhes do cliente da clínica
+$app->route('GET /clinic-client-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-client-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Cliente', 'currentPage' => 'clinic-clients'
+    ], true);
+});
+
+// Rota de pets
+$app->route('GET /pets', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('pets', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Pets', 'currentPage' => 'pets'
+    ], true);
+});
+
+// Rota de detalhes do pet
+$app->route('GET /pet-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('pet-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Pet', 'currentPage' => 'pets'
     ], true);
 });
 
