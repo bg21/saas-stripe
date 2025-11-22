@@ -285,6 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // Carrega profissionais quando especialidade muda
+    document.getElementById('createAppointmentSpecialtyId').addEventListener('change', function() {
+        const specialtyId = this.value || null;
+        loadProfessionalsForSelect(specialtyId);
+    });
+    
     // Carrega horários disponíveis quando profissional e data são selecionados
     document.getElementById('createAppointmentProfessionalId').addEventListener('change', checkAvailableSlots);
     document.getElementById('createAppointmentDate').addEventListener('change', checkAvailableSlots);
