@@ -262,9 +262,16 @@ document.getElementById('editAppointmentForm').addEventListener('submit', functi
     const formData = {
         appointment_date: document.getElementById('editAppointmentDate').value,
         appointment_time: document.getElementById('editAppointmentTime').value,
-        duration_minutes: parseInt(document.getElementById('editAppointmentDuration').value),
+        duration_minutes: parseInt(document.getElementById('editAppointmentDuration').value) || 30,
         notes: document.getElementById('editAppointmentNotes').value.trim() || null
     };
+    
+    // Remove campos vazios
+    Object.keys(formData).forEach(key => {
+        if (formData[key] === '' || formData[key] === null) {
+            delete formData[key];
+        }
+    });
 
     const submitBtn = this.querySelector('button[type="submit"]');
     const spinner = submitBtn.querySelector('.spinner-border');

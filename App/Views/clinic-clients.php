@@ -200,7 +200,9 @@ async function loadClients(skipCache = false) {
             skipCache: skipCache
         });
         
-        clients = Array.isArray(response.data) ? response.data : [];
+        // A API retorna { data: { clients: [...], pagination: {...} } }
+        clients = Array.isArray(response.data?.clients) ? response.data.clients : 
+                  Array.isArray(response.data) ? response.data : [];
         
         // Aplicar filtros
         applyFilters();

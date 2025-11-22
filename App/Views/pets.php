@@ -191,9 +191,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData(e.target);
         const data = Object.fromEntries(formData);
         
+        // Converte client_id para inteiro
+        if (data.client_id) {
+            data.client_id = parseInt(data.client_id);
+        }
+        
+        // Converte weight para número (se fornecido)
+        if (data.weight) {
+            data.weight = parseFloat(data.weight);
+        }
+        
         // Remove campos vazios
         Object.keys(data).forEach(key => {
-            if (data[key] === '') {
+            if (data[key] === '' || data[key] === null) {
                 delete data[key];
             }
         });
@@ -232,7 +242,9 @@ async function loadPets(skipCache = false) {
             skipCache: skipCache
         });
         
-        pets = Array.isArray(response.data) ? response.data : [];
+        // A API retorna { data: { pets: [...], pagination: {...} } }
+        pets = Array.isArray(response.data?.pets) ? response.data.pets : 
+               Array.isArray(response.data) ? response.data : [];
         
         // Aplicar filtros
         applyFilters();

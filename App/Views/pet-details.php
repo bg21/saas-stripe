@@ -303,7 +303,7 @@ document.getElementById('editPetForm').addEventListener('submit', function(e) {
         breed: document.getElementById('editPetBreed').value.trim() || null,
         gender: document.getElementById('editPetGender').value,
         birth_date: document.getElementById('editPetBirthDate').value || null,
-        weight: document.getElementById('editPetWeight').value || null,
+        weight: document.getElementById('editPetWeight').value ? parseFloat(document.getElementById('editPetWeight').value) : null,
         color: document.getElementById('editPetColor').value.trim() || null,
         microchip: document.getElementById('editPetMicrochip').value.trim() || null,
         notes: document.getElementById('editPetNotes').value.trim() || null

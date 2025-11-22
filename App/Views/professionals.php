@@ -141,17 +141,23 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Usuário (Opcional)</label>
-                        <select class="form-select" name="user_id" id="userIdSelect">
-                            <option value="">Nenhum (criar depois)</option>
+                        <label class="form-label">Usuário *</label>
+                        <select class="form-select" name="user_id" id="userIdSelect" required>
+                            <option value="">Selecione um usuário...</option>
                         </select>
-                        <small class="form-text text-muted">Vincular a um usuário existente ou criar depois</small>
+                        <div class="invalid-feedback">Selecione um usuário</div>
+                        <small class="form-text text-muted">O profissional deve estar vinculado a um usuário existente. <a href="/users" target="_blank">Criar novo usuário</a></small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Especialidade</label>
-                        <select class="form-select" name="specialty_id" id="specialtySelect">
-                            <option value="">Nenhuma</option>
+                        <label class="form-label">Especialidades</label>
+                        <select class="form-select" name="specialties[]" id="specialtySelect" multiple>
                         </select>
+                        <small class="form-text text-muted">Mantenha Ctrl/Cmd pressionado para selecionar múltiplas especialidades</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Duração Padrão de Consulta (minutos)</label>
+                        <input type="number" class="form-control" name="default_consultation_duration" value="30" min="15" max="240" step="15">
+                        <small class="form-text text-muted">Duração padrão em minutos (15-240)</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -185,11 +191,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
+        const data = {};
+        
+        // Processa campos normais
+        for (let [key, value] of formData.entries()) {
+            if (key === 'specialties[]') {
+                // Trata array de especialidades
+                if (!data.specialties) {
+                    data.specialties = [];
+                }
+                if (value) {
+                    data.specialties.push(parseInt(value));
+                }
+            } else if (value !== '') {
+                data[key] = value;
+            }
+        }
+        
+        // Converte user_id para inteiro
+        if (data.user_id) {
+            data.user_id = parseInt(data.user_id);
+        }
+        
+        // Converte default_consultation_duration para inteiro
+        if (data.default_consultation_duration) {
+            data.default_consultation_duration = parseInt(data.default_consultation_duration);
+        }
         
         // Remove campos vazios
         Object.keys(data).forEach(key => {
-            if (data[key] === '') {
+            if (data[key] === '' || data[key] === null || (Array.isArray(data[key]) && data[key].length === 0)) {
                 delete data[key];
             }
         });
@@ -249,13 +280,14 @@ function applyFilters() {
     const roleFilter = document.getElementById('roleFilter')?.value || '';
     
     professionals = professionals.filter(prof => {
+        const user = prof.user || {};
         const matchSearch = !search || 
-            (prof.name?.toLowerCase().includes(search)) ||
+            (user.name?.toLowerCase().includes(search)) ||
             (prof.crmv?.toLowerCase().includes(search)) ||
-            (prof.email?.toLowerCase().includes(search));
+            (user.email?.toLowerCase().includes(search));
         
         const matchStatus = !statusFilter || prof.status === statusFilter;
-        const matchRole = !roleFilter || prof.role === roleFilter;
+        const matchRole = !roleFilter || user.role === roleFilter;
         
         return matchSearch && matchStatus && matchRole;
     });
@@ -276,17 +308,18 @@ function renderProfessionals() {
     tbody.innerHTML = professionals.map(prof => {
         const statusBadge = prof.status === 'active' ? 'bg-success' : 
                            prof.status === 'inactive' ? 'bg-secondary' : 'bg-warning';
-        const roleBadge = prof.role === 'veterinarian' ? 'bg-primary' : 
-                         prof.role === 'assistant' ? 'bg-info' : 'bg-danger';
+        const user = prof.user || {};
+        const roleBadge = user.role === 'admin' ? 'bg-danger' : 
+                         user.role === 'editor' ? 'bg-primary' : 'bg-secondary';
         
         return `
             <tr>
                 <td>${prof.id}</td>
-                <td>${prof.name || '-'}</td>
+                <td>${user.name || '-'}</td>
                 <td>${prof.crmv || '-'}</td>
-                <td>${prof.email || '-'}</td>
-                <td>${prof.phone || '-'}</td>
-                <td><span class="badge ${roleBadge}">${prof.role || '-'}</span></td>
+                <td>${user.email || '-'}</td>
+                <td>-</td>
+                <td><span class="badge ${roleBadge}">${user.role || '-'}</span></td>
                 <td><span class="badge ${statusBadge}">${prof.status || 'active'}</span></td>
                 <td>${formatDate(prof.created_at)}</td>
                 <td>

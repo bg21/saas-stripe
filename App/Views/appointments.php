@@ -202,11 +202,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
+        const data = {};
+        
+        // Processa campos e converte tipos
+        for (let [key, value] of formData.entries()) {
+            if (value !== '') {
+                // Converte IDs para inteiros
+                if (key.includes('_id') || key === 'professional_id' || key === 'client_id' || key === 'pet_id' || key === 'specialty_id') {
+                    data[key] = parseInt(value);
+                }
+                // Converte duration_minutes para inteiro
+                else if (key === 'duration_minutes') {
+                    data[key] = parseInt(value);
+                }
+                else {
+                    data[key] = value;
+                }
+            }
+        }
         
         // Remove campos vazios
         Object.keys(data).forEach(key => {
-            if (data[key] === '') {
+            if (data[key] === '' || data[key] === null) {
                 delete data[key];
             }
         });
@@ -258,7 +275,9 @@ async function loadAppointments(skipCache = false) {
             skipCache: skipCache
         });
         
-        appointments = Array.isArray(response.data) ? response.data : [];
+        // A API retorna { data: { appointments: [...], pagination: {...} } }
+        appointments = Array.isArray(response.data?.appointments) ? response.data.appointments : 
+                      Array.isArray(response.data) ? response.data : [];
         
         renderAppointments();
     } catch (error) {
