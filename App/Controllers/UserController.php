@@ -35,10 +35,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'list_users']);
                 return;
             }
             
@@ -48,10 +45,7 @@ class UserController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'list_users']);
                 return;
             }
 
@@ -347,10 +341,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'update_user']);
                 return;
             }
             
@@ -361,10 +352,7 @@ class UserController
             $currentUserId = Flight::get('user_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'update_user']);
                 return;
             }
 
@@ -375,7 +363,7 @@ class UserController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -385,24 +373,19 @@ class UserController
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Prepara dados para atualização
             $updateData = [];
+            $errors = [];
             
             if (isset($data['name'])) {
                 $updateData['name'] = $data['name'];
@@ -411,58 +394,45 @@ class UserController
             if (isset($data['email'])) {
                 // Valida formato de email
                 if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-                    Flight::halt(400, json_encode([
-                        'error' => 'Dados inválidos',
-                        'message' => 'Email inválido'
-                    ]));
-                    return;
+                    $errors['email'] = 'Email inválido';
+                } else {
+                    // Verifica se o email já existe em outro usuário do mesmo tenant
+                    $existingUser = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
+                    if ($existingUser && $existingUser['id'] != $id) {
+                        ResponseHelper::sendError(409, 'Email já existe', 'Já existe um usuário com este email neste tenant', 'EMAIL_ALREADY_EXISTS', [], ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
+                        return;
+                    }
+                    $updateData['email'] = $data['email'];
                 }
-                
-                // Verifica se o email já existe em outro usuário do mesmo tenant
-                $existingUser = $this->userModel->findByEmailAndTenant($data['email'], $tenantId);
-                if ($existingUser && $existingUser['id'] != $id) {
-                    Flight::halt(409, json_encode([
-                        'error' => 'Email já existe',
-                        'message' => 'Já existe um usuário com este email neste tenant'
-                    ]));
-                    return;
-                }
-                
-                $updateData['email'] = $data['email'];
             }
             
             if (isset($data['password'])) {
                 // ✅ CORREÇÃO: Usa validação completa de senha para update
                 $passwordErrors = Validator::validatePasswordUpdate(['password' => $data['password']]);
                 if (!empty($passwordErrors)) {
-                    Flight::halt(400, json_encode([
-                        'error' => 'Dados inválidos',
-                        'message' => 'Por favor, verifique os dados informados',
-                        'errors' => $passwordErrors
-                    ]));
-                    return;
+                    $errors = array_merge($errors, $passwordErrors);
+                } else {
+                    $updateData['password_hash'] = $this->userModel->hashPassword($data['password']);
                 }
-                
-                $updateData['password_hash'] = $this->userModel->hashPassword($data['password']);
             }
             
             if (isset($data['status'])) {
                 if (!in_array($data['status'], ['active', 'inactive'])) {
-                    Flight::halt(400, json_encode([
-                        'error' => 'Dados inválidos',
-                        'message' => 'Status inválido. Use: active ou inactive'
-                    ]));
-                    return;
+                    $errors['status'] = 'Status inválido. Use: active ou inactive';
+                } else {
+                    $updateData['status'] = $data['status'];
                 }
-                $updateData['status'] = $data['status'];
+            }
+            
+            // Se houver erros de validação, retorna
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError('Por favor, verifique os dados informados', $errors, ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
+                return;
             }
             
             // Verifica se há dados para atualizar
             if (empty($updateData)) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Nenhum campo válido para atualização fornecido'
-                ]));
+                ResponseHelper::sendValidationError('Nenhum campo válido para atualização fornecido', [], ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
@@ -470,10 +440,12 @@ class UserController
             $success = $this->userModel->update((int)$id, $updateData);
             
             if (!$success) {
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao atualizar usuário',
-                    'message' => 'Não foi possível atualizar o usuário'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \RuntimeException('Falha ao atualizar usuário no banco de dados'),
+                    'Não foi possível atualizar o usuário',
+                    'USER_UPDATE_DB_ERROR',
+                    ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -489,21 +461,14 @@ class UserController
                 'tenant_id' => $tenantId
             ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Usuário atualizado com sucesso',
-                'data' => $updatedUser
-            ]);
+            ResponseHelper::sendSuccess($updatedUser, 200, 'Usuário atualizado com sucesso');
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar usuário", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao atualizar usuário',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar usuário',
+                'USER_UPDATE_ERROR',
+                ['action' => 'update_user', 'user_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -518,10 +483,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'delete_user']);
                 return;
             }
             
@@ -532,10 +494,7 @@ class UserController
             $currentUserId = Flight::get('user_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'delete_user']);
                 return;
             }
 
@@ -543,28 +502,19 @@ class UserController
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Não permite que o usuário delete a si mesmo
             if ($currentUserId && (int)$currentUserId === (int)$id) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Ação inválida',
-                    'message' => 'Você não pode desativar sua própria conta'
-                ]));
+                ResponseHelper::sendValidationError('Você não pode desativar sua própria conta', [], ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
@@ -576,10 +526,7 @@ class UserController
                 });
                 
                 if (count($admins) <= 1) {
-                    Flight::halt(400, json_encode([
-                        'error' => 'Ação inválida',
-                        'message' => 'Não é possível desativar o último admin do tenant'
-                    ]));
+                    ResponseHelper::sendValidationError('Não é possível desativar o último admin do tenant', [], ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
             }
@@ -588,10 +535,12 @@ class UserController
             $success = $this->userModel->update((int)$id, ['status' => 'inactive']);
             
             if (!$success) {
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao desativar usuário',
-                    'message' => 'Não foi possível desativar o usuário'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \RuntimeException('Falha ao desativar usuário no banco de dados'),
+                    'Não foi possível desativar o usuário',
+                    'USER_DELETE_DB_ERROR',
+                    ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -601,20 +550,14 @@ class UserController
                 'deactivated_by' => $currentUserId
             ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Usuário desativado com sucesso'
-            ]);
+            ResponseHelper::sendSuccess(null, 200, 'Usuário desativado com sucesso');
         } catch (\Exception $e) {
-            Logger::error("Erro ao desativar usuário", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao desativar usuário',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao desativar usuário',
+                'USER_DELETE_ERROR',
+                ['action' => 'delete_user', 'user_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -632,10 +575,7 @@ class UserController
         try {
             // Endpoints de usuários requerem autenticação de usuário (não API Key)
             if (!PermissionHelper::isUserAuth()) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Este endpoint requer autenticação de usuário. API Key não é permitida.'
-                ]));
+                ResponseHelper::sendForbiddenError('Este endpoint requer autenticação de usuário. API Key não é permitida.', ['action' => 'update_user_role']);
                 return;
             }
             
@@ -646,10 +586,7 @@ class UserController
             $currentUserId = Flight::get('user_id');
             
             if ($tenantId === null) {
-                Flight::halt(401, json_encode([
-                    'error' => 'Não autenticado',
-                    'message' => 'Token de autenticação inválido'
-                ]));
+                ResponseHelper::sendUnauthorizedError('Token de autenticação inválido', ['action' => 'update_user_role']);
                 return;
             }
 
@@ -660,7 +597,7 @@ class UserController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -668,10 +605,11 @@ class UserController
             
             // Valida role
             if (empty($data['role']) || !in_array($data['role'], ['admin', 'editor', 'viewer'])) {
-                Flight::halt(400, json_encode([
-                    'error' => 'Dados inválidos',
-                    'message' => 'Role inválida. Use: admin, editor ou viewer'
-                ]));
+                ResponseHelper::sendValidationError(
+                    'Role inválida. Use: admin, editor ou viewer',
+                    ['role' => 'Role inválida. Use: admin, editor ou viewer'],
+                    ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -679,28 +617,19 @@ class UserController
             $user = $this->userModel->findById((int)$id);
             
             if (!$user) {
-                Flight::halt(404, json_encode([
-                    'error' => 'Usuário não encontrado',
-                    'message' => 'O usuário especificado não existe'
-                ]));
+                ResponseHelper::sendNotFoundError('Usuário', ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Verifica se o usuário pertence ao tenant
             if ($user['tenant_id'] != $tenantId) {
-                Flight::halt(403, json_encode([
-                    'error' => 'Acesso negado',
-                    'message' => 'Você não tem permissão para acessar este usuário'
-                ]));
+                ResponseHelper::sendForbiddenError('Você não tem permissão para acessar este usuário', ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
             // Não permite que o usuário mude sua própria role de admin
             if ($currentUserId && (int)$currentUserId === (int)$id && $user['role'] === 'admin' && $data['role'] !== 'admin') {
-                Flight::halt(400, json_encode([
-                    'error' => 'Ação inválida',
-                    'message' => 'Você não pode alterar sua própria role de admin'
-                ]));
+                ResponseHelper::sendValidationError('Você não pode alterar sua própria role de admin', [], ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
             
@@ -712,10 +641,7 @@ class UserController
                 });
                 
                 if (count($admins) <= 1) {
-                    Flight::halt(400, json_encode([
-                        'error' => 'Ação inválida',
-                        'message' => 'Não é possível remover o último admin do tenant'
-                    ]));
+                    ResponseHelper::sendValidationError('Não é possível remover o último admin do tenant', [], ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
             }
@@ -724,10 +650,12 @@ class UserController
             $success = $this->userModel->updateRole((int)$id, $data['role']);
             
             if (!$success) {
-                Flight::halt(500, json_encode([
-                    'error' => 'Erro ao atualizar role',
-                    'message' => 'Não foi possível atualizar a role do usuário'
-                ]));
+                ResponseHelper::sendGenericError(
+                    new \RuntimeException('Falha ao atualizar role no banco de dados'),
+                    'Não foi possível atualizar a role do usuário',
+                    'USER_ROLE_UPDATE_DB_ERROR',
+                    ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId]
+                );
                 return;
             }
             
@@ -744,21 +672,14 @@ class UserController
                 'tenant_id' => $tenantId
             ]);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Role atualizada com sucesso',
-                'data' => $updatedUser
-            ]);
+            ResponseHelper::sendSuccess($updatedUser, 200, 'Role atualizada com sucesso');
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar role", [
-                'error' => $e->getMessage(),
-                'user_id' => $id,
-                'trace' => $e->getTraceAsString()
-            ]);
-            Flight::halt(500, json_encode([
-                'error' => 'Erro ao atualizar role',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ]));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar role',
+                'USER_ROLE_UPDATE_ERROR',
+                ['action' => 'update_user_role', 'user_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

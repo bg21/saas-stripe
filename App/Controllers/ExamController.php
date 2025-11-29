@@ -103,41 +103,100 @@ class ExamController
                 $exams = array_values($exams); // Reindexa array
             }
             
-            // Enriquece com dados relacionados
+            // ✅ OTIMIZAÇÃO: Carrega todos os dados relacionados de uma vez (elimina N+1)
+            // Coleta IDs únicos
+            $petIds = array_unique(array_filter(array_column($exams, 'pet_id')));
+            $clientIds = array_unique(array_filter(array_column($exams, 'client_id')));
+            $professionalIds = array_unique(array_filter(array_column($exams, 'professional_id')));
+            $examTypeIds = array_unique(array_filter(array_column($exams, 'exam_type_id')));
+            
+            // Carrega todos os pets de uma vez
+            $petsById = [];
+            if (!empty($petIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($petIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM pets 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $petIds));
+                $pets = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($pets as $pet) {
+                    $petsById[$pet['id']] = $pet;
+                }
+            }
+            
+            // Carrega todos os clientes de uma vez
+            $clientsById = [];
+            if (!empty($clientIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($clientIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM clients 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $clientIds));
+                $clients = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($clients as $client) {
+                    $clientsById[$client['id']] = $client;
+                }
+            }
+            
+            // Carrega todos os profissionais de uma vez
+            $professionalsById = [];
+            if (!empty($professionalIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($professionalIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM professionals 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $professionalIds));
+                $professionals = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($professionals as $prof) {
+                    $professionalsById[$prof['id']] = $prof;
+                }
+            }
+            
+            // Carrega todos os tipos de exame de uma vez
+            $examTypesById = [];
+            if (!empty($examTypeIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($examTypeIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM exam_types 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $examTypeIds));
+                $examTypes = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($examTypes as $examType) {
+                    $examTypesById[$examType['id']] = $examType;
+                }
+            }
+            
+            // Enriquece exames com dados já carregados
             $enrichedExams = [];
             foreach ($exams as $exam) {
                 $enriched = $exam;
                 
-                // Carrega pet se existir
-                if ($exam['pet_id']) {
-                    $pet = $this->petModel->findByTenantAndId($tenantId, $exam['pet_id']);
-                    if ($pet) {
-                        $enriched['pet'] = $pet;
-                    }
+                // Adiciona pet (se existir)
+                if (!empty($exam['pet_id']) && isset($petsById[$exam['pet_id']])) {
+                    $enriched['pet'] = $petsById[$exam['pet_id']];
                 }
                 
-                // Carrega cliente se existir
-                if ($exam['client_id']) {
-                    $client = $this->clientModel->findByTenantAndId($tenantId, $exam['client_id']);
-                    if ($client) {
-                        $enriched['client'] = $client;
-                    }
+                // Adiciona cliente (se existir)
+                if (!empty($exam['client_id']) && isset($clientsById[$exam['client_id']])) {
+                    $enriched['client'] = $clientsById[$exam['client_id']];
                 }
                 
-                // Carrega profissional se existir
-                if ($exam['professional_id']) {
-                    $professional = $this->professionalModel->findByTenantAndId($tenantId, $exam['professional_id']);
-                    if ($professional) {
-                        $enriched['professional'] = $professional;
-                    }
+                // Adiciona profissional (se existir)
+                if (!empty($exam['professional_id']) && isset($professionalsById[$exam['professional_id']])) {
+                    $enriched['professional'] = $professionalsById[$exam['professional_id']];
                 }
                 
-                // Carrega tipo de exame se existir
-                if ($exam['exam_type_id']) {
-                    $examType = $this->examTypeModel->findByTenantAndId($tenantId, $exam['exam_type_id']);
-                    if ($examType) {
-                        $enriched['exam_type'] = $examType;
-                    }
+                // Adiciona tipo de exame (se existir)
+                if (!empty($exam['exam_type_id']) && isset($examTypesById[$exam['exam_type_id']])) {
+                    $enriched['exam_type'] = $examTypesById[$exam['exam_type_id']];
                 }
                 
                 $enrichedExams[] = $enriched;
@@ -382,6 +441,35 @@ class ExamController
                 $professional = $this->professionalModel->findByTenantAndId($tenantId, (int)$data['professional_id']);
                 if (!$professional) {
                     $errors['professional_id'] = 'Profissional não encontrado';
+                }
+            }
+            
+            // ✅ CORREÇÃO: Valida pet_id se fornecido
+            if (isset($data['pet_id']) && !empty($data['pet_id'])) {
+                $pet = $this->petModel->findByTenantAndId($tenantId, (int)$data['pet_id']);
+                if (!$pet) {
+                    $errors['pet_id'] = 'Pet não encontrado';
+                } else {
+                    // Se pet_id foi fornecido, usa o client_id do pet (se client_id não foi fornecido explicitamente)
+                    if (!isset($data['client_id']) || empty($data['client_id'])) {
+                        $data['client_id'] = $pet['client_id'] ?? null;
+                    }
+                }
+            }
+            
+            // ✅ CORREÇÃO: Valida client_id se fornecido
+            if (isset($data['client_id']) && !empty($data['client_id'])) {
+                $client = $this->clientModel->findByTenantAndId($tenantId, (int)$data['client_id']);
+                if (!$client) {
+                    $errors['client_id'] = 'Cliente não encontrado';
+                } else {
+                    // Se pet_id também foi fornecido, valida se o pet pertence ao cliente
+                    if (isset($data['pet_id']) && !empty($data['pet_id'])) {
+                        $pet = $this->petModel->findByTenantAndId($tenantId, (int)$data['pet_id']);
+                        if ($pet && $pet['client_id'] != $data['client_id']) {
+                            $errors['pet_id'] = 'Pet não pertence ao cliente informado';
+                        }
+                    }
                 }
             }
             

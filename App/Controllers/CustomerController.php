@@ -201,6 +201,7 @@ class CustomerController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$customer) {
+                error_log("Cliente não encontrado no banco: customer_id={$id}, tenant_id={$tenantId}");
                 ResponseHelper::sendNotFoundError('Cliente', ['action' => 'get_customer', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
@@ -210,16 +211,55 @@ class CustomerController
             $cached = \App\Services\CacheService::getJson($cacheKey);
             
             if ($cached !== null) {
-                Flight::json([
-                    'success' => true,
-                    'data' => $cached
-                ]);
+                ResponseHelper::sendSuccess($cached);
+                return;
+            }
+
+            // ✅ CORREÇÃO: Valida se tem stripe_customer_id
+            if (empty($customer['stripe_customer_id'])) {
+                error_log("Cliente sem stripe_customer_id: {$id} (tenant_id: {$tenantId})");
+                // Retorna dados do banco mesmo sem stripe_customer_id
+                $responseData = [
+                    'id' => $customer['id'],
+                    'stripe_customer_id' => null,
+                    'email' => $customer['email'] ?? null,
+                    'name' => $customer['name'] ?? null,
+                    'phone' => null,
+                    'description' => null,
+                    'metadata' => [],
+                    'created' => $customer['created_at'] ?? date('Y-m-d H:i:s')
+                ];
+                
+                \App\Services\CacheService::setJson($cacheKey, $responseData, 300);
+                ResponseHelper::sendSuccess($responseData);
                 return;
             }
 
             // ✅ Sincronização condicional: apenas se cache expirou
             // Busca dados atualizados no Stripe
-            $stripeCustomer = $this->stripeService->getCustomer($customer['stripe_customer_id']);
+            try {
+                $stripeCustomer = $this->stripeService->getCustomer($customer['stripe_customer_id']);
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                // Se o customer não existe no Stripe, retorna dados do banco
+                if ($e->getStripeCode() === 'resource_missing') {
+                    error_log("Cliente não encontrado no Stripe: {$customer['stripe_customer_id']} (customer_id: {$id}, tenant_id: {$tenantId})");
+                    $responseData = [
+                        'id' => $customer['id'],
+                        'stripe_customer_id' => $customer['stripe_customer_id'],
+                        'email' => $customer['email'] ?? null,
+                        'name' => $customer['name'] ?? null,
+                        'phone' => null,
+                        'description' => null,
+                        'metadata' => [],
+                        'created' => $customer['created_at'] ?? date('Y-m-d H:i:s')
+                    ];
+                    
+                    \App\Services\CacheService::setJson($cacheKey, $responseData, 300);
+                    ResponseHelper::sendSuccess($responseData);
+                    return;
+                }
+                throw $e; // Re-lança outras exceções
+            }
 
             // Atualiza banco apenas se houver mudanças significativas
             $needsUpdate = false;
@@ -439,8 +479,7 @@ class CustomerController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$customer) {
-                http_response_code(404);
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'list_invoices', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -466,8 +505,36 @@ class CustomerController
                 $options['ending_before'] = $endingBefore;
             }
 
+            // ✅ CORREÇÃO: Valida se tem stripe_customer_id
+            if (empty($customer['stripe_customer_id'])) {
+                error_log("Cliente sem stripe_customer_id: {$id} (tenant_id: {$tenantId})");
+                Flight::json([
+                    'success' => true,
+                    'data' => [],
+                    'meta' => [
+                        'count' => 0,
+                        'has_more' => false
+                    ]
+                ]);
+                return;
+            }
+
             // Lista faturas do Stripe
-            $invoices = $this->stripeService->listInvoices($customer['stripe_customer_id'], $options);
+            try {
+                $invoices = $this->stripeService->listInvoices($customer['stripe_customer_id'], $options);
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                // Se o customer não existe no Stripe ou não tem faturas, retorna array vazio
+                error_log("Erro ao listar faturas do Stripe: {$e->getMessage()} (customer_id: {$id}, stripe_customer_id: {$customer['stripe_customer_id']})");
+                Flight::json([
+                    'success' => true,
+                    'data' => [],
+                    'meta' => [
+                        'count' => 0,
+                        'has_more' => false
+                    ]
+                ]);
+                return;
+            }
 
             // Formata resposta
             $invoicesData = [];
@@ -489,16 +556,81 @@ class CustomerController
                 ];
             }
 
-            $response = [
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
                 'data' => $invoicesData,
-                'count' => count($invoicesData),
-                'has_more' => $invoices->has_more
-            ];
-            ResponseHelper::sendSuccess($response);
+                'meta' => [
+                    'count' => count($invoicesData),
+                    'has_more' => $invoices->has_more
+                ]
+            ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             ResponseHelper::sendStripeError($e, 'Erro ao listar faturas', ['action' => 'list_customer_invoices', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError($e, 'Erro ao listar faturas', 'CUSTOMER_INVOICES_ERROR', ['action' => 'list_customer_invoices', 'customer_id' => $id, 'tenant_id' => $tenantId]);
+        }
+    }
+
+    /**
+     * Lista assinaturas de um cliente
+     * GET /v1/customers/:id/subscriptions
+     * 
+     * Query parameters opcionais:
+     *   - limit: Número máximo de resultados (padrão: 20)
+     *   - status: Filtrar por status
+     */
+    public function listSubscriptions(string $id): void
+    {
+        try {
+            // Verifica permissão (só verifica se for autenticação de usuário)
+            PermissionHelper::require('view_customers');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_customer_subscriptions', 'customer_id' => $id]);
+                return;
+            }
+
+            $customerModel = new \App\Models\Customer();
+            
+            // Buscar diretamente com filtro de tenant (mais seguro - proteção IDOR)
+            $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
+
+            if (!$customer) {
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'list_customer_subscriptions', 'customer_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+
+            // ✅ Usa SubscriptionController logic via Subscription model
+            $subscriptionModel = new \App\Models\Subscription();
+            $filters = ['customer' => (int)$id];
+            
+            // Obtém parâmetros de query
+            $limit = isset($_GET['limit']) ? min(100, max(1, (int)$_GET['limit'])) : 20;
+            $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+            
+            if (!empty($_GET['status'])) {
+                $filters['status'] = $_GET['status'];
+            }
+
+            $result = $subscriptionModel->findByTenant($tenantId, $page, $limit, $filters);
+
+            // ✅ Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $result['data'],
+                'meta' => [
+                    'total' => $result['total'],
+                    'page' => $result['page'],
+                    'limit' => $result['limit'],
+                    'total_pages' => $result['total_pages']
+                ]
+            ]);
+        } catch (\Exception $e) {
+            error_log("Erro ao listar assinaturas do cliente: {$e->getMessage()} (customer_id: {$id}, tenant_id: {$tenantId})");
+            ResponseHelper::sendGenericError($e, 'Erro ao listar assinaturas do cliente', 'CUSTOMER_SUBSCRIPTIONS_ERROR', ['action' => 'list_customer_subscriptions', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         }
     }
 
@@ -529,8 +661,7 @@ class CustomerController
             $customer = $customerModel->findByTenantAndId($tenantId, (int)$id);
 
             if (!$customer) {
-                http_response_code(404);
-                Flight::json(['error' => 'Cliente não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cliente', ['action' => 'list_payment_methods', 'customer_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -569,12 +700,54 @@ class CustomerController
             // ✅ Tenta obter do cache (TTL: 60 segundos)
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // ✅ CORREÇÃO: Se cache tem formato antigo {data: [...], meta}, converte
+                if (isset($cached['data']) && isset($cached['meta'])) {
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached['data'],
+                        'meta' => $cached['meta']
+                    ]);
+                } else {
+                    // Formato novo (já é array direto)
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached,
+                        'meta' => []
+                    ]);
+                }
+                return;
+            }
+
+            // ✅ CORREÇÃO: Valida se tem stripe_customer_id
+            if (empty($customer['stripe_customer_id'])) {
+                error_log("Cliente sem stripe_customer_id: {$id} (tenant_id: {$tenantId})");
+                Flight::json([
+                    'success' => true,
+                    'data' => [],
+                    'meta' => [
+                        'count' => 0,
+                        'has_more' => false
+                    ]
+                ]);
                 return;
             }
 
             // Lista métodos de pagamento do Stripe
-            $paymentMethods = $this->stripeService->listPaymentMethods($customer['stripe_customer_id'], $options);
+            try {
+                $paymentMethods = $this->stripeService->listPaymentMethods($customer['stripe_customer_id'], $options);
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                // Se o customer não existe no Stripe ou não tem métodos de pagamento, retorna array vazio
+                error_log("Erro ao listar métodos de pagamento do Stripe: {$e->getMessage()} (customer_id: {$id}, stripe_customer_id: {$customer['stripe_customer_id']})");
+                Flight::json([
+                    'success' => true,
+                    'data' => [],
+                    'meta' => [
+                        'count' => 0,
+                        'has_more' => false
+                    ]
+                ]);
+                return;
+            }
 
             // Formata resposta
             $paymentMethodsData = [];
@@ -601,17 +774,25 @@ class CustomerController
                 $paymentMethodsData[] = $paymentMethodData;
             }
 
-            $response = [
-                'success' => true,
-                'data' => $paymentMethodsData,
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            $meta = [
                 'count' => count($paymentMethodsData),
                 'has_more' => $paymentMethods->has_more
             ];
             
-            // ✅ Salva no cache
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ Salva no cache (formato completo para compatibilidade)
+            $cacheData = [
+                'data' => $paymentMethodsData,
+                'meta' => $meta
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 60);
             
-            ResponseHelper::sendSuccess($response);
+            // ✅ Retorna array diretamente em data
+            Flight::json([
+                'success' => true,
+                'data' => $paymentMethodsData,
+                'meta' => $meta
+            ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             ResponseHelper::sendStripeError($e, 'Erro ao listar métodos de pagamento', ['action' => 'list_payment_methods', 'customer_id' => $id, 'tenant_id' => $tenantId]);
         } catch (\Exception $e) {

@@ -122,53 +122,128 @@
 </div>
 
 <script>
+// ✅ CORREÇÃO: Helper para garantir que showAlert esteja disponível
+function safeShowAlert(message, type = 'info') {
+    if (typeof showAlert === 'function') {
+        showAlert(message, type);
+    } else {
+        // Fallback: aguarda o carregamento do dashboard.js
+        waitForShowAlert(message, type);
+    }
+}
+
+// ✅ Helper para aguardar o carregamento de showAlert
+function waitForShowAlert(message, type = 'info', maxAttempts = 50) {
+    if (typeof showAlert === 'function') {
+        showAlert(message, type);
+    } else if (maxAttempts > 0) {
+        setTimeout(() => waitForShowAlert(message, type, maxAttempts - 1), 100);
+    } else {
+        console.error('showAlert não foi carregado após 5 segundos');
+        // Fallback: mostra alerta básico
+        const container = document.getElementById('alertContainer');
+        if (container) {
+            container.innerHTML = `<div class="alert alert-${type || 'danger'}">${message}</div>`;
+        }
+    }
+}
+
 const subscriptionId = new URLSearchParams(window.location.search).get('id');
 
 if (!subscriptionId) {
     window.location.href = '/subscriptions';
 }
 
-// ✅ Valida formato de subscription_id da URL
-if (typeof validateStripeId === 'function') {
-    const subscriptionIdError = validateStripeId(subscriptionId, 'subscription_id', true);
-    if (subscriptionIdError) {
-        showAlert('ID de assinatura inválido na URL: ' + subscriptionIdError, 'danger');
-        window.location.href = '/subscriptions';
-        throw new Error('Invalid subscription_id format');
-    }
-} else {
-    // Fallback: validação básica
-    const subscriptionIdPattern = /^sub_[a-zA-Z0-9]+$/;
-    if (!subscriptionIdPattern.test(subscriptionId)) {
-        showAlert('Formato de Subscription ID inválido na URL. Use: sub_xxxxx', 'danger');
-        window.location.href = '/subscriptions';
-        throw new Error('Invalid subscription_id format');
-    }
-}
-
+// ✅ Valida formato de subscription_id da URL (aguarda carregamento dos scripts)
+// ✅ CORREÇÃO: Aceita tanto IDs numéricos do banco quanto IDs do Stripe (sub_xxxxx)
 document.addEventListener('DOMContentLoaded', () => {
+    // Validação após DOM e scripts estarem prontos
+    // Aceita: IDs numéricos (ex: 6) ou IDs do Stripe (ex: sub_xxxxx)
+    const isNumericId = /^\d+$/.test(subscriptionId);
+    const isStripeId = /^sub_[a-zA-Z0-9]+$/.test(subscriptionId);
+    
+    if (!isNumericId && !isStripeId) {
+        safeShowAlert('ID de assinatura inválido na URL. Use um ID numérico (ex: 6) ou ID do Stripe (ex: sub_xxxxx)', 'danger');
+        setTimeout(() => window.location.href = '/subscriptions', 2000);
+        return;
+    }
+    
+    // Se for ID do Stripe, valida com validateStripeId se disponível
+    if (isStripeId && typeof validateStripeId === 'function') {
+        const subscriptionIdError = validateStripeId(subscriptionId, 'subscription_id', true);
+        if (subscriptionIdError) {
+            safeShowAlert('ID de assinatura inválido na URL: ' + subscriptionIdError, 'danger');
+            setTimeout(() => window.location.href = '/subscriptions', 2000);
+            return;
+        }
+    }
+    
     loadSubscriptionDetails();
 });
 
 async function loadSubscriptionDetails() {
     try {
-        const [subscription, history] = await Promise.all([
-            apiRequest(`/v1/subscriptions/${subscriptionId}`, { cacheTTL: 15000 }),
-            apiRequest(`/v1/subscriptions/${subscriptionId}/history`, { cacheTTL: 30000 }).catch(() => ({ data: [] }))
-        ]);
-
+        // Carrega assinatura
+        const subscription = await apiRequest(`/v1/subscriptions/${subscriptionId}`, { cacheTTL: 15000 });
         subscriptionData = subscription.data;
         renderSubscriptionInfo(subscriptionData);
-        renderHistory(history.data || []);
+
+        // Tenta carregar histórico (não crítico - se falhar, apenas mostra vazio)
+        try {
+            const history = await apiRequest(`/v1/subscriptions/${subscriptionId}/history`, { cacheTTL: 30000 });
+            // ✅ CORREÇÃO: Garante que history.data seja um array
+            const historyArray = Array.isArray(history.data) ? history.data : [];
+            renderHistory(historyArray);
+        } catch (historyError) {
+            console.warn('Erro ao carregar histórico (não crítico):', historyError);
+            // Mostra histórico vazio se falhar
+            renderHistory([]);
+        }
 
         document.getElementById('loadingSubscription').style.display = 'none';
         document.getElementById('subscriptionDetails').style.display = 'block';
     } catch (error) {
-        showAlert('Erro ao carregar detalhes: ' + error.message, 'danger');
+        console.error('Erro ao carregar detalhes da assinatura:', error);
+        safeShowAlert('Erro ao carregar detalhes: ' + (error.message || 'Erro desconhecido'), 'danger');
+        document.getElementById('loadingSubscription').style.display = 'none';
     }
 }
 
 function renderSubscriptionInfo(sub) {
+    // ✅ CORREÇÃO: Usa created_at ou created (compatibilidade)
+    const createdAt = sub.created_at || sub.created || null;
+    
+    // ✅ CORREÇÃO: Formata current_period_end corretamente
+    let nextPayment = '-';
+    if (sub.current_period_end) {
+        try {
+            // Tenta formatar a data
+            const formatted = formatDate(sub.current_period_end);
+            // Se formatDate retornou '-', significa que não conseguiu formatar
+            // Tenta formatar manualmente
+            if (formatted === '-' || !formatted) {
+                // Tenta criar Date diretamente
+                const date = new Date(sub.current_period_end);
+                if (!isNaN(date.getTime())) {
+                    nextPayment = date.toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                } else {
+                    nextPayment = sub.current_period_end; // Mostra valor bruto
+                }
+            } else {
+                nextPayment = formatted;
+            }
+        } catch (e) {
+            console.error('Erro ao formatar current_period_end:', e, sub.current_period_end);
+            nextPayment = sub.current_period_end || '-'; // Mostra o valor bruto se falhar
+        }
+    }
+    
     document.getElementById('subscriptionInfo').innerHTML = `
         <div class="row">
             <div class="col-md-6">
@@ -179,8 +254,8 @@ function renderSubscriptionInfo(sub) {
             </div>
             <div class="col-md-6">
                 <p><strong>Valor:</strong> ${sub.amount ? formatCurrency(sub.amount, sub.currency || 'BRL') : '-'}</p>
-                <p><strong>Próximo Pagamento:</strong> ${sub.current_period_end ? formatDate(sub.current_period_end) : '-'}</p>
-                <p><strong>Criado em:</strong> ${formatDate(sub.created_at)}</p>
+                <p><strong>Próximo Pagamento:</strong> ${nextPayment}</p>
+                <p><strong>Criado em:</strong> ${createdAt ? formatDate(createdAt) : '-'}</p>
             </div>
         </div>
     `;
@@ -188,13 +263,18 @@ function renderSubscriptionInfo(sub) {
 
 function renderHistory(history) {
     const container = document.getElementById('historyList');
+    // ✅ CORREÇÃO: Garante que history seja um array
+    if (!Array.isArray(history)) {
+        console.warn('renderHistory recebeu valor não-array:', history);
+        history = [];
+    }
     if (history.length === 0) {
         container.innerHTML = '<p class="text-muted">Nenhum histórico encontrado</p>';
         return;
     }
     container.innerHTML = history.map(h => `
         <div class="border-bottom pb-2 mb-2">
-            <strong>${h.action || h.event}</strong> - ${formatDate(h.created_at || h.timestamp)}
+            <strong>${h.action || h.event || h.change_type || 'Alteração'}</strong> - ${formatDate(h.created_at || h.timestamp || h.created)}
         </div>
     `).join('');
 }
@@ -271,7 +351,7 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
         if (typeof validateStripeId === 'function') {
             const priceIdError = validateStripeId(priceId, 'price_id', false);
             if (priceIdError) {
-                showAlert(priceIdError, 'danger');
+                safeShowAlert(priceIdError, 'danger');
                 document.getElementById('editSubscriptionPrice').classList.add('is-invalid');
                 return;
             }
@@ -279,7 +359,7 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
             // Fallback: validação básica
             const priceIdPattern = /^price_[a-zA-Z0-9]+$/;
             if (!priceIdPattern.test(priceId)) {
-                showAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
+                safeShowAlert('Formato de Price ID inválido. Use: price_xxxxx', 'danger');
                 document.getElementById('editSubscriptionPrice').classList.add('is-invalid');
                 return;
             }
@@ -294,7 +374,7 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
         try {
             formData.metadata = JSON.parse(metadataText);
         } catch (error) {
-            showAlert('Erro: Metadados devem estar em formato JSON válido', 'danger');
+            safeShowAlert('Erro: Metadados devem estar em formato JSON válido', 'danger');
             return;
         }
     }
@@ -313,7 +393,7 @@ document.getElementById('editSubscriptionForm').addEventListener('submit', funct
     })
     .then(data => {
         if (data.success) {
-            showAlert('Assinatura atualizada com sucesso!', 'success');
+            safeShowAlert('Assinatura atualizada com sucesso!', 'success');
             subscriptionData = data.data;
             renderSubscriptionInfo(subscriptionData);
             toggleEditMode();
@@ -342,10 +422,10 @@ async function cancelSubscription() {
     
     try {
         await apiRequest(`/v1/subscriptions/${subscriptionId}`, { method: 'DELETE' });
-        showAlert('Assinatura cancelada com sucesso!', 'success');
+        safeShowAlert('Assinatura cancelada com sucesso!', 'success');
         setTimeout(() => window.location.href = '/subscriptions', 2000);
     } catch (error) {
-        showAlert('Erro ao cancelar assinatura: ' + error.message, 'danger');
+        safeShowAlert('Erro ao cancelar assinatura: ' + error.message, 'danger');
     }
 }
 </script>

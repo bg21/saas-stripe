@@ -4,10 +4,13 @@ namespace App\Controllers;
 
 use App\Models\Professional;
 use App\Models\User;
+use App\Models\ProfessionalSchedule;
+use App\Models\ScheduleBlock;
 use App\Services\PlanLimitsService;
 use App\Utils\PermissionHelper;
 use App\Utils\ResponseHelper;
 use App\Utils\RequestCache;
+use App\Utils\Validator;
 use App\Services\Logger;
 use Config;
 use Flight;
@@ -19,12 +22,16 @@ class ProfessionalController
 {
     private Professional $professionalModel;
     private User $userModel;
+    private ProfessionalSchedule $scheduleModel;
+    private ScheduleBlock $blockModel;
     private PlanLimitsService $planLimitsService;
 
     public function __construct()
     {
         $this->professionalModel = new Professional();
         $this->userModel = new User();
+        $this->scheduleModel = new ProfessionalSchedule();
+        $this->blockModel = new ScheduleBlock();
         $this->planLimitsService = new PlanLimitsService();
     }
 
@@ -231,14 +238,29 @@ class ProfessionalController
                 'default_consultation_duration' => (int)($data['default_consultation_duration'] ?? 30)
             ];
             
-            // Processa specialties (JSON)
+            // ✅ CORREÇÃO: Valida tamanho do array specialties (prevenção de DoS)
             if (!empty($data['specialties']) && is_array($data['specialties'])) {
-                $insertData['specialties'] = json_encode($data['specialties']);
+                $specialtiesErrors = Validator::validateArraySize($data['specialties'], 'specialties', 10);
+                if (!empty($specialtiesErrors)) {
+                    $errors = array_merge($errors, $specialtiesErrors);
+                } else {
+                    $insertData['specialties'] = json_encode($data['specialties']);
+                }
             }
             
-            // Processa metadata (JSON)
+            // ✅ CORREÇÃO: Valida tamanho do array metadata (prevenção de DoS)
             if (!empty($data['metadata']) && is_array($data['metadata'])) {
-                $insertData['metadata'] = json_encode($data['metadata']);
+                $metadataErrors = Validator::validateArraySize($data['metadata'], 'metadata', 50);
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                } else {
+                    $insertData['metadata'] = json_encode($data['metadata']);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError($errors, ['action' => 'create_professional', 'tenant_id' => $tenantId]);
+                return;
             }
             
             $professionalId = $this->professionalModel->insert($insertData);
@@ -329,14 +351,29 @@ class ProfessionalController
                 $updateData['default_consultation_duration'] = (int)$data['default_consultation_duration'];
             }
             
-            // Processa specialties (JSON)
+            // ✅ CORREÇÃO: Valida tamanho do array specialties (prevenção de DoS)
             if (isset($data['specialties']) && is_array($data['specialties'])) {
-                $updateData['specialties'] = json_encode($data['specialties']);
+                $specialtiesErrors = Validator::validateArraySize($data['specialties'], 'specialties', 10);
+                if (!empty($specialtiesErrors)) {
+                    $errors = array_merge($errors, $specialtiesErrors);
+                } else {
+                    $updateData['specialties'] = json_encode($data['specialties']);
+                }
             }
             
-            // Processa metadata (JSON)
+            // ✅ CORREÇÃO: Valida tamanho do array metadata (prevenção de DoS)
             if (isset($data['metadata']) && is_array($data['metadata'])) {
-                $updateData['metadata'] = json_encode($data['metadata']);
+                $metadataErrors = Validator::validateArraySize($data['metadata'], 'metadata', 50);
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                } else {
+                    $updateData['metadata'] = json_encode($data['metadata']);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError($errors, ['action' => 'update_professional', 'professional_id' => $id]);
+                return;
             }
             
             if (empty($updateData)) {
@@ -425,7 +462,7 @@ class ProfessionalController
                 'request_uri' => $_SERVER['REQUEST_URI'] ?? 'N/A'
             ]);
             
-            PermissionHelper::require('view_schedules');
+            PermissionHelper::require('view_professionals');
             
             $tenantId = Flight::get('tenant_id');
             
@@ -443,32 +480,10 @@ class ProfessionalController
             }
             
             // Busca agenda do profissional
-            $db = \App\Utils\Database::getInstance();
-            $stmt = $db->prepare(
-                "SELECT * FROM professional_schedules 
-                 WHERE tenant_id = :tenant_id 
-                 AND professional_id = :professional_id 
-                 ORDER BY day_of_week ASC, start_time ASC"
-            );
-            $stmt->execute([
-                'tenant_id' => $tenantId,
-                'professional_id' => (int)$id
-            ]);
-            $schedule = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $schedule = $this->scheduleModel->findByProfessional($tenantId, (int)$id);
             
-            // Busca bloqueios de agenda
-            $blocksStmt = $db->prepare(
-                "SELECT * FROM schedule_blocks 
-                 WHERE tenant_id = :tenant_id 
-                 AND professional_id = :professional_id 
-                 AND end_datetime >= NOW()
-                 ORDER BY start_datetime ASC"
-            );
-            $blocksStmt->execute([
-                'tenant_id' => $tenantId,
-                'professional_id' => (int)$id
-            ]);
-            $blocks = $blocksStmt->fetchAll(\PDO::FETCH_ASSOC);
+            // Busca bloqueios futuros de agenda
+            $blocks = $this->blockModel->findFutureBlocks($tenantId, (int)$id);
             
             ResponseHelper::sendSuccess([
                 'schedule' => $schedule,
@@ -480,6 +495,259 @@ class ProfessionalController
                 'Erro ao obter agenda do profissional',
                 'PROFESSIONAL_SCHEDULE_ERROR',
                 ['action' => 'get_professional_schedule', 'professional_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Atualiza agenda do profissional
+     * PUT /v1/professionals/:id/schedule
+     */
+    public function updateSchedule(string $id): void
+    {
+        try {
+            PermissionHelper::require('update_professionals');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'update_professional_schedule', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Verifica se profissional existe
+            $professional = $this->professionalModel->findByTenantAndId($tenantId, (int)$id);
+            if (!$professional) {
+                ResponseHelper::sendNotFoundError('Profissional', ['action' => 'update_professional_schedule', 'professional_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+            
+            $data = RequestCache::getJsonInput();
+            
+            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+                ResponseHelper::sendInvalidJsonError(['action' => 'update_professional_schedule', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Validações
+            if (empty($data['schedule']) || !is_array($data['schedule'])) {
+                ResponseHelper::sendError(400, 'Dados inválidos', 'Campo schedule é obrigatório e deve ser um array', 'INVALID_DATA', [], ['action' => 'update_professional_schedule', 'professional_id' => $id]);
+                return;
+            }
+            
+            // ✅ CORREÇÃO: Valida tamanho do array schedule (máximo 7 dias da semana)
+            $scheduleErrors = Validator::validateArraySize($data['schedule'], 'schedule', 7);
+            if (!empty($scheduleErrors)) {
+                ResponseHelper::sendValidationError($scheduleErrors, ['action' => 'update_professional_schedule', 'professional_id' => $id]);
+                return;
+            }
+            
+            $savedSchedules = [];
+            
+            // Processa cada dia da semana
+            foreach ($data['schedule'] as $daySchedule) {
+                if (!isset($daySchedule['day_of_week']) || !isset($daySchedule['start_time']) || !isset($daySchedule['end_time'])) {
+                    continue; // Pula dias inválidos
+                }
+                
+                $dayOfWeek = (int)$daySchedule['day_of_week'];
+                if ($dayOfWeek < 0 || $dayOfWeek > 6) {
+                    continue; // Dia inválido
+                }
+                
+                $startTime = $daySchedule['start_time'];
+                $endTime = $daySchedule['end_time'];
+                $isActive = isset($daySchedule['is_active']) ? (bool)$daySchedule['is_active'] : true;
+                
+                // Valida formato de hora
+                $timePattern = '/^([0-1][0-9]|2[0-3]):[0-5][0-9](:00)?$/';
+                if (!preg_match($timePattern, $startTime) || !preg_match($timePattern, $endTime)) {
+                    continue; // Hora inválida
+                }
+                
+                // Normaliza formato de hora (adiciona :00 se necessário)
+                if (strlen($startTime) === 5) {
+                    $startTime .= ':00';
+                }
+                if (strlen($endTime) === 5) {
+                    $endTime .= ':00';
+                }
+                
+                $scheduleId = $this->scheduleModel->saveSchedule(
+                    $tenantId,
+                    (int)$id,
+                    $dayOfWeek,
+                    $startTime,
+                    $endTime,
+                    $isActive
+                );
+                
+                $savedSchedules[] = [
+                    'id' => $scheduleId,
+                    'day_of_week' => $dayOfWeek,
+                    'start_time' => $startTime,
+                    'end_time' => $endTime,
+                    'is_available' => $isActive
+                ];
+            }
+            
+            // Busca agenda atualizada
+            $updatedSchedule = $this->scheduleModel->findByProfessional($tenantId, (int)$id);
+            
+            ResponseHelper::sendSuccess([
+                'schedule' => $updatedSchedule,
+                'saved' => $savedSchedules
+            ], 200, 'Agenda atualizada com sucesso');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar agenda do profissional',
+                'PROFESSIONAL_SCHEDULE_UPDATE_ERROR',
+                ['action' => 'update_professional_schedule', 'professional_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Cria bloqueio de agenda
+     * POST /v1/professionals/:id/schedule/blocks
+     */
+    public function createBlock(string $id): void
+    {
+        try {
+            PermissionHelper::require('update_professionals');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_schedule_block', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Verifica se profissional existe
+            $professional = $this->professionalModel->findByTenantAndId($tenantId, (int)$id);
+            if (!$professional) {
+                ResponseHelper::sendNotFoundError('Profissional', ['action' => 'create_schedule_block', 'professional_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+            
+            $data = RequestCache::getJsonInput();
+            
+            if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+                ResponseHelper::sendInvalidJsonError(['action' => 'create_schedule_block', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Validações
+            $errors = [];
+            
+            if (empty($data['start_datetime'])) {
+                $errors['start_datetime'] = 'Data/hora de início é obrigatória';
+            } else {
+                $startDateTime = \DateTime::createFromFormat('Y-m-d H:i:s', $data['start_datetime']);
+                if (!$startDateTime) {
+                    $startDateTime = \DateTime::createFromFormat('Y-m-d H:i', $data['start_datetime']);
+                }
+                if (!$startDateTime) {
+                    $errors['start_datetime'] = 'Formato inválido. Use YYYY-MM-DD HH:MM ou YYYY-MM-DD HH:MM:SS';
+                }
+            }
+            
+            if (empty($data['end_datetime'])) {
+                $errors['end_datetime'] = 'Data/hora de fim é obrigatória';
+            } else {
+                $endDateTime = \DateTime::createFromFormat('Y-m-d H:i:s', $data['end_datetime']);
+                if (!$endDateTime) {
+                    $endDateTime = \DateTime::createFromFormat('Y-m-d H:i', $data['end_datetime']);
+                }
+                if (!$endDateTime) {
+                    $errors['end_datetime'] = 'Formato inválido. Use YYYY-MM-DD HH:MM ou YYYY-MM-DD HH:MM:SS';
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError($errors, ['action' => 'create_schedule_block', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Valida que end_datetime é depois de start_datetime
+            if (isset($startDateTime) && isset($endDateTime) && $endDateTime <= $startDateTime) {
+                ResponseHelper::sendError(400, 'Data inválida', 'Data/hora de fim deve ser posterior à data/hora de início', 'INVALID_DATETIME', [], ['action' => 'create_schedule_block', 'professional_id' => $id]);
+                return;
+            }
+            
+            // Normaliza formato
+            $startDatetime = $startDateTime->format('Y-m-d H:i:s');
+            $endDatetime = $endDateTime->format('Y-m-d H:i:s');
+            
+            // Insere bloqueio
+            $blockId = $this->blockModel->insert([
+                'tenant_id' => $tenantId,
+                'professional_id' => (int)$id,
+                'start_datetime' => $startDatetime,
+                'end_datetime' => $endDatetime,
+                'reason' => $data['reason'] ?? null
+            ]);
+            
+            // Busca bloqueio criado
+            $block = $this->blockModel->findById($blockId);
+            
+            ResponseHelper::sendSuccess($block, 201, 'Bloqueio de agenda criado com sucesso');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao criar bloqueio de agenda',
+                'SCHEDULE_BLOCK_CREATE_ERROR',
+                ['action' => 'create_schedule_block', 'professional_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Remove bloqueio de agenda
+     * DELETE /v1/professionals/:id/schedule/blocks/:block_id
+     */
+    public function deleteBlock(string $id, string $blockId): void
+    {
+        try {
+            PermissionHelper::require('update_professionals');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'delete_schedule_block', 'professional_id' => $id, 'block_id' => $blockId]);
+                return;
+            }
+            
+            // Verifica se profissional existe
+            $professional = $this->professionalModel->findByTenantAndId($tenantId, (int)$id);
+            if (!$professional) {
+                ResponseHelper::sendNotFoundError('Profissional', ['action' => 'delete_schedule_block', 'professional_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+            
+            // Verifica se bloqueio existe e pertence ao profissional
+            $block = $this->blockModel->findById((int)$blockId);
+            if (!$block) {
+                ResponseHelper::sendNotFoundError('Bloqueio de agenda', ['action' => 'delete_schedule_block', 'block_id' => $blockId]);
+                return;
+            }
+            
+            if ($block['tenant_id'] != $tenantId || $block['professional_id'] != (int)$id) {
+                ResponseHelper::sendError(403, 'Acesso negado', 'Bloqueio não pertence a este profissional', 'FORBIDDEN', [], ['action' => 'delete_schedule_block', 'block_id' => $blockId]);
+                return;
+            }
+            
+            // Remove bloqueio
+            $this->blockModel->delete((int)$blockId);
+            
+            ResponseHelper::sendSuccess(null, 200, 'Bloqueio de agenda removido com sucesso');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao remover bloqueio de agenda',
+                'SCHEDULE_BLOCK_DELETE_ERROR',
+                ['action' => 'delete_schedule_block', 'professional_id' => $id, 'block_id' => $blockId, 'tenant_id' => $tenantId ?? null]
             );
         }
     }

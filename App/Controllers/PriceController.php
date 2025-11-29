@@ -37,7 +37,16 @@ class PriceController
     public function list(): void
     {
         try {
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -85,7 +94,21 @@ class PriceController
             // ✅ Tenta obter do cache (TTL: 60 segundos)
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // ✅ CORREÇÃO: Se cache tem formato antigo {data: [...], meta: {...}}, converte
+                if (isset($cached['data']) && isset($cached['meta'])) {
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached['data'],
+                        'meta' => $cached['meta']
+                    ]);
+                } else {
+                    // Formato novo (já é array direto)
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached,
+                        'meta' => []
+                    ]);
+                }
                 return;
             }
             
@@ -130,37 +153,38 @@ class PriceController
                 $formattedPrices[] = $priceData;
             }
             
-            $response = [
-                'success' => true,
-                'data' => $formattedPrices,
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            $meta = [
                 'has_more' => $prices->has_more,
                 'count' => count($formattedPrices)
             ];
             
-            // ✅ Salva no cache
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ Salva no cache (formato completo para compatibilidade)
+            $cacheData = [
+                'data' => $formattedPrices,
+                'meta' => $meta
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 60);
             
-            Flight::json($response);
+            // ✅ Retorna array diretamente em data
+            Flight::json([
+                'success' => true,
+                'data' => $formattedPrices,
+                'meta' => $meta
+            ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar preços", [
-                'error' => $e->getMessage(),
-                'query_params' => $queryParams ?? []
-            ]);
-            http_response_code(400);
-            Flight::json([
-                'error' => 'Erro ao listar preços',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar preços',
+                ['action' => 'list_prices', 'query_params' => $queryParams ?? [], 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar preços", [
-                'error' => $e->getMessage(),
-                'query_params' => $queryParams ?? []
-            ]);
-            http_response_code(500);
-            Flight::json([
-                'error' => 'Erro ao listar preços',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar preços',
+                'PRICES_LIST_ERROR',
+                ['action' => 'list_prices', 'query_params' => $queryParams ?? [], 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -281,17 +305,36 @@ class PriceController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'create_price']);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_price']);
                 return;
             }
 
-            $price = $this->stripeService->getPrice($id);
-
-            // Valida se o preço pertence ao tenant (via metadata)
-            if (isset($price->metadata->tenant_id) && (string)$price->metadata->tenant_id !== (string)$tenantId) {
-                ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
-                return;
+            // ✅ CORREÇÃO: Tenta obter o preço do Stripe
+            try {
+                $price = $this->stripeService->getPrice($id);
+            } catch (\Stripe\Exception\InvalidRequestException $e) {
+                // Se o preço não existe no Stripe, retorna erro
+                if ($e->getStripeCode() === 'resource_missing') {
+                    error_log("Preço não encontrado no Stripe: {$id} (tenant_id: {$tenantId})");
+                    ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
+                    return;
+                }
+                throw $e; // Re-lança outras exceções do Stripe
             }
+
+            // ✅ CORREÇÃO: Valida se o preço pertence ao tenant (via metadata)
+            // Se o preço tem tenant_id nos metadados, valida se é do tenant atual
+            // Se não tem tenant_id, permite acesso (preços antigos ou compartilhados)
+            $metadata = $price->metadata->toArray();
+            if (!empty($metadata) && isset($metadata['tenant_id']) && $metadata['tenant_id'] !== null && $metadata['tenant_id'] !== '') {
+                // Preço tem tenant_id definido, valida se pertence ao tenant atual
+                if ((string)$metadata['tenant_id'] !== (string)$tenantId) {
+                    error_log("Preço pertence a outro tenant: {$id} (tenant_id do preço: {$metadata['tenant_id']}, tenant_id atual: {$tenantId})");
+                    ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
+                    return;
+                }
+            }
+            // Se não tem tenant_id, permite acesso (preços antigos ou compartilhados)
 
             // Formata resposta
             $priceData = [
@@ -304,7 +347,7 @@ class PriceController
                 'formatted_amount' => number_format($price->unit_amount / 100, 2, ',', '.'),
                 'nickname' => $price->nickname ?? null,
                 'created' => date('Y-m-d H:i:s', $price->created),
-                'metadata' => $price->metadata->toArray()
+                'metadata' => $metadata
             ];
 
             // Adiciona informações de recorrência se for recurring
@@ -330,12 +373,16 @@ class PriceController
 
             ResponseHelper::sendSuccess($priceData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
+            // Tratamento adicional para outras exceções do Stripe
             if ($e->getStripeCode() === 'resource_missing') {
+                error_log("Preço não encontrado no Stripe (catch externo): {$id} (tenant_id: {$tenantId})");
                 ResponseHelper::sendNotFoundError('Preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             } else {
+                error_log("Erro do Stripe ao obter preço: {$e->getMessage()} (price_id: {$id}, tenant_id: {$tenantId})");
                 ResponseHelper::sendStripeError($e, 'Erro ao obter preço', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
             }
         } catch (\Exception $e) {
+            error_log("Erro genérico ao obter preço: {$e->getMessage()} (price_id: {$id}, tenant_id: {$tenantId})");
             ResponseHelper::sendGenericError($e, 'Erro ao obter preço', 'PRICE_GET_ERROR', ['action' => 'get_price', 'price_id' => $id, 'tenant_id' => $tenantId]);
         }
     }

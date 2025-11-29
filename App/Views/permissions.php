@@ -126,9 +126,14 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadPermissions() {
     try {
         const response = await apiRequest('/v1/permissions');
-        // ✅ CORREÇÃO: A API retorna um objeto, precisa converter para array
-        const permissionsObj = response.data || {};
-        permissions = Object.values(permissionsObj).map(p => p.name || p);
+        // ✅ CORREÇÃO: A API retorna {permissions: [...], count: ..., categories: {...}}
+        // Precisamos acessar response.data.permissions diretamente
+        const permissionsData = response.data?.permissions || [];
+        
+        // Converte array de objetos para array de strings (nomes das permissões)
+        permissions = Array.isArray(permissionsData) 
+            ? permissionsData.map(p => p.name || p)
+            : [];
         
         renderPermissions();
     } catch (error) {
@@ -161,13 +166,19 @@ function renderPermissions() {
 async function loadUsers() {
     try {
         const response = await apiRequest('/v1/users');
-        users = response.data || [];
+        // ✅ CORREÇÃO: A API retorna {users: [...], count: ...}
+        // Precisamos acessar response.data.users diretamente
+        const usersData = response.data?.users || [];
+        
+        // Garante que users seja um array
+        users = Array.isArray(usersData) ? usersData : [];
         
         const select = document.getElementById('userSelect');
         select.innerHTML = '<option value="">Selecione...</option>' +
             users.map(u => `<option value="${u.id}">${u.name || u.email} (${u.role})</option>`).join('');
     } catch (error) {
         console.error('Erro ao carregar usuários:', error);
+        showAlert('Erro ao carregar usuários: ' + error.message, 'danger');
     }
 }
 

@@ -65,6 +65,49 @@ if (preg_match('/^\/app\//', $requestUri)) {
     exit;
 }
 
+// Servir arquivos da pasta /storage (logos, exames, etc)
+if (preg_match('/^\/storage\//', $requestUri)) {
+    $filePath = __DIR__ . '/..' . $requestUri;
+    
+    // Verificar se arquivo existe e é seguro (dentro da pasta storage)
+    if (file_exists($filePath) && is_file($filePath)) {
+        $realPath = realpath($filePath);
+        $storagePath = realpath(__DIR__ . '/../storage');
+        
+        // Verificar se o arquivo está dentro de storage
+        if ($realPath && $storagePath && strpos($realPath, $storagePath) === 0) {
+            $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+            
+            $mimeTypes = [
+                'png' => 'image/png',
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'gif' => 'image/gif',
+                'webp' => 'image/webp',
+                'svg' => 'image/svg+xml',
+                'pdf' => 'application/pdf',
+                'ico' => 'image/x-icon'
+            ];
+            
+            header('Content-Type: ' . ($mimeTypes[$ext] ?? 'application/octet-stream'));
+            // Cache para imagens (1 mês)
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico'])) {
+                header('Cache-Control: public, max-age=2592000');
+                header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 2592000) . ' GMT');
+            }
+            header_remove('X-Powered-By');
+            readfile($filePath);
+            exit;
+        }
+    }
+    
+    // Arquivo não encontrado
+    http_response_code(404);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!DOCTYPE html><html><head><title>404 - Not Found</title></head><body><h1>404 - Arquivo não encontrado</h1></body></html>';
+    exit;
+}
+
 // Servir arquivos CSS da pasta /css
 if (preg_match('/^\/css\//', $requestUri)) {
     $filePath = __DIR__ . $requestUri;
@@ -190,7 +233,9 @@ $app->before('start', function() {
 $app->before('start', function() use ($app) {
     // Rotas públicas (sem autenticação)
     $publicRoutes = [
-        '/', '/v1/webhook', '/health', '/health/detailed', '/v1/auth/login', '/login', '/register',
+        '/', '/v1/webhook', '/health', '/health/detailed', 
+        '/v1/auth/login', '/v1/auth/register', '/v1/auth/register-employee', // Rotas de autenticação públicas
+        '/login', '/register',
         '/index', '/checkout', '/success', '/cancel', '/api-docs', '/api-docs/ui',
         // Rotas autenticadas (serão verificadas individualmente via getAuthenticatedUserData())
         '/dashboard', '/customers', '/subscriptions', '/products', '/prices', '/reports',
@@ -206,7 +251,9 @@ $app->before('start', function() use ($app) {
         '/professionals', '/professional-details',
         '/pets', '/pet-details',
         '/clinic-clients', '/clinic-client-details', '/clinic-settings',
-        '/schedule', '/specialties'
+        '/schedule', '/specialties',
+        // Rotas de administração (verificam autenticação individualmente)
+        '/traces', '/performance-metrics'
     ];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
@@ -399,9 +446,20 @@ $rateLimitMiddleware = new \App\Middleware\RateLimitMiddleware($rateLimiterServi
 // Inicializa middleware de validação de tamanho de payload
 $payloadSizeMiddleware = new \App\Middleware\PayloadSizeMiddleware();
 
+// ✅ TRACING: Inicializa middleware de tracing (deve ser o PRIMEIRO)
+$tracingMiddleware = new \App\Middleware\TracingMiddleware();
+
 // Inicializa middleware de auditoria
 $auditLogModel = new \App\Models\AuditLog();
 $auditMiddleware = new \App\Middleware\AuditMiddleware($auditLogModel);
+
+// Inicializa middleware de performance
+$performanceMiddleware = new \App\Middleware\PerformanceMiddleware();
+
+// ✅ TRACING: Middleware de tracing (deve executar ANTES de outros middlewares)
+$app->before('start', function() use ($tracingMiddleware) {
+    $tracingMiddleware->before();
+});
 
 // Middleware de Validação de Tamanho de Payload (antes de processar requisições)
 $app->before('start', function() use ($payloadSizeMiddleware, $app) {
@@ -547,6 +605,49 @@ $app->before('start', function() use ($rateLimitMiddleware, $app) {
         return;
     }
     
+    // ✅ CORREÇÃO: Endpoints de agendamento têm limite específico
+    // Protege contra criação massiva de agendamentos e consultas excessivas de horários disponíveis
+    $appointmentEndpoints = [
+        '/v1/appointments',
+        '/v1/appointments/available-slots'
+    ];
+    
+    // Verifica se é endpoint de agendamento (exato ou que começa com /v1/appointments/)
+    $isAppointmentEndpoint = in_array($requestUri, $appointmentEndpoints) || 
+                             strpos($requestUri, '/v1/appointments/') === 0;
+    
+    if ($isAppointmentEndpoint) {
+        // Limites diferenciados por método HTTP
+        if ($method === 'POST') {
+            // Criação de agendamento: mais restritivo (20/min)
+            $allowed = $rateLimitMiddleware->check($requestUri, [
+                'limit' => 20,  // 20 requisições
+                'window' => 60   // por minuto
+            ]);
+        } elseif ($method === 'PUT' || $method === 'PATCH') {
+            // Atualização de agendamento: moderado (30/min)
+            $allowed = $rateLimitMiddleware->check($requestUri, [
+                'limit' => 30,  // 30 requisições
+                'window' => 60  // por minuto
+            ]);
+        } elseif ($method === 'GET') {
+            // Consulta de agendamentos e horários disponíveis: mais permissivo (60/min)
+            $allowed = $rateLimitMiddleware->check($requestUri, [
+                'limit' => 60,  // 60 requisições
+                'window' => 60  // por minuto
+            ]);
+        } else {
+            // DELETE e outros métodos: usa limite padrão do middleware
+            $allowed = $rateLimitMiddleware->check($requestUri);
+        }
+        
+        if (!$allowed) {
+            $app->stop();
+            exit;
+        }
+        return;
+    }
+    
     // Rate limit padrão para outros endpoints
     $allowed = $rateLimitMiddleware->check($requestUri);
     
@@ -560,6 +661,11 @@ $app->before('start', function() use ($rateLimitMiddleware, $app) {
 // Middleware de Auditoria - Captura início da requisição
 $app->before('start', function() use ($auditMiddleware) {
     $auditMiddleware->captureRequest();
+});
+
+// Middleware de Performance - Captura início da requisição
+$app->before('start', function() use ($performanceMiddleware) {
+    $performanceMiddleware->captureRequest();
 });
 
 // Inicializa serviços (injeção de dependência)
@@ -594,6 +700,7 @@ $chargeController = new \App\Controllers\ChargeController($stripeService);
 $payoutController = new \App\Controllers\PayoutController($stripeService);
 $reportController = new \App\Controllers\ReportController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
+$performanceController = new \App\Controllers\PerformanceController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
 $swaggerController = new \App\Controllers\SwaggerController();
 $professionalController = new \App\Controllers\ProfessionalController();
@@ -609,6 +716,7 @@ $examController = new \App\Controllers\ExamController(
     new \App\Models\Professional(),
     new \App\Models\ExamType()
 );
+$clinicController = new \App\Controllers\ClinicController();
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -686,6 +794,7 @@ $app->route('POST /v1/customers', [$customerController, 'create']);
 $app->route('GET /v1/customers', [$customerController, 'list']);
 $app->route('GET /v1/customers/@id', [$customerController, 'get']);
 $app->route('PUT /v1/customers/@id', [$customerController, 'update']);
+$app->route('GET /v1/customers/@id/subscriptions', [$customerController, 'listSubscriptions']);
 $app->route('GET /v1/customers/@id/invoices', [$customerController, 'listInvoices']);
 $app->route('GET /v1/customers/@id/payment-methods', [$customerController, 'listPaymentMethods']);
 $app->route('PUT /v1/customers/@id/payment-methods/@pm_id', [$customerController, 'updatePaymentMethod']);
@@ -796,6 +905,16 @@ $app->route('POST /v1/payouts/@id/cancel', [$payoutController, 'cancel']);
 // Rotas de Audit Logs
 $app->route('GET /v1/audit-logs', [$auditLogController, 'list']);
 $app->route('GET /v1/audit-logs/@id', [$auditLogController, 'get']);
+
+// Rotas de Métricas de Performance
+$app->route('GET /v1/metrics/performance', [$performanceController, 'list']);
+$app->route('GET /v1/metrics/performance/alerts', [$performanceController, 'alerts']);
+$app->route('GET /v1/metrics/performance/slowest', [$performanceController, 'slowest']);
+
+// ✅ TRACING: Rotas de Tracing de Requisições
+$traceController = new \App\Controllers\TraceController();
+$app->route('GET /v1/traces/@request_id', [$traceController, 'get']);
+$app->route('GET /v1/traces/search', [$traceController, 'search']);
 
 // Rotas de Relatórios e Analytics
 $app->route('GET /v1/reports/revenue', [$reportController, 'revenue']);
@@ -1045,6 +1164,45 @@ $app->route('GET /audit-logs', function() use ($app) {
         'tenant' => $tenant,
         'title' => 'Logs de Auditoria',
         'currentPage' => 'audit-logs'
+    ], true);
+});
+
+// ✅ TRACING: Rota de tracing de requisições (requer permissão view_audit_logs)
+$app->route('GET /traces', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user) {
+        header('Location: /login');
+        exit;
+    }
+    
+    \App\Utils\View::render('traces', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Tracing de Requisições',
+        'currentPage' => 'traces'
+    ], true);
+});
+
+// Rota de métricas de performance (requer permissão)
+$app->route('GET /performance-metrics', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user) {
+        header('Location: /login');
+        exit;
+    }
+    
+    // Verifica permissão (será verificado no frontend também)
+    \App\Utils\View::render('performance-metrics', [
+        'apiUrl' => $apiUrl,
+        'user' => $user,
+        'tenant' => $tenant,
+        'title' => 'Métricas de Performance',
+        'currentPage' => 'performance-metrics'
     ], true);
 });
 
@@ -1484,6 +1642,8 @@ $app->route('GET /billing-portal', function() use ($app) {
 
 // Rotas de Autenticação (públicas - não precisam de autenticação)
 $authController = new \App\Controllers\AuthController();
+$app->route('POST /v1/auth/register', [$authController, 'register']); // Registro de tenant e primeiro usuário
+$app->route('POST /v1/auth/register-employee', [$authController, 'registerEmployee']); // Registro de funcionário
 $app->route('POST /v1/auth/login', [$authController, 'login']);
 $app->route('POST /v1/auth/logout', [$authController, 'logout']);
 $app->route('GET /v1/auth/me', [$authController, 'me']);
@@ -1506,6 +1666,9 @@ $app->route('DELETE /v1/users/@id/permissions/@permission', [$permissionControll
 
 // Rotas de Profissionais
 // IMPORTANTE: Rotas mais específicas devem vir ANTES das genéricas
+$app->route('PUT /v1/professionals/@id/schedule', [$professionalController, 'updateSchedule']);
+$app->route('POST /v1/professionals/@id/schedule/blocks', [$professionalController, 'createBlock']);
+$app->route('DELETE /v1/professionals/@id/schedule/blocks/@block_id', [$professionalController, 'deleteBlock']);
 $app->route('GET /v1/professionals/@id/schedule', [$professionalController, 'schedule']);
 $app->route('GET /v1/professionals', [$professionalController, 'list']);
 $app->route('POST /v1/professionals', [$professionalController, 'create']);
@@ -1521,12 +1684,16 @@ $app->route('PUT /v1/specialties/@id', [$specialtyController, 'update']);
 $app->route('DELETE /v1/specialties/@id', [$specialtyController, 'delete']);
 
 // Rotas de Agendamentos
+// IMPORTANTE: Rotas específicas devem vir ANTES de rotas com parâmetros dinâmicos
+$app->route('GET /v1/appointments/available-slots', [$appointmentController, 'availableSlots']);
 $app->route('GET /v1/appointments', [$appointmentController, 'list']);
 $app->route('POST /v1/appointments', [$appointmentController, 'create']);
+$app->route('GET /v1/appointments/@id/history', [$appointmentController, 'history']);
+$app->route('POST /v1/appointments/@id/confirm', [$appointmentController, 'confirm']);
+$app->route('POST /v1/appointments/@id/complete', [$appointmentController, 'complete']);
 $app->route('GET /v1/appointments/@id', [$appointmentController, 'get']);
 $app->route('PUT /v1/appointments/@id', [$appointmentController, 'update']);
 $app->route('DELETE /v1/appointments/@id', [$appointmentController, 'delete']);
-$app->route('GET /v1/appointments/@id/history', [$appointmentController, 'history']);
 
 // Rotas de Clientes
 $app->route('GET /v1/clients', [$clientController, 'list']);
@@ -1551,6 +1718,11 @@ $app->route('GET /v1/exam-types/@id', [$examTypeController, 'get']);
 $app->route('PUT /v1/exam-types/@id', [$examTypeController, 'update']);
 $app->route('DELETE /v1/exam-types/@id', [$examTypeController, 'delete']);
 
+// Rotas de Configurações da Clínica
+$app->route('GET /v1/clinic/configuration', [$clinicController, 'getConfiguration']);
+$app->route('PUT /v1/clinic/configuration', [$clinicController, 'updateConfiguration']);
+$app->route('POST /v1/clinic/logo', [$clinicController, 'uploadLogo']);
+
 // Rotas de Exames
 $app->route('GET /v1/exams', [$examController, 'list']);
 $app->route('POST /v1/exams', [$examController, 'create']);
@@ -1561,6 +1733,7 @@ $app->route('DELETE /v1/exams/@id', [$examController, 'delete']);
 // Tratamento de erros
 $app->map('notFound', function() use ($app, $auditMiddleware) {
     $auditMiddleware->logResponse(404);
+    // PerformanceMiddleware já registra métricas automaticamente via shutdown function
     $app->json(['error' => 'Rota não encontrada'], 404);
 });
 
@@ -1572,6 +1745,7 @@ $app->map('error', function(\Throwable $ex) use ($app, $auditMiddleware) {
     }
     
     $auditMiddleware->logResponse(500);
+    // PerformanceMiddleware já registra métricas automaticamente via shutdown function
     
     // Em desenvolvimento, mostra mais detalhes do erro
     $response = \App\Utils\ErrorHandler::prepareErrorResponse($ex, 'Erro interno do servidor', 'INTERNAL_SERVER_ERROR');

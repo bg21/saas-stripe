@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agendamento Cancelado</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa; padding: 40px 20px;">
+        <tr>
+            <td style="text-align: center;">
+                <table role="presentation" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+                    
+                    <!-- Header com gradiente vermelho -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); padding: 50px 30px; text-align: center; position: relative;">
+                            <div style="width: 100px; height: 100px; background-color: rgba(255,255,255,0.25); border-radius: 50%; margin: 0 auto 25px; display: flex; align-items: center; justify-content: center; font-size: 50px; box-shadow: 0 8px 20px rgba(0,0,0,0.15);">
+                                ❌
+                            </div>
+                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 700; letter-spacing: -0.5px; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Agendamento Cancelado</h1>
+                            <p style="margin: 15px 0 0 0; color: rgba(255,255,255,0.95); font-size: 18px; font-weight: 400;">Seu agendamento foi cancelado</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Conteúdo Principal -->
+                    <tr>
+                        <td style="padding: 50px 40px;">
+                            
+                            <!-- Saudação -->
+                            <p style="margin: 0 0 30px 0; color: #2c3e50; font-size: 20px; line-height: 1.6; font-weight: 500;">
+                                Olá <strong style="color: #dc3545;"><?php echo htmlspecialchars($client_name ?? 'Cliente'); ?></strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 30px 0; color: #5a6c7d; font-size: 17px; line-height: 1.8;">
+                                Informamos que o agendamento para <strong><?php echo htmlspecialchars($pet_name ?? 'seu pet'); ?></strong> foi cancelado.
+                            </p>
+                            
+                            <!-- Card de Detalhes do Agendamento Cancelado -->
+                            <div style="background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%); border: 2px solid #dc3545; border-radius: 12px; padding: 30px; margin: 30px 0; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.2);">
+                                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                                    <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-right: 20px; flex-shrink: 0; box-shadow: 0 4px 10px rgba(220, 53, 69, 0.3);">
+                                        <span style="color: white; font-size: 24px;">🐾</span>
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; color: #721c24; font-size: 18px; font-weight: 700;">Agendamento Cancelado</h3>
+                                    </div>
+                                </div>
+                                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <strong>Pet:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <?php echo htmlspecialchars($pet_name ?? 'Pet'); ?><?php if (!empty($pet_species)): ?> (<?php echo htmlspecialchars($pet_species); ?>)<?php endif; ?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <strong>Profissional:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <?php echo htmlspecialchars($professional_name ?? 'Profissional'); ?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <strong>Data e Hora:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; text-align: right; font-weight: 600; border-bottom: 1px solid rgba(114, 28, 36, 0.2);">
+                                            <?php echo htmlspecialchars($appointment_date_full ?? date('d/m/Y H:i')); ?>
+                                        </td>
+                                    </tr>
+                                    <?php if (!empty($reason) && $reason !== 'Não informado'): ?>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px;">
+                                            <strong>Motivo:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #721c24; font-size: 15px; text-align: right; font-weight: 600;">
+                                            <?php echo htmlspecialchars($reason); ?>
+                                        </td>
+                                    </tr>
+                                    <?php endif; ?>
+                                </table>
+                            </div>
+                            
+                            <!-- Mensagem de Reagendamento -->
+                            <div style="background-color: #d1ecf1; border-left: 4px solid #17a2b8; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                                <p style="margin: 0; color: #0c5460; font-size: 15px; line-height: 1.6;">
+                                    <strong>💡 Deseja reagendar?</strong><br>
+                                    Se você quiser agendar uma nova consulta, entre em contato conosco ou acesse nosso sistema para ver horários disponíveis.
+                                </p>
+                            </div>
+                            
+                            <!-- Botão de Ação -->
+                            <div style="text-align: center; margin: 40px 0 20px 0;">
+                                <a href="<?php echo htmlspecialchars($app_url ?? 'http://localhost'); ?>/appointments" style="display: inline-block; background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(23, 162, 184, 0.3);">
+                                    Agendar Nova Consulta
+                                </a>
+                            </div>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8f9fa; padding: 30px 40px; text-align: center; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0 0 10px 0; color: #6c757d; font-size: 14px; line-height: 1.6;">
+                                Se você tiver alguma dúvida ou precisar de ajuda, entre em contato conosco.
+                            </p>
+                            <p style="margin: 0; color: #6c757d; font-size: 12px;">
+                                <strong><?php echo htmlspecialchars($app_name ?? 'Sistema de Clínica Veterinária'); ?></strong><br>
+                                Email: <a href="mailto:<?php echo htmlspecialchars($support_email ?? 'suporte@clinica.com'); ?>" style="color: #17a2b8; text-decoration: none;"><?php echo htmlspecialchars($support_email ?? 'suporte@clinica.com'); ?></a>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+

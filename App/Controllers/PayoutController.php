@@ -129,10 +129,14 @@ class PayoutController
                 ];
             }
 
-            ResponseHelper::sendSuccess([
-                'payouts' => $response['data'],
-                'has_more' => $response['has_more'],
-                'count' => $response['count']
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $response['data'],
+                'meta' => [
+                    'has_more' => $response['has_more'],
+                    'count' => $response['count']
+                ]
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             ResponseHelper::sendStripeError(

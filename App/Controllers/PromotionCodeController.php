@@ -144,7 +144,16 @@ class PromotionCodeController
                 return;
             }
 
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -203,10 +212,14 @@ class PromotionCodeController
                 ];
             }
             
-            ResponseHelper::sendSuccess([
-                'promotion_codes' => $formattedCodes,
-                'has_more' => $promotionCodes->has_more,
-                'count' => count($formattedCodes)
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $formattedCodes,
+                'meta' => [
+                    'has_more' => $promotionCodes->has_more,
+                    'count' => count($formattedCodes)
+                ]
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             ResponseHelper::sendStripeError(
@@ -310,7 +323,7 @@ class PromotionCodeController
             
             if (isset($promotionCode->metadata->tenant_id) && 
                 (string)$promotionCode->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Código promocional não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Código promocional', ['action' => 'update_promotion_code', 'promotion_code_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 

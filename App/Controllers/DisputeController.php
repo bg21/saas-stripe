@@ -43,7 +43,16 @@ class DisputeController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('view_disputes');
             
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -140,10 +149,14 @@ class DisputeController
                 ];
             }
             
-            ResponseHelper::sendSuccess([
-                'disputes' => $formattedDisputes,
-                'has_more' => $disputes->has_more,
-                'count' => count($formattedDisputes)
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $formattedDisputes,
+                'meta' => [
+                    'has_more' => $disputes->has_more,
+                    'count' => count($formattedDisputes)
+                ]
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             ResponseHelper::sendStripeError(

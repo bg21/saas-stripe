@@ -125,7 +125,16 @@ class CouponController
                 return;
             }
 
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -163,30 +172,28 @@ class CouponController
                 ];
             }
             
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
             Flight::json([
                 'success' => true,
                 'data' => $formattedCoupons,
-                'has_more' => $coupons->has_more,
-                'count' => count($formattedCoupons)
+                'meta' => [
+                    'has_more' => $coupons->has_more,
+                    'count' => count($formattedCoupons)
+                ]
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar cupons", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar cupons',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar cupons',
+                ['action' => 'list_coupons', 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar cupons", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar cupons',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar cupons',
+                'COUPONS_LIST_ERROR',
+                ['action' => 'list_coupons', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -206,40 +213,38 @@ class CouponController
 
             $coupon = $this->stripeService->getCoupon($id);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $coupon->id,
-                    'name' => $coupon->name,
-                    'percent_off' => $coupon->percent_off,
-                    'amount_off' => $coupon->amount_off,
-                    'currency' => $coupon->currency,
-                    'duration' => $coupon->duration,
-                    'duration_in_months' => $coupon->duration_in_months,
-                    'max_redemptions' => $coupon->max_redemptions,
-                    'times_redeemed' => $coupon->times_redeemed,
-                    'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
-                    'valid' => $coupon->valid,
-                    'created' => date('Y-m-d H:i:s', $coupon->created),
-                    'metadata' => $coupon->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $coupon->id,
+                'name' => $coupon->name,
+                'percent_off' => $coupon->percent_off,
+                'amount_off' => $coupon->amount_off,
+                'currency' => $coupon->currency,
+                'duration' => $coupon->duration,
+                'duration_in_months' => $coupon->duration_in_months,
+                'max_redemptions' => $coupon->max_redemptions,
+                'times_redeemed' => $coupon->times_redeemed,
+                'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
+                'valid' => $coupon->valid,
+                'created' => date('Y-m-d H:i:s', $coupon->created),
+                'metadata' => $coupon->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Cupom não encontrado", ['coupon_id' => $id]);
-            Flight::json([
-                'error' => 'Cupom não encontrado',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 404);
+            if ($e->getStripeCode() === 'resource_missing') {
+                ResponseHelper::sendNotFoundError('Cupom', ['action' => 'get_coupon', 'coupon_id' => $id]);
+            } else {
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter cupom',
+                    ['action' => 'get_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
+            }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter cupom", [
-                'error' => $e->getMessage(),
-                'coupon_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter cupom',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter cupom',
+                'COUPON_GET_ERROR',
+                ['action' => 'get_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -286,59 +291,44 @@ class CouponController
 
             $coupon = $this->stripeService->updateCoupon($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Cupom atualizado com sucesso',
-                'data' => [
-                    'id' => $coupon->id,
-                    'name' => $coupon->name,
-                    'percent_off' => $coupon->percent_off,
-                    'amount_off' => $coupon->amount_off,
-                    'currency' => $coupon->currency,
-                    'duration' => $coupon->duration,
-                    'duration_in_months' => $coupon->duration_in_months,
-                    'max_redemptions' => $coupon->max_redemptions,
-                    'times_redeemed' => $coupon->times_redeemed,
-                    'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
-                    'valid' => $coupon->valid,
-                    'created' => date('Y-m-d H:i:s', $coupon->created),
-                    'metadata' => $coupon->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $coupon->id,
+                'name' => $coupon->name,
+                'percent_off' => $coupon->percent_off,
+                'amount_off' => $coupon->amount_off,
+                'currency' => $coupon->currency,
+                'duration' => $coupon->duration,
+                'duration_in_months' => $coupon->duration_in_months,
+                'max_redemptions' => $coupon->max_redemptions,
+                'times_redeemed' => $coupon->times_redeemed,
+                'redeem_by' => $coupon->redeem_by ? date('Y-m-d H:i:s', $coupon->redeem_by) : null,
+                'valid' => $coupon->valid,
+                'created' => date('Y-m-d H:i:s', $coupon->created),
+                'metadata' => $coupon->metadata->toArray()
+            ], 200, 'Cupom atualizado com sucesso');
         } catch (\InvalidArgumentException $e) {
-            Logger::error("Erro de validação ao atualizar cupom", [
-                'error' => $e->getMessage(),
-                'coupon_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro de validação',
-                'message' => $e->getMessage()
-            ], 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'update_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Cupom não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Cupom', ['action' => 'update_coupon', 'coupon_id' => $id]);
             } else {
-                Logger::error("Erro ao atualizar cupom no Stripe", [
-                    'error' => $e->getMessage(),
-                    'coupon_id' => $id,
-                    'tenant_id' => $tenantId ?? null
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar cupom',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar cupom',
+                    ['action' => 'update_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar cupom", [
-                'error' => $e->getMessage(),
-                'coupon_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar cupom',
+                'COUPON_UPDATE_ERROR',
+                ['action' => 'update_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -358,30 +348,27 @@ class CouponController
 
             $coupon = $this->stripeService->deleteCoupon($id);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Cupom deletado com sucesso',
-                'data' => [
-                    'id' => $coupon->id,
-                    'deleted' => $coupon->deleted
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $coupon->id,
+                'deleted' => $coupon->deleted
+            ], 200, 'Cupom deletado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Cupom não encontrado para deletar", ['coupon_id' => $id]);
-            Flight::json([
-                'error' => 'Cupom não encontrado',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 404);
+            if ($e->getStripeCode() === 'resource_missing') {
+                ResponseHelper::sendNotFoundError('Cupom', ['action' => 'delete_coupon', 'coupon_id' => $id]);
+            } else {
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao deletar cupom',
+                    ['action' => 'delete_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
+            }
         } catch (\Exception $e) {
-            Logger::error("Erro ao deletar cupom", [
-                'error' => $e->getMessage(),
-                'coupon_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao deletar cupom',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao deletar cupom',
+                'COUPON_DELETE_ERROR',
+                ['action' => 'delete_coupon', 'coupon_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

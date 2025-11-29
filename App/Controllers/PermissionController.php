@@ -40,6 +40,8 @@ class PermissionController
             'view_customers', 'create_customers', 'update_customers',
             // Auditoria
             'view_audit_logs',
+            // Métricas de Performance
+            'view_performance_metrics',
             // Disputas
             'view_disputes', 'manage_disputes',
             // Transações de Saldo
@@ -124,6 +126,13 @@ class PermissionController
                     'category' => 'audit'
                 ],
                 
+                // Permissões de Métricas de Performance
+                'view_performance_metrics' => [
+                    'name' => 'view_performance_metrics',
+                    'description' => 'Visualizar métricas de performance',
+                    'category' => 'monitoring'
+                ],
+                
                 // Permissões de Disputas
                 'view_disputes' => [
                     'name' => 'view_disputes',
@@ -194,6 +203,7 @@ class PermissionController
                     'subscriptions' => 'Permissões de Assinaturas',
                     'customers' => 'Permissões de Clientes',
                     'audit' => 'Permissões de Auditoria',
+                    'monitoring' => 'Permissões de Monitoramento',
                     'disputes' => 'Permissões de Disputas',
                     'finance' => 'Permissões Financeiras',
                     'reports' => 'Permissões de Relatórios',

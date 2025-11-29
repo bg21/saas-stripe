@@ -44,7 +44,16 @@ class BalanceTransactionController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('view_balance_transactions');
             
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -115,10 +124,14 @@ class BalanceTransactionController
                 ];
             }
             
-            ResponseHelper::sendSuccess([
-                'balance_transactions' => $formattedTransactions,
-                'has_more' => $balanceTransactions->has_more,
-                'count' => count($formattedTransactions)
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $formattedTransactions,
+                'meta' => [
+                    'has_more' => $balanceTransactions->has_more,
+                    'count' => count($formattedTransactions)
+                ]
             ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             ResponseHelper::sendStripeError(

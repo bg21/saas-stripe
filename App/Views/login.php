@@ -85,18 +85,20 @@
 
         <form id="loginForm" method="POST" action="#" onsubmit="return false;">
             <div class="mb-3">
-                <label for="tenant_id" class="form-label">
-                    Tenant ID <span class="text-muted">(obrigatório)</span>
+                <label for="tenant_slug" class="form-label">
+                    <i class="bi bi-building"></i> Slug da Clínica <span class="text-muted">(obrigatório)</span>
                 </label>
                 <input 
-                    type="number" 
+                    type="text" 
                     class="form-control" 
-                    id="tenant_id" 
-                    name="tenant_id" 
+                    id="tenant_slug" 
+                    name="tenant_slug" 
                     required 
-                    placeholder="1"
-                    min="1"
+                    pattern="[a-z0-9-]+"
+                    placeholder="ex: cao-que-mia"
+                    autocomplete="off"
                 >
+                <small class="text-muted">Informe o slug da clínica (ex: cao-que-mia)</small>
             </div>
 
             <div class="mb-3">
@@ -140,6 +142,16 @@
     <script>
         const API_URL = <?php echo json_encode($apiUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
         
+        // Validação de slug em tempo real
+        document.getElementById('tenant_slug').addEventListener('input', function() {
+            const slug = this.value.toLowerCase().trim();
+            // Remove caracteres inválidos
+            const validSlug = slug.replace(/[^a-z0-9-]/g, '');
+            if (slug !== validSlug) {
+                this.value = validSlug;
+            }
+        });
+        
         // Previne submit padrão do formulário
         const loginForm = document.getElementById('loginForm');
         
@@ -158,9 +170,28 @@
             loginButtonText.textContent = 'Entrando...';
             loadingSpinner.classList.remove('d-none');
             
-            const tenantId = parseInt(document.getElementById('tenant_id').value);
+            const tenantSlug = document.getElementById('tenant_slug').value.trim().toLowerCase();
             const email = document.getElementById('email').value.trim();
             const password = document.getElementById('password').value;
+            
+            // Valida formato do slug
+            if (!/^[a-z0-9-]+$/.test(tenantSlug)) {
+                errorMessage.textContent = 'Slug da clínica deve conter apenas letras minúsculas, números e hífens';
+                errorAlert.classList.remove('d-none');
+                loginButton.disabled = false;
+                loginButtonText.textContent = 'Entrar';
+                loadingSpinner.classList.add('d-none');
+                return;
+            }
+            
+            if (tenantSlug.length < 3) {
+                errorMessage.textContent = 'Slug da clínica deve ter pelo menos 3 caracteres';
+                errorAlert.classList.remove('d-none');
+                loginButton.disabled = false;
+                loginButtonText.textContent = 'Entrar';
+                loadingSpinner.classList.add('d-none');
+                return;
+            }
             
             try {
                 const response = await fetch(API_URL + '/v1/auth/login', {
@@ -171,7 +202,7 @@
                     body: JSON.stringify({
                         email: email,
                         password: password,
-                        tenant_id: tenantId
+                        tenant_slug: tenantSlug
                     })
                 });
                 
@@ -194,7 +225,20 @@
                     // Remove o session_id da URL após o carregamento (será feito no layout base)
                     window.location.href = '/dashboard?session_id=' + encodeURIComponent(data.data.session_id);
                 } else {
-                    errorMessage.textContent = data.message || 'Erro ao fazer login';
+                    // Mensagens de erro mais específicas
+                    let errorMsg = data.message || 'Erro ao fazer login';
+                    
+                    if (response.status === 400 || response.status === 404) {
+                        if (data.errors && data.errors.tenant_slug) {
+                            errorMsg = data.errors.tenant_slug;
+                        } else if (data.message && data.message.includes('Clínica não encontrada')) {
+                            errorMsg = 'Clínica não encontrada. Verifique se o slug está correto.';
+                        }
+                    } else if (response.status === 401 || response.status === 403) {
+                        errorMsg = data.message || 'Email ou senha incorretos';
+                    }
+                    
+                    errorMessage.textContent = errorMsg;
                     errorAlert.classList.remove('d-none');
                     loginButton.disabled = false;
                     loginButtonText.textContent = 'Entrar';

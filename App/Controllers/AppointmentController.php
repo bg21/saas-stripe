@@ -5,13 +5,17 @@ namespace App\Controllers;
 use App\Models\Appointment;
 use App\Models\AppointmentHistory;
 use App\Models\Professional;
+use App\Models\ProfessionalSchedule;
+use App\Models\ScheduleBlock;
 use App\Models\Client;
 use App\Models\Pet;
 use App\Models\Specialty;
 use App\Utils\PermissionHelper;
 use App\Utils\ResponseHelper;
 use App\Utils\RequestCache;
+use App\Utils\Validator;
 use App\Services\Logger;
+use App\Services\EmailService;
 use Config;
 use Flight;
 
@@ -23,18 +27,24 @@ class AppointmentController
     private Appointment $appointmentModel;
     private AppointmentHistory $appointmentHistoryModel;
     private Professional $professionalModel;
+    private ProfessionalSchedule $scheduleModel;
+    private ScheduleBlock $blockModel;
     private Client $clientModel;
     private Pet $petModel;
     private Specialty $specialtyModel;
+    private EmailService $emailService;
 
     public function __construct()
     {
         $this->appointmentModel = new Appointment();
         $this->appointmentHistoryModel = new AppointmentHistory();
         $this->professionalModel = new Professional();
+        $this->scheduleModel = new ProfessionalSchedule();
+        $this->blockModel = new ScheduleBlock();
         $this->clientModel = new Client();
         $this->petModel = new Pet();
         $this->specialtyModel = new Specialty();
+        $this->emailService = new EmailService();
     }
 
     /**
@@ -108,41 +118,100 @@ class AppointmentController
                 $appointments = array_values($appointments); // Reindexa array
             }
             
-            // Enriquece com dados relacionados
+            // ✅ OTIMIZAÇÃO: Carrega todos os dados relacionados de uma vez (elimina N+1)
+            // Coleta IDs únicos
+            $professionalIds = array_unique(array_filter(array_column($appointments, 'professional_id')));
+            $clientIds = array_unique(array_filter(array_column($appointments, 'client_id')));
+            $petIds = array_unique(array_filter(array_column($appointments, 'pet_id')));
+            $specialtyIds = array_unique(array_filter(array_column($appointments, 'specialty_id')));
+            
+            // Carrega todos os profissionais de uma vez
+            $professionalsById = [];
+            if (!empty($professionalIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($professionalIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM professionals 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $professionalIds));
+                $professionals = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($professionals as $prof) {
+                    $professionalsById[$prof['id']] = $prof;
+                }
+            }
+            
+            // Carrega todos os clientes de uma vez
+            $clientsById = [];
+            if (!empty($clientIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($clientIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM clients 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $clientIds));
+                $clients = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($clients as $client) {
+                    $clientsById[$client['id']] = $client;
+                }
+            }
+            
+            // Carrega todos os pets de uma vez
+            $petsById = [];
+            if (!empty($petIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($petIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM pets 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $petIds));
+                $pets = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($pets as $pet) {
+                    $petsById[$pet['id']] = $pet;
+                }
+            }
+            
+            // Carrega todas as especialidades de uma vez
+            $specialtiesById = [];
+            if (!empty($specialtyIds)) {
+                $db = \App\Utils\Database::getInstance();
+                $placeholders = implode(',', array_fill(0, count($specialtyIds), '?'));
+                $stmt = $db->prepare("
+                    SELECT * FROM specialties 
+                    WHERE tenant_id = ? AND id IN ({$placeholders}) AND deleted_at IS NULL
+                ");
+                $stmt->execute(array_merge([$tenantId], $specialtyIds));
+                $specialties = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+                foreach ($specialties as $specialty) {
+                    $specialtiesById[$specialty['id']] = $specialty;
+                }
+            }
+            
+            // Enriquece agendamentos com dados já carregados
             $enrichedAppointments = [];
             foreach ($appointments as $appointment) {
                 $enriched = $appointment;
                 
-                // Carrega profissional
-                if ($appointment['professional_id']) {
-                    $professional = $this->professionalModel->findByTenantAndId($tenantId, $appointment['professional_id']);
-                    if ($professional) {
-                        $enriched['professional'] = $professional;
-                    }
+                // Adiciona profissional (se existir)
+                if (!empty($appointment['professional_id']) && isset($professionalsById[$appointment['professional_id']])) {
+                    $enriched['professional'] = $professionalsById[$appointment['professional_id']];
                 }
                 
-                // Carrega cliente
-                if ($appointment['client_id']) {
-                    $client = $this->clientModel->findByTenantAndId($tenantId, $appointment['client_id']);
-                    if ($client) {
-                        $enriched['client'] = $client;
-                    }
+                // Adiciona cliente (se existir)
+                if (!empty($appointment['client_id']) && isset($clientsById[$appointment['client_id']])) {
+                    $enriched['client'] = $clientsById[$appointment['client_id']];
                 }
                 
-                // Carrega pet
-                if ($appointment['pet_id']) {
-                    $pet = $this->petModel->findByTenantAndId($tenantId, $appointment['pet_id']);
-                    if ($pet) {
-                        $enriched['pet'] = $pet;
-                    }
+                // Adiciona pet (se existir)
+                if (!empty($appointment['pet_id']) && isset($petsById[$appointment['pet_id']])) {
+                    $enriched['pet'] = $petsById[$appointment['pet_id']];
                 }
                 
-                // Carrega especialidade
-                if ($appointment['specialty_id']) {
-                    $specialty = $this->specialtyModel->findByTenantAndId($tenantId, $appointment['specialty_id']);
-                    if ($specialty) {
-                        $enriched['specialty'] = $specialty;
-                    }
+                // Adiciona especialidade (se existir)
+                if (!empty($appointment['specialty_id']) && isset($specialtiesById[$appointment['specialty_id']])) {
+                    $enriched['specialty'] = $specialtiesById[$appointment['specialty_id']];
                 }
                 
                 $enrichedAppointments[] = $enriched;
@@ -334,9 +403,11 @@ class AppointmentController
                 $duration
             )) {
                 ResponseHelper::sendError(
-                    'Conflito de horário: já existe um agendamento neste horário',
                     409,
+                    'Conflito de horário',
+                    'Já existe um agendamento neste horário',
                     'APPOINTMENT_CONFLICT',
+                    [],
                     ['action' => 'create_appointment']
                 );
                 return;
@@ -365,8 +436,19 @@ class AppointmentController
                 $insertData['notes'] = $data['notes'];
             }
             
+            // ✅ CORREÇÃO: Valida tamanho do array metadata (prevenção de DoS)
             if (!empty($data['metadata']) && is_array($data['metadata'])) {
-                $insertData['metadata'] = json_encode($data['metadata']);
+                $metadataErrors = Validator::validateArraySize($data['metadata'], 'metadata', 50);
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                } else {
+                    $insertData['metadata'] = json_encode($data['metadata']);
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError($errors, ['action' => 'create_appointment', 'tenant_id' => $tenantId]);
+                return;
             }
             
             $appointmentId = $this->appointmentModel->insert($insertData);
@@ -394,6 +476,25 @@ class AppointmentController
                 if ($pet) {
                     $appointment['pet'] = $pet;
                 }
+            }
+            
+            // Envia email de confirmação de criação
+            try {
+                if (isset($appointment['client']) && isset($appointment['pet']) && isset($appointment['professional'])) {
+                    $this->emailService->sendAppointmentCreated(
+                        $appointment,
+                        $appointment['client'],
+                        $appointment['pet'],
+                        $appointment['professional']
+                    );
+                }
+            } catch (\Exception $e) {
+                // Log erro, mas não falha a criação
+                Logger::error('Erro ao enviar email de agendamento criado', [
+                    'error' => $e->getMessage(),
+                    'appointment_id' => $appointmentId,
+                    'tenant_id' => $tenantId
+                ]);
             }
             
             ResponseHelper::sendSuccess($appointment, 201, 'Agendamento criado com sucesso');
@@ -479,9 +580,11 @@ class AppointmentController
                     (int)$id
                 )) {
                     ResponseHelper::sendError(
-                        'Conflito de horário: já existe um agendamento neste horário',
                         409,
+                        'Conflito de horário',
+                        'Já existe um agendamento neste horário',
                         'APPOINTMENT_CONFLICT',
+                        [],
                         ['action' => 'update_appointment', 'appointment_id' => $id]
                     );
                     return;
@@ -561,8 +664,14 @@ class AppointmentController
                 $updateData['notes'] = $data['notes'];
             }
             
+            // ✅ CORREÇÃO: Valida tamanho do array metadata (prevenção de DoS)
             if (isset($data['metadata']) && is_array($data['metadata'])) {
-                $updateData['metadata'] = json_encode($data['metadata']);
+                $metadataErrors = Validator::validateArraySize($data['metadata'], 'metadata', 50);
+                if (!empty($metadataErrors)) {
+                    $errors = array_merge($errors, $metadataErrors);
+                } else {
+                    $updateData['metadata'] = json_encode($data['metadata']);
+                }
             }
             
             if (!empty($errors)) {
@@ -571,7 +680,7 @@ class AppointmentController
             }
             
             if (empty($updateData)) {
-                ResponseHelper::sendError('Nenhum campo para atualizar', 400, 'NO_FIELDS_TO_UPDATE', ['action' => 'update_appointment', 'appointment_id' => $id]);
+                ResponseHelper::sendError(400, 'Validação', 'Nenhum campo para atualizar', 'NO_FIELDS_TO_UPDATE', [], ['action' => 'update_appointment', 'appointment_id' => $id]);
                 return;
             }
             
@@ -599,6 +708,43 @@ class AppointmentController
                 $pet = $this->petModel->findByTenantAndId($tenantId, $updated['pet_id']);
                 if ($pet) {
                     $updated['pet'] = $pet;
+                }
+            }
+            
+            // Se foi cancelado, envia email de cancelamento
+            if (isset($data['status']) && $data['status'] === 'cancelled' && $appointment['status'] !== 'cancelled') {
+                try {
+                    $client = null;
+                    $pet = null;
+                    $professional = null;
+                    
+                    if ($updated['client_id']) {
+                        $client = $this->clientModel->findByTenantAndId($tenantId, $updated['client_id']);
+                    }
+                    if ($updated['pet_id']) {
+                        $pet = $this->petModel->findByTenantAndId($tenantId, $updated['pet_id']);
+                    }
+                    if ($updated['professional_id']) {
+                        $professional = $this->professionalModel->findByTenantAndId($tenantId, $updated['professional_id']);
+                    }
+                    
+                    if ($client && $pet && $professional) {
+                        $reason = $data['cancellation_reason'] ?? $updated['cancellation_reason'] ?? null;
+                        $this->emailService->sendAppointmentCancelled(
+                            $updated,
+                            $client,
+                            $pet,
+                            $professional,
+                            $reason
+                        );
+                    }
+                } catch (\Exception $e) {
+                    // Log erro, mas não falha a atualização
+                    Logger::error('Erro ao enviar email de agendamento cancelado', [
+                        'error' => $e->getMessage(),
+                        'appointment_id' => $id,
+                        'tenant_id' => $tenantId
+                    ]);
                 }
             }
             
@@ -684,6 +830,327 @@ class AppointmentController
                 'Erro ao obter histórico do agendamento',
                 'APPOINTMENT_HISTORY_ERROR',
                 ['action' => 'get_appointment_history', 'appointment_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Confirma um agendamento
+     * POST /v1/appointments/:id/confirm
+     */
+    public function confirm(string $id): void
+    {
+        try {
+            PermissionHelper::require('confirm_appointments');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'confirm_appointment', 'appointment_id' => $id]);
+                return;
+            }
+            
+            $appointment = $this->appointmentModel->findByTenantAndId($tenantId, (int)$id);
+            
+            if (!$appointment) {
+                ResponseHelper::sendNotFoundError('Agendamento', ['action' => 'confirm_appointment', 'appointment_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+            
+            if ($appointment['status'] !== 'scheduled') {
+                ResponseHelper::sendError(400, 'Status inválido', 'Apenas agendamentos marcados podem ser confirmados', 'INVALID_STATUS', [], ['action' => 'confirm_appointment', 'appointment_id' => $id]);
+                return;
+            }
+            
+            $userId = Flight::get('user_id');
+            
+            // Prepara dados para atualização
+            $updateData = [
+                'status' => 'confirmed'
+            ];
+            
+            // Tenta adicionar campos de confirmação se existirem na tabela
+            // Se não existirem, o update() vai ignorar esses campos
+            $updateData['confirmed_at'] = date('Y-m-d H:i:s');
+            if ($userId) {
+                $updateData['confirmed_by'] = $userId;
+            }
+            
+            // Atualiza status
+            $this->appointmentModel->update((int)$id, $updateData);
+            
+            // Registra no histórico usando o método create() do AppointmentHistory
+            try {
+                $this->appointmentHistoryModel->create(
+                    $tenantId,
+                    (int)$id,
+                    'confirmed',
+                    ['status' => 'scheduled'],
+                    ['status' => 'confirmed'],
+                    'Agendamento confirmado',
+                    $userId
+                );
+            } catch (\Exception $e) {
+                // Se a tabela não existir, apenas loga o erro mas não falha a operação
+                Logger::warning('Erro ao registrar histórico de agendamento', [
+                    'error' => $e->getMessage(),
+                    'appointment_id' => $id,
+                    'action' => 'confirm'
+                ]);
+            }
+            
+            // Busca agendamento atualizado
+            $updated = $this->appointmentModel->findById((int)$id);
+            
+            // Enriquece com dados relacionados para envio de email
+            $client = null;
+            $pet = null;
+            $professional = null;
+            
+            if ($updated['client_id']) {
+                $client = $this->clientModel->findByTenantAndId($tenantId, $updated['client_id']);
+            }
+            if ($updated['pet_id']) {
+                $pet = $this->petModel->findByTenantAndId($tenantId, $updated['pet_id']);
+            }
+            if ($updated['professional_id']) {
+                $professional = $this->professionalModel->findByTenantAndId($tenantId, $updated['professional_id']);
+            }
+            
+            // Envia email de confirmação
+            try {
+                if ($client && $pet && $professional) {
+                    $this->emailService->sendAppointmentConfirmed(
+                        $updated,
+                        $client,
+                        $pet,
+                        $professional
+                    );
+                }
+            } catch (\Exception $e) {
+                // Log erro, mas não falha a confirmação
+                Logger::error('Erro ao enviar email de agendamento confirmado', [
+                    'error' => $e->getMessage(),
+                    'appointment_id' => $id,
+                    'tenant_id' => $tenantId
+                ]);
+            }
+            
+            ResponseHelper::sendSuccess($updated, 200, 'Agendamento confirmado com sucesso');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao confirmar agendamento',
+                'APPOINTMENT_CONFIRM_ERROR',
+                ['action' => 'confirm_appointment', 'appointment_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Marca agendamento como concluído
+     * POST /v1/appointments/:id/complete
+     */
+    public function complete(string $id): void
+    {
+        try {
+            PermissionHelper::require('update_appointments');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'complete_appointment', 'appointment_id' => $id]);
+                return;
+            }
+            
+            $appointment = $this->appointmentModel->findByTenantAndId($tenantId, (int)$id);
+            
+            if (!$appointment) {
+                ResponseHelper::sendNotFoundError('Agendamento', ['action' => 'complete_appointment', 'appointment_id' => $id, 'tenant_id' => $tenantId]);
+                return;
+            }
+            
+            if (!in_array($appointment['status'], ['scheduled', 'confirmed'])) {
+                ResponseHelper::sendError(400, 'Status inválido', 'Apenas agendamentos marcados ou confirmados podem ser concluídos', 'INVALID_STATUS', [], ['action' => 'complete_appointment', 'appointment_id' => $id]);
+                return;
+            }
+            
+            $userId = Flight::get('user_id');
+            
+            // Prepara dados para atualização
+            $updateData = [
+                'status' => 'completed'
+            ];
+            
+            // Tenta adicionar campos de conclusão se existirem na tabela
+            $updateData['completed_at'] = date('Y-m-d H:i:s');
+            if ($userId) {
+                $updateData['completed_by'] = $userId;
+            }
+            
+            // Atualiza status
+            $this->appointmentModel->update((int)$id, $updateData);
+            
+            // Registra no histórico
+            try {
+                $this->appointmentHistoryModel->create(
+                    $tenantId,
+                    (int)$id,
+                    'completed',
+                    ['status' => $appointment['status']],
+                    ['status' => 'completed'],
+                    'Agendamento concluído',
+                    $userId
+                );
+            } catch (\Exception $e) {
+                // Se a tabela não existir, apenas loga o erro mas não falha a operação
+                Logger::warning('Erro ao registrar histórico de agendamento', [
+                    'error' => $e->getMessage(),
+                    'appointment_id' => $id,
+                    'action' => 'complete'
+                ]);
+            }
+            
+            // Busca agendamento atualizado
+            $updated = $this->appointmentModel->findById((int)$id);
+            
+            ResponseHelper::sendSuccess($updated, 200, 'Agendamento marcado como concluído');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao concluir agendamento',
+                'APPOINTMENT_COMPLETE_ERROR',
+                ['action' => 'complete_appointment', 'appointment_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
+        }
+    }
+
+    /**
+     * Obtém horários disponíveis
+     * GET /v1/appointments/available-slots?professional_id=1&date=2025-01-22
+     */
+    public function availableSlots(): void
+    {
+        try {
+            PermissionHelper::require('view_appointments');
+            
+            $tenantId = Flight::get('tenant_id');
+            
+            if ($tenantId === null) {
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_available_slots']);
+                return;
+            }
+            
+            $queryParams = Flight::request()->query;
+            
+            if (empty($queryParams['professional_id'])) {
+                ResponseHelper::sendError(400, 'Parâmetro obrigatório', 'professional_id é obrigatório', 'MISSING_PARAMETER', [], ['action' => 'get_available_slots']);
+                return;
+            }
+            
+            if (empty($queryParams['date'])) {
+                ResponseHelper::sendError(400, 'Parâmetro obrigatório', 'date é obrigatório', 'MISSING_PARAMETER', [], ['action' => 'get_available_slots']);
+                return;
+            }
+            
+            $professionalId = (int)$queryParams['professional_id'];
+            $date = $queryParams['date'];
+            
+            // Valida formato da data
+            $dateObj = \DateTime::createFromFormat('Y-m-d', $date);
+            if (!$dateObj || $dateObj->format('Y-m-d') !== $date) {
+                ResponseHelper::sendError(400, 'Data inválida', 'Use o formato YYYY-MM-DD', 'INVALID_DATE', [], ['action' => 'get_available_slots']);
+                return;
+            }
+            
+            // Verifica se profissional existe
+            $professional = $this->professionalModel->findByTenantAndId($tenantId, $professionalId);
+            if (!$professional) {
+                ResponseHelper::sendNotFoundError('Profissional', ['action' => 'get_available_slots', 'professional_id' => $professionalId]);
+                return;
+            }
+            
+            // 1. Busca agenda do profissional para o dia da semana
+            $dayOfWeek = (int)$dateObj->format('w'); // 0=domingo, 1=segunda, ..., 6=sábado
+            $schedule = $this->scheduleModel->findByDay($tenantId, $professionalId, $dayOfWeek);
+            
+            // Se não tem horário configurado para este dia, retorna vazio
+            if (!$schedule) {
+                ResponseHelper::sendSuccess([]);
+                return;
+            }
+            
+            // Verifica se está disponível
+            if (!((int)$schedule['is_available'])) {
+                ResponseHelper::sendSuccess([]);
+                return;
+            }
+            
+            // 2. Busca bloqueios para a data
+            $blocks = $this->blockModel->findByProfessionalAndPeriod(
+                $tenantId,
+                $professionalId,
+                $date,
+                $date
+            );
+            
+            // 3. Calcula horários disponíveis baseado na agenda
+            $slots = [];
+            $startTime = new \DateTime($schedule['start_time']);
+            $endTime = new \DateTime($schedule['end_time']);
+            $intervalMinutes = (int)($professional['default_consultation_duration'] ?? 30);
+            
+            $currentTime = clone $startTime;
+            
+            while ($currentTime < $endTime) {
+                $time = $currentTime->format('H:i');
+                $datetime = "$date $time:00";
+                
+                // Verifica se está em um bloqueio
+                $isBlocked = false;
+                foreach ($blocks as $block) {
+                    $blockStart = new \DateTime($block['start_datetime']);
+                    $blockEnd = new \DateTime($block['end_datetime']);
+                    $slotDateTime = new \DateTime($datetime);
+                    
+                    if ($slotDateTime >= $blockStart && $slotDateTime < $blockEnd) {
+                        $isBlocked = true;
+                        break;
+                    }
+                }
+                
+                if ($isBlocked) {
+                    $currentTime->modify("+{$intervalMinutes} minutes");
+                    continue;
+                }
+                
+                // Verifica se há conflito com agendamentos existentes
+                $hasConflict = $this->appointmentModel->hasConflict(
+                    $tenantId,
+                    $professionalId,
+                    $date,
+                    $time,
+                    $intervalMinutes,
+                    null
+                );
+                
+                if (!$hasConflict) {
+                    $slots[] = [
+                        'time' => $time,
+                        'available' => true
+                    ];
+                }
+                
+                $currentTime->modify("+{$intervalMinutes} minutes");
+            }
+            
+            ResponseHelper::sendSuccess($slots);
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter horários disponíveis',
+                'AVAILABLE_SLOTS_ERROR',
+                ['action' => 'get_available_slots', 'tenant_id' => $tenantId ?? null]
             );
         }
     }

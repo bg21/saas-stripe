@@ -62,8 +62,9 @@ class ResponseHelper
             $response['debug'] = ErrorHandler::sanitizeContext($context);
         }
         
-        Flight::json($response, $statusCode);
-        Flight::stop();
+        // Usa Flight::halt() para garantir que o status code seja definido corretamente
+        // e que a execução seja interrompida
+        Flight::halt($statusCode, json_encode($response, JSON_UNESCAPED_UNICODE));
     }
     
     /**

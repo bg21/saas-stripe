@@ -83,12 +83,42 @@ class AuthController
             // Sanitiza após validação
             $email = trim($data['email']);
             $password = $data['password'];
-            // ✅ CORREÇÃO: Cast seguro de tenant_id usando filter_var
-            $tenantId = filter_var($data['tenant_id'], FILTER_VALIDATE_INT);
-            if ($tenantId === false || $tenantId <= 0) {
+            
+            // ✅ NOVO: Aceita tenant_slug OU tenant_id
+            $tenantId = null;
+            if (isset($data['tenant_slug']) && !empty($data['tenant_slug'])) {
+                // Busca tenant pelo slug
+                $tenant = $this->tenantModel->findBySlug(trim($data['tenant_slug']));
+                if (!$tenant) {
+                    ResponseHelper::sendValidationError(
+                        'Clínica não encontrada',
+                        ['tenant_slug' => 'Clínica não encontrada. Verifique o slug informado.'],
+                        ['action' => 'login']
+                    );
+                    return;
+                }
+                if ($tenant['status'] !== 'active') {
+                    ResponseHelper::sendForbiddenError('A clínica está inativa. Entre em contato com o administrador.', [
+                        'action' => 'login'
+                    ]);
+                    return;
+                }
+                $tenantId = (int)$tenant['id'];
+            } elseif (isset($data['tenant_id'])) {
+                // Usa tenant_id (compatibilidade com versão anterior)
+                $tenantId = filter_var($data['tenant_id'], FILTER_VALIDATE_INT);
+                if ($tenantId === false || $tenantId <= 0) {
+                    ResponseHelper::sendValidationError(
+                        'tenant_id deve ser um número inteiro positivo',
+                        ['tenant_id' => 'Deve ser um número inteiro positivo'],
+                        ['action' => 'login']
+                    );
+                    return;
+                }
+            } else {
                 ResponseHelper::sendValidationError(
-                    'tenant_id deve ser um número inteiro positivo',
-                    ['tenant_id' => 'Deve ser um número inteiro positivo'],
+                    'tenant_id ou tenant_slug é obrigatório',
+                    ['tenant_id' => 'Obrigatório (ou forneça tenant_slug)', 'tenant_slug' => 'Obrigatório (ou forneça tenant_id)'],
                     ['action' => 'login']
                 );
                 return;
@@ -255,7 +285,8 @@ class AuthController
                 ],
                 'tenant' => [
                     'id' => (int)$tenant['id'],
-                    'name' => $tenant['name']
+                    'name' => $tenant['name'],
+                    'slug' => $tenant['slug'] ?? null
                 ]
             ]);
         } catch (\Exception $e) {
@@ -264,6 +295,294 @@ class AuthController
                 'Ocorreu um erro ao processar o login',
                 'LOGIN_ERROR',
                 ['action' => 'login']
+            );
+        }
+    }
+
+    /**
+     * Registro de tenant e primeiro usuário (dono da clínica)
+     * POST /v1/auth/register
+     * 
+     * Body JSON:
+     * {
+     *   "clinic_name": "Cão que Mia",
+     *   "clinic_slug": "cao-que-mia",  // opcional, será gerado automaticamente se não fornecido
+     *   "email": "admin@clinica.com",
+     *   "password": "senha123",
+     *   "name": "Nome do Dono"  // opcional
+     * }
+     */
+    public function register(): void
+    {
+        try {
+            // Obtém dados do request
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    ResponseHelper::sendInvalidJsonError(['action' => 'register']);
+                    return;
+                }
+                $data = [];
+            }
+            
+            // Validação usando Validator
+            $validationErrors = Validator::validateRegister($data);
+            if (!empty($validationErrors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $validationErrors,
+                    ['action' => 'register']
+                );
+                return;
+            }
+            
+            // Sanitiza dados
+            $clinicName = trim($data['clinic_name']);
+            $clinicSlug = isset($data['clinic_slug']) && !empty($data['clinic_slug']) 
+                ? trim($data['clinic_slug']) 
+                : null;
+            $email = trim($data['email']);
+            $password = $data['password'];
+            $name = isset($data['name']) ? trim($data['name']) : null;
+            
+            // Verifica se email já existe em qualquer tenant
+            $existingUser = $this->userModel->findBy('email', $email);
+            if ($existingUser) {
+                ResponseHelper::sendError(
+                    409,
+                    'Email já cadastrado',
+                    'Este email já está cadastrado no sistema',
+                    'EMAIL_ALREADY_EXISTS',
+                    [],
+                    ['action' => 'register', 'email' => $email]
+                );
+                return;
+            }
+            
+            // Verifica se slug já existe (se fornecido)
+            if ($clinicSlug !== null) {
+                if (!\App\Utils\SlugHelper::isValid($clinicSlug)) {
+                    ResponseHelper::sendValidationError(
+                        'Slug inválido',
+                        ['clinic_slug' => 'Formato inválido. Use apenas letras minúsculas, números e hífens'],
+                        ['action' => 'register']
+                    );
+                    return;
+                }
+                
+                if ($this->tenantModel->slugExists($clinicSlug)) {
+                    ResponseHelper::sendError(
+                        409,
+                        'Slug já existe',
+                        'Este slug já está em uso. Escolha outro ou deixe em branco para gerar automaticamente.',
+                        'SLUG_ALREADY_EXISTS',
+                        [],
+                        ['action' => 'register', 'slug' => $clinicSlug]
+                    );
+                    return;
+                }
+            }
+            
+            // ✅ Usa transação para garantir atomicidade
+            $db = \App\Utils\Database::getInstance();
+            try {
+                $db->beginTransaction();
+                
+                // 1. Cria tenant
+                $tenantId = $this->tenantModel->create($clinicName, $clinicSlug);
+                
+                // 2. Cria usuário admin vinculado ao tenant
+                $userId = $this->userModel->create(
+                    $tenantId,
+                    $email,
+                    $password,
+                    $name,
+                    'admin' // Primeiro usuário sempre é admin
+                );
+                
+                // 3. Cria sessão para o usuário recém-criado
+                $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+                $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+                $sessionId = $this->sessionModel->create($userId, $tenantId, $ipAddress, $userAgent);
+                
+                $db->commit();
+            } catch (\Exception $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                throw $e;
+            }
+            
+            // Busca dados criados
+            $tenant = $this->tenantModel->findById($tenantId);
+            $user = $this->userModel->findById($userId);
+            
+            Logger::info("Registro de tenant e usuário realizado", [
+                'tenant_id' => $tenantId,
+                'tenant_slug' => $tenant['slug'] ?? null,
+                'user_id' => $userId,
+                'email' => $email,
+                'ip' => $ipAddress
+            ]);
+            
+            // Retorna dados do tenant, usuário e sessão
+            ResponseHelper::sendCreated([
+                'session_id' => $sessionId,
+                'tenant' => [
+                    'id' => (int)$tenant['id'],
+                    'name' => $tenant['name'],
+                    'slug' => $tenant['slug'] ?? null
+                ],
+                'user' => [
+                    'id' => (int)$user['id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'role' => $user['role'] ?? 'admin'
+                ]
+            ], 'Registro realizado com sucesso. Você já está logado!');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao realizar registro',
+                'REGISTER_ERROR',
+                ['action' => 'register']
+            );
+        }
+    }
+    
+    /**
+     * Registro de funcionário em tenant existente
+     * POST /v1/auth/register-employee
+     * 
+     * Body JSON:
+     * {
+     *   "tenant_slug": "cao-que-mia",
+     *   "email": "funcionario@clinica.com",
+     *   "password": "senha123",
+     *   "name": "Nome do Funcionário"  // opcional
+     * }
+     */
+    public function registerEmployee(): void
+    {
+        try {
+            // Obtém dados do request
+            $data = \App\Utils\RequestCache::getJsonInput();
+            
+            if ($data === null) {
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    ResponseHelper::sendInvalidJsonError(['action' => 'register_employee']);
+                    return;
+                }
+                $data = [];
+            }
+            
+            // Validação básica
+            $errors = [];
+            if (!isset($data['tenant_slug']) || empty(trim($data['tenant_slug']))) {
+                $errors['tenant_slug'] = 'Obrigatório';
+            }
+            if (!isset($data['email']) || empty(trim($data['email']))) {
+                $errors['email'] = 'Obrigatório';
+            } elseif (!filter_var(trim($data['email']), FILTER_VALIDATE_EMAIL)) {
+                $errors['email'] = 'Formato de email inválido';
+            }
+            if (!isset($data['password']) || empty($data['password'])) {
+                $errors['password'] = 'Obrigatório';
+            } else {
+                $passwordError = Validator::validatePasswordStrength($data['password']);
+                if ($passwordError) {
+                    $errors['password'] = $passwordError;
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'register_employee']
+                );
+                return;
+            }
+            
+            // Sanitiza dados
+            $tenantSlug = trim($data['tenant_slug']);
+            $email = trim($data['email']);
+            $password = $data['password'];
+            $name = isset($data['name']) ? trim($data['name']) : null;
+            
+            // Busca tenant pelo slug
+            $tenant = $this->tenantModel->findBySlug($tenantSlug);
+            if (!$tenant) {
+                ResponseHelper::sendNotFoundError('Clínica não encontrada. Verifique o slug informado.', [
+                    'action' => 'register_employee',
+                    'tenant_slug' => $tenantSlug
+                ]);
+                return;
+            }
+            
+            if ($tenant['status'] !== 'active') {
+                ResponseHelper::sendForbiddenError('A clínica está inativa. Entre em contato com o administrador.', [
+                    'action' => 'register_employee'
+                ]);
+                return;
+            }
+            
+            $tenantId = (int)$tenant['id'];
+            
+            // Verifica se email já existe no tenant
+            $existingUser = $this->userModel->findByEmailAndTenant($email, $tenantId);
+            if ($existingUser) {
+                ResponseHelper::sendError(
+                    409,
+                    'Email já cadastrado',
+                    'Este email já está cadastrado nesta clínica',
+                    'EMAIL_ALREADY_EXISTS',
+                    [],
+                    ['action' => 'register_employee', 'tenant_id' => $tenantId, 'email' => $email]
+                );
+                return;
+            }
+            
+            // Cria usuário (role padrão: viewer)
+            $userId = $this->userModel->create(
+                $tenantId,
+                $email,
+                $password,
+                $name,
+                'viewer' // Funcionários começam como viewer (admin pode promover depois)
+            );
+            
+            // Busca usuário criado
+            $user = $this->userModel->findById($userId);
+            
+            Logger::info("Registro de funcionário realizado", [
+                'tenant_id' => $tenantId,
+                'tenant_slug' => $tenantSlug,
+                'user_id' => $userId,
+                'email' => $email,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? null
+            ]);
+            
+            ResponseHelper::sendCreated([
+                'user' => [
+                    'id' => (int)$user['id'],
+                    'email' => $user['email'],
+                    'name' => $user['name'],
+                    'role' => $user['role'] ?? 'viewer'
+                ],
+                'tenant' => [
+                    'id' => (int)$tenant['id'],
+                    'name' => $tenant['name'],
+                    'slug' => $tenant['slug'] ?? null
+                ]
+            ], 'Funcionário registrado com sucesso. Faça login para acessar o sistema.');
+        } catch (\Exception $e) {
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao registrar funcionário',
+                'REGISTER_EMPLOYEE_ERROR',
+                ['action' => 'register_employee']
             );
         }
     }

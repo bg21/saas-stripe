@@ -103,52 +103,39 @@ class SetupIntentController
             // Valida se pertence ao tenant (via metadata)
             if (isset($setupIntent->metadata->tenant_id) && 
                 (string)$setupIntent->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Setup intent não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Setup intent', ['action' => 'get_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $setupIntent->id,
-                    'client_secret' => $setupIntent->client_secret,
-                    'status' => $setupIntent->status,
-                    'customer' => $setupIntent->customer ?? null,
-                    'payment_method' => $setupIntent->payment_method ?? null,
-                    'payment_method_types' => $setupIntent->payment_method_types,
-                    'usage' => $setupIntent->usage ?? 'off_session',
-                    'description' => $setupIntent->description ?? null,
-                    'created' => date('Y-m-d H:i:s', $setupIntent->created),
-                    'metadata' => $setupIntent->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $setupIntent->id,
+                'client_secret' => $setupIntent->client_secret,
+                'status' => $setupIntent->status,
+                'customer' => $setupIntent->customer ?? null,
+                'payment_method' => $setupIntent->payment_method ?? null,
+                'payment_method_types' => $setupIntent->payment_method_types,
+                'usage' => $setupIntent->usage ?? 'off_session',
+                'description' => $setupIntent->description ?? null,
+                'created' => date('Y-m-d H:i:s', $setupIntent->created),
+                'metadata' => $setupIntent->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Logger::error("Setup intent não encontrado", ['setup_intent_id' => $id]);
-                Flight::json([
-                    'error' => 'Setup intent não encontrado',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 404);
+                ResponseHelper::sendNotFoundError('Setup intent', ['action' => 'get_setup_intent', 'setup_intent_id' => $id]);
             } else {
-                Logger::error("Erro ao obter setup intent", [
-                    'error' => $e->getMessage(),
-                    'setup_intent_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao obter setup intent',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter setup intent',
+                    ['action' => 'get_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter setup intent", [
-                'error' => $e->getMessage(),
-                'setup_intent_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter setup intent',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter setup intent',
+                'SETUP_INTENT_GET_ERROR',
+                ['action' => 'get_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -175,7 +162,7 @@ class SetupIntentController
             
             if (isset($setupIntent->metadata->tenant_id) && 
                 (string)$setupIntent->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Setup intent não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Setup intent', ['action' => 'confirm_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -185,7 +172,7 @@ class SetupIntentController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    ResponseHelper::sendInvalidJsonError(['action' => 'create_setup_intent']);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'confirm_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -193,43 +180,34 @@ class SetupIntentController
 
             $setupIntent = $this->stripeService->confirmSetupIntent($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $setupIntent->id,
-                    'client_secret' => $setupIntent->client_secret,
-                    'status' => $setupIntent->status,
-                    'customer' => $setupIntent->customer ?? null,
-                    'payment_method' => $setupIntent->payment_method ?? null,
-                    'payment_method_types' => $setupIntent->payment_method_types,
-                    'usage' => $setupIntent->usage ?? 'off_session',
-                    'created' => date('Y-m-d H:i:s', $setupIntent->created),
-                    'metadata' => $setupIntent->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $setupIntent->id,
+                'client_secret' => $setupIntent->client_secret,
+                'status' => $setupIntent->status,
+                'customer' => $setupIntent->customer ?? null,
+                'payment_method' => $setupIntent->payment_method ?? null,
+                'payment_method_types' => $setupIntent->payment_method_types,
+                'usage' => $setupIntent->usage ?? 'off_session',
+                'created' => date('Y-m-d H:i:s', $setupIntent->created),
+                'metadata' => $setupIntent->metadata->toArray()
+            ], 200, 'Setup intent confirmado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Setup intent não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Setup intent', ['action' => 'confirm_setup_intent', 'setup_intent_id' => $id]);
             } else {
-                Logger::error("Erro ao confirmar setup intent", [
-                    'error' => $e->getMessage(),
-                    'setup_intent_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao confirmar setup intent',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao confirmar setup intent',
+                    ['action' => 'confirm_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao confirmar setup intent", [
-                'error' => $e->getMessage(),
-                'setup_intent_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro interno do servidor',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao confirmar setup intent',
+                'SETUP_INTENT_CONFIRM_ERROR',
+                ['action' => 'confirm_setup_intent', 'setup_intent_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

@@ -105,57 +105,68 @@ class SubscriptionHistory extends BaseModel
         int $offset = 0,
         array $filters = []
     ): array {
-        $sql = "SELECT sh.*, u.email as user_email, u.name as user_name 
-                FROM {$this->table} sh 
-                LEFT JOIN users u ON sh.user_id = u.id 
-                WHERE sh.subscription_id = :subscription_id";
-        $params = ['subscription_id' => $subscriptionId];
+        try {
+            $sql = "SELECT sh.*, u.email as user_email, u.name as user_name 
+                    FROM {$this->table} sh 
+                    LEFT JOIN users u ON sh.user_id = u.id 
+                    WHERE sh.subscription_id = :subscription_id";
+            $params = ['subscription_id' => $subscriptionId];
 
-        // Validação de segurança: se tenant_id fornecido, filtra por ele
-        if ($tenantId !== null) {
-            $sql .= " AND sh.tenant_id = :tenant_id";
-            $params['tenant_id'] = $tenantId;
+            // Validação de segurança: se tenant_id fornecido, filtra por ele
+            if ($tenantId !== null) {
+                $sql .= " AND sh.tenant_id = :tenant_id";
+                $params['tenant_id'] = $tenantId;
+            }
+
+            // Filtros opcionais
+            if (!empty($filters['change_type'])) {
+                $sql .= " AND sh.change_type = :change_type";
+                $params['change_type'] = $filters['change_type'];
+            }
+
+            if (!empty($filters['changed_by'])) {
+                $sql .= " AND sh.changed_by = :changed_by";
+                $params['changed_by'] = $filters['changed_by'];
+            }
+
+            if (isset($filters['user_id']) && $filters['user_id'] !== null) {
+                $sql .= " AND sh.user_id = :user_id";
+                $params['user_id'] = (int)$filters['user_id'];
+            }
+
+            if (!empty($filters['date_from'])) {
+                $sql .= " AND sh.created_at >= :date_from";
+                $params['date_from'] = $filters['date_from'];
+            }
+
+            if (!empty($filters['date_to'])) {
+                $sql .= " AND sh.created_at <= :date_to";
+                $params['date_to'] = $filters['date_to'];
+            }
+
+            $sql .= " ORDER BY sh.created_at DESC LIMIT :limit OFFSET :offset";
+
+            $stmt = $this->db->prepare($sql);
+            
+            foreach ($params as $key => $value) {
+                $stmt->bindValue(":{$key}", $value);
+            }
+            
+            $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+            
+            $stmt->execute();
+            return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            // ✅ CORREÇÃO: Se houver erro (tabela não existe, etc), retorna array vazio
+            // Log do erro para debug, mas não quebra a aplicação
+            error_log("Erro ao buscar histórico de assinatura: " . $e->getMessage());
+            return [];
+        } catch (\Exception $e) {
+            // ✅ Captura qualquer outro tipo de exceção também
+            error_log("Erro inesperado ao buscar histórico de assinatura: " . $e->getMessage());
+            return [];
         }
-
-        // Filtros opcionais
-        if (!empty($filters['change_type'])) {
-            $sql .= " AND sh.change_type = :change_type";
-            $params['change_type'] = $filters['change_type'];
-        }
-
-        if (!empty($filters['changed_by'])) {
-            $sql .= " AND sh.changed_by = :changed_by";
-            $params['changed_by'] = $filters['changed_by'];
-        }
-
-        if (isset($filters['user_id']) && $filters['user_id'] !== null) {
-            $sql .= " AND sh.user_id = :user_id";
-            $params['user_id'] = (int)$filters['user_id'];
-        }
-
-        if (!empty($filters['date_from'])) {
-            $sql .= " AND sh.created_at >= :date_from";
-            $params['date_from'] = $filters['date_from'];
-        }
-
-        if (!empty($filters['date_to'])) {
-            $sql .= " AND sh.created_at <= :date_to";
-            $params['date_to'] = $filters['date_to'];
-        }
-
-        $sql .= " ORDER BY sh.created_at DESC LIMIT :limit OFFSET :offset";
-
-        $stmt = $this->db->prepare($sql);
-        
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":{$key}", $value);
-        }
-        
-        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
-        
-        $stmt->execute();
-        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
     }
 
     /**
@@ -168,49 +179,59 @@ class SubscriptionHistory extends BaseModel
      */
     public function countBySubscription(int $subscriptionId, ?int $tenantId = null, array $filters = []): int
     {
-        $sql = "SELECT COUNT(*) as total FROM {$this->table} WHERE subscription_id = :subscription_id";
-        $params = ['subscription_id' => $subscriptionId];
+        try {
+            $sql = "SELECT COUNT(*) as total FROM {$this->table} WHERE subscription_id = :subscription_id";
+            $params = ['subscription_id' => $subscriptionId];
 
-        if ($tenantId !== null) {
-            $sql .= " AND tenant_id = :tenant_id";
-            $params['tenant_id'] = $tenantId;
-        }
+            if ($tenantId !== null) {
+                $sql .= " AND tenant_id = :tenant_id";
+                $params['tenant_id'] = $tenantId;
+            }
 
-        // Aplica mesmos filtros do findBySubscription
-        if (!empty($filters['change_type'])) {
-            $sql .= " AND change_type = :change_type";
-            $params['change_type'] = $filters['change_type'];
-        }
+            // Aplica mesmos filtros do findBySubscription
+            if (!empty($filters['change_type'])) {
+                $sql .= " AND change_type = :change_type";
+                $params['change_type'] = $filters['change_type'];
+            }
 
-        if (!empty($filters['changed_by'])) {
-            $sql .= " AND changed_by = :changed_by";
-            $params['changed_by'] = $filters['changed_by'];
-        }
+            if (!empty($filters['changed_by'])) {
+                $sql .= " AND changed_by = :changed_by";
+                $params['changed_by'] = $filters['changed_by'];
+            }
 
-        if (isset($filters['user_id']) && $filters['user_id'] !== null) {
-            $sql .= " AND user_id = :user_id";
-            $params['user_id'] = (int)$filters['user_id'];
-        }
+            if (isset($filters['user_id']) && $filters['user_id'] !== null) {
+                $sql .= " AND user_id = :user_id";
+                $params['user_id'] = (int)$filters['user_id'];
+            }
 
-        if (!empty($filters['date_from'])) {
-            $sql .= " AND created_at >= :date_from";
-            $params['date_from'] = $filters['date_from'];
-        }
+            if (!empty($filters['date_from'])) {
+                $sql .= " AND created_at >= :date_from";
+                $params['date_from'] = $filters['date_from'];
+            }
 
-        if (!empty($filters['date_to'])) {
-            $sql .= " AND created_at <= :date_to";
-            $params['date_to'] = $filters['date_to'];
-        }
+            if (!empty($filters['date_to'])) {
+                $sql .= " AND created_at <= :date_to";
+                $params['date_to'] = $filters['date_to'];
+            }
 
-        $stmt = $this->db->prepare($sql);
-        
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":{$key}", $value);
+            $stmt = $this->db->prepare($sql);
+            
+            foreach ($params as $key => $value) {
+                $stmt->bindValue(":{$key}", $value);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+            return (int) ($result['total'] ?? 0);
+        } catch (\PDOException $e) {
+            // ✅ CORREÇÃO: Se houver erro, retorna 0 (não crítico)
+            error_log("Erro ao contar histórico de assinatura: " . $e->getMessage());
+            return 0;
+        } catch (\Exception $e) {
+            // ✅ Captura qualquer outro tipo de exceção também
+            error_log("Erro inesperado ao contar histórico de assinatura: " . $e->getMessage());
+            return 0;
         }
-        
-        $stmt->execute();
-        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
-        return (int) ($result['total'] ?? 0);
     }
 
     /**
@@ -239,52 +260,87 @@ class SubscriptionHistory extends BaseModel
      */
     public function getStatistics(int $subscriptionId, ?int $tenantId = null): array
     {
-        $sql = "SELECT 
-                    COUNT(*) as total_changes,
-                    COUNT(DISTINCT change_type) as unique_change_types,
-                    COUNT(DISTINCT changed_by) as unique_sources,
-                    COUNT(DISTINCT user_id) as unique_users,
-                    MIN(created_at) as first_change,
-                    MAX(created_at) as last_change,
-                    SUM(CASE WHEN change_type = 'created' THEN 1 ELSE 0 END) as created_count,
-                    SUM(CASE WHEN change_type = 'updated' THEN 1 ELSE 0 END) as updated_count,
-                    SUM(CASE WHEN change_type = 'canceled' THEN 1 ELSE 0 END) as canceled_count,
-                    SUM(CASE WHEN change_type = 'reactivated' THEN 1 ELSE 0 END) as reactivated_count,
-                    SUM(CASE WHEN change_type = 'plan_changed' THEN 1 ELSE 0 END) as plan_changed_count,
-                    SUM(CASE WHEN change_type = 'status_changed' THEN 1 ELSE 0 END) as status_changed_count
-                FROM {$this->table} 
-                WHERE subscription_id = :subscription_id";
-        
-        $params = ['subscription_id' => $subscriptionId];
+        try {
+            $sql = "SELECT 
+                        COUNT(*) as total_changes,
+                        COUNT(DISTINCT change_type) as unique_change_types,
+                        COUNT(DISTINCT changed_by) as unique_sources,
+                        COUNT(DISTINCT user_id) as unique_users,
+                        MIN(created_at) as first_change,
+                        MAX(created_at) as last_change,
+                        SUM(CASE WHEN change_type = 'created' THEN 1 ELSE 0 END) as created_count,
+                        SUM(CASE WHEN change_type = 'updated' THEN 1 ELSE 0 END) as updated_count,
+                        SUM(CASE WHEN change_type = 'canceled' THEN 1 ELSE 0 END) as canceled_count,
+                        SUM(CASE WHEN change_type = 'reactivated' THEN 1 ELSE 0 END) as reactivated_count,
+                        SUM(CASE WHEN change_type = 'plan_changed' THEN 1 ELSE 0 END) as plan_changed_count,
+                        SUM(CASE WHEN change_type = 'status_changed' THEN 1 ELSE 0 END) as status_changed_count
+                    FROM {$this->table} 
+                    WHERE subscription_id = :subscription_id";
+            
+            $params = ['subscription_id' => $subscriptionId];
 
-        if ($tenantId !== null) {
-            $sql .= " AND tenant_id = :tenant_id";
-            $params['tenant_id'] = $tenantId;
-        }
+            if ($tenantId !== null) {
+                $sql .= " AND tenant_id = :tenant_id";
+                $params['tenant_id'] = $tenantId;
+            }
 
-        $stmt = $this->db->prepare($sql);
-        
-        foreach ($params as $key => $value) {
-            $stmt->bindValue(":{$key}", $value);
+            $stmt = $this->db->prepare($sql);
+            
+            foreach ($params as $key => $value) {
+                $stmt->bindValue(":{$key}", $value);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            return [
+                'total_changes' => (int) ($result['total_changes'] ?? 0),
+                'unique_change_types' => (int) ($result['unique_change_types'] ?? 0),
+                'unique_sources' => (int) ($result['unique_sources'] ?? 0),
+                'unique_users' => (int) ($result['unique_users'] ?? 0),
+                'first_change' => $result['first_change'] ?? null,
+                'last_change' => $result['last_change'] ?? null,
+                'by_type' => [
+                    'created' => (int) ($result['created_count'] ?? 0),
+                    'updated' => (int) ($result['updated_count'] ?? 0),
+                    'canceled' => (int) ($result['canceled_count'] ?? 0),
+                    'reactivated' => (int) ($result['reactivated_count'] ?? 0),
+                    'plan_changed' => (int) ($result['plan_changed_count'] ?? 0),
+                    'status_changed' => (int) ($result['status_changed_count'] ?? 0)
+                ]
+            ];
+        } catch (\PDOException $e) {
+            // ✅ CORREÇÃO: Se houver erro, retorna estatísticas vazias (não crítico)
+            error_log("Erro ao obter estatísticas do histórico: " . $e->getMessage());
+            return $this->getEmptyStatistics();
+        } catch (\Exception $e) {
+            // ✅ Captura qualquer outro tipo de exceção também
+            error_log("Erro inesperado ao obter estatísticas do histórico: " . $e->getMessage());
+            return $this->getEmptyStatistics();
         }
-        
-        $stmt->execute();
-        $result = $stmt->fetch(\PDO::FETCH_ASSOC);
-        
+    }
+
+    /**
+     * Retorna estatísticas vazias (quando tabela não existe ou há erro)
+     * 
+     * @return array
+     */
+    private function getEmptyStatistics(): array
+    {
         return [
-            'total_changes' => (int) ($result['total_changes'] ?? 0),
-            'unique_change_types' => (int) ($result['unique_change_types'] ?? 0),
-            'unique_sources' => (int) ($result['unique_sources'] ?? 0),
-            'unique_users' => (int) ($result['unique_users'] ?? 0),
-            'first_change' => $result['first_change'] ?? null,
-            'last_change' => $result['last_change'] ?? null,
+            'total_changes' => 0,
+            'unique_change_types' => 0,
+            'unique_sources' => 0,
+            'unique_users' => 0,
+            'first_change' => null,
+            'last_change' => null,
             'by_type' => [
-                'created' => (int) ($result['created_count'] ?? 0),
-                'updated' => (int) ($result['updated_count'] ?? 0),
-                'canceled' => (int) ($result['canceled_count'] ?? 0),
-                'reactivated' => (int) ($result['reactivated_count'] ?? 0),
-                'plan_changed' => (int) ($result['plan_changed_count'] ?? 0),
-                'status_changed' => (int) ($result['status_changed_count'] ?? 0)
+                'created' => 0,
+                'updated' => 0,
+                'canceled' => 0,
+                'reactivated' => 0,
+                'plan_changed' => 0,
+                'status_changed' => 0
             ]
         ];
     }

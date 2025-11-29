@@ -240,21 +240,18 @@ class InvoiceItemController
                 }
             }
 
-            Flight::json([
-                'success' => true,
+            ResponseHelper::sendSuccess([
                 'data' => $invoiceItems,
                 'count' => count($invoiceItems),
                 'has_more' => $collection->has_more
             ]);
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar invoice items", [
-                'error' => $e->getMessage(),
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar invoice items',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar invoice items',
+                'INVOICE_ITEMS_LIST_ERROR',
+                ['action' => 'list_invoice_items', 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -292,54 +289,41 @@ class InvoiceItemController
             }
             
             if (!$isTenantItem) {
-                Flight::json(['error' => 'Invoice item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'get_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $invoiceItem->id,
-                    'customer' => $invoiceItem->customer,
-                    'amount' => $invoiceItem->amount ?? null,
-                    'currency' => $invoiceItem->currency ?? null,
-                    'description' => $invoiceItem->description ?? null,
-                    'invoice' => $invoiceItem->invoice ?? null,
-                    'subscription' => $invoiceItem->subscription ?? null,
-                    'price' => $invoiceItem->price->id ?? null,
-                    'quantity' => $invoiceItem->quantity,
-                    'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
-                    'created' => date('Y-m-d H:i:s', $invoiceItem->created),
-                    'metadata' => $invoiceItem->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $invoiceItem->id,
+                'customer' => $invoiceItem->customer,
+                'amount' => $invoiceItem->amount ?? null,
+                'currency' => $invoiceItem->currency ?? null,
+                'description' => $invoiceItem->description ?? null,
+                'invoice' => $invoiceItem->invoice ?? null,
+                'subscription' => $invoiceItem->subscription ?? null,
+                'price' => $invoiceItem->price->id ?? null,
+                'quantity' => $invoiceItem->quantity,
+                'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
+                'created' => date('Y-m-d H:i:s', $invoiceItem->created),
+                'metadata' => $invoiceItem->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Logger::error("Invoice item não encontrado", ['invoice_item_id' => $id]);
-                Flight::json([
-                    'error' => 'Invoice item não encontrado',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'get_invoice_item', 'invoice_item_id' => $id]);
             } else {
-                Logger::error("Erro ao obter invoice item", [
-                    'error' => $e->getMessage(),
-                    'invoice_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao obter invoice item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter invoice item',
+                    ['action' => 'get_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter invoice item", [
-                'error' => $e->getMessage(),
-                'invoice_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter invoice item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter invoice item',
+                'INVOICE_ITEM_GET_ERROR',
+                ['action' => 'get_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -383,7 +367,7 @@ class InvoiceItemController
             }
             
             if (!$isTenantItem) {
-                Flight::json(['error' => 'Invoice item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'update_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -393,7 +377,7 @@ class InvoiceItemController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    ResponseHelper::sendInvalidJsonError(['action' => 'create_invoice_item']);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -403,53 +387,44 @@ class InvoiceItemController
             if (isset($data['tax_rates']) && is_array($data['tax_rates'])) {
                 $taxRatesErrors = \App\Utils\Validator::validateArraySize($data['tax_rates'], 'tax_rates', 50);
                 if (!empty($taxRatesErrors)) {
-                    Flight::json(['error' => 'Dados inválidos', 'errors' => $taxRatesErrors], 400);
+                    ResponseHelper::sendValidationError('Dados inválidos', $taxRatesErrors, ['action' => 'update_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
             }
 
             $invoiceItem = $this->stripeService->updateInvoiceItem($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $invoiceItem->id,
-                    'customer' => $invoiceItem->customer,
-                    'amount' => $invoiceItem->amount ?? null,
-                    'currency' => $invoiceItem->currency ?? null,
-                    'description' => $invoiceItem->description ?? null,
-                    'invoice' => $invoiceItem->invoice ?? null,
-                    'subscription' => $invoiceItem->subscription ?? null,
-                    'price' => $invoiceItem->price->id ?? null,
-                    'quantity' => $invoiceItem->quantity,
-                    'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
-                    'created' => date('Y-m-d H:i:s', $invoiceItem->created),
-                    'metadata' => $invoiceItem->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $invoiceItem->id,
+                'customer' => $invoiceItem->customer,
+                'amount' => $invoiceItem->amount ?? null,
+                'currency' => $invoiceItem->currency ?? null,
+                'description' => $invoiceItem->description ?? null,
+                'invoice' => $invoiceItem->invoice ?? null,
+                'subscription' => $invoiceItem->subscription ?? null,
+                'price' => $invoiceItem->price->id ?? null,
+                'quantity' => $invoiceItem->quantity,
+                'tax_rates' => array_map(function($tr) { return $tr->id; }, $invoiceItem->tax_rates ?? []),
+                'created' => date('Y-m-d H:i:s', $invoiceItem->created),
+                'metadata' => $invoiceItem->metadata->toArray()
+            ], 200, 'Invoice item atualizado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Invoice item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'update_invoice_item', 'invoice_item_id' => $id]);
             } else {
-                Logger::error("Erro ao atualizar invoice item", [
-                    'error' => $e->getMessage(),
-                    'invoice_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar invoice item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar invoice item',
+                    ['action' => 'update_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar invoice item", [
-                'error' => $e->getMessage(),
-                'invoice_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao atualizar invoice item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar invoice item',
+                'INVOICE_ITEM_UPDATE_ERROR',
+                ['action' => 'update_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -485,39 +460,30 @@ class InvoiceItemController
             }
             
             if (!$isTenantItem) {
-                Flight::json(['error' => 'Invoice item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'delete_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
             $this->stripeService->deleteInvoiceItem($id);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Invoice item removido com sucesso'
-            ]);
+            ResponseHelper::sendSuccess(null, 200, 'Invoice item removido com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Invoice item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Invoice item', ['action' => 'delete_invoice_item', 'invoice_item_id' => $id]);
             } else {
-                Logger::error("Erro ao remover invoice item", [
-                    'error' => $e->getMessage(),
-                    'invoice_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao remover invoice item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao remover invoice item',
+                    ['action' => 'delete_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao remover invoice item", [
-                'error' => $e->getMessage(),
-                'invoice_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao remover invoice item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao remover invoice item',
+                'INVOICE_ITEM_DELETE_ERROR',
+                ['action' => 'delete_invoice_item', 'invoice_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

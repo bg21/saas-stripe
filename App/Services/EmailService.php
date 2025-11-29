@@ -662,5 +662,169 @@ class EmailService
         
         return $this->enviar($destinatario, $assunto, $corpo, $nome);
     }
+
+    /**
+     * Envia email quando agendamento é criado
+     *
+     * @param array $appointment Dados do agendamento
+     * @param array $client Dados do cliente
+     * @param array $pet Dados do pet
+     * @param array $professional Dados do profissional
+     * @return bool
+     */
+    public function sendAppointmentCreated(array $appointment, array $client, array $pet, array $professional): bool
+    {
+        $assunto = '📅 Agendamento Confirmado - ' . ($pet['name'] ?? 'Seu pet');
+        
+        // Formata data e hora
+        $date = \DateTime::createFromFormat('Y-m-d', $appointment['appointment_date'] ?? date('Y-m-d'));
+        $time = \DateTime::createFromFormat('H:i:s', $appointment['appointment_time'] ?? '00:00:00');
+        if (!$time) {
+            $time = \DateTime::createFromFormat('H:i', $appointment['appointment_time'] ?? '00:00');
+        }
+        
+        $data = [
+            'client_name' => $client['name'] ?? 'Cliente',
+            'client_email' => $client['email'] ?? '',
+            'pet_name' => $pet['name'] ?? 'Pet',
+            'pet_species' => $pet['species'] ?? '',
+            'professional_name' => $professional['name'] ?? 'Profissional',
+            'appointment_date' => $date ? $date->format('d/m/Y') : date('d/m/Y'),
+            'appointment_time' => $time ? $time->format('H:i') : '00:00',
+            'appointment_date_full' => $date ? $date->format('d/m/Y') . ' às ' . ($time ? $time->format('H:i') : '00:00') : date('d/m/Y H:i'),
+            'duration_minutes' => $appointment['duration_minutes'] ?? 30,
+            'notes' => $appointment['notes'] ?? '',
+            'app_url' => $_ENV['APP_URL'] ?? 'http://localhost',
+            'support_email' => $this->supportEmail,
+            'app_name' => $_ENV['APP_NAME'] ?? 'Sistema de Clínica Veterinária'
+        ];
+        
+        $corpo = $this->renderTemplate('appointment_created', $data);
+        
+        return $this->enviar($client['email'] ?? '', $assunto, $corpo, $client['name'] ?? 'Cliente');
+    }
+
+    /**
+     * Envia email quando agendamento é confirmado
+     *
+     * @param array $appointment Dados do agendamento
+     * @param array $client Dados do cliente
+     * @param array $pet Dados do pet
+     * @param array $professional Dados do profissional
+     * @return bool
+     */
+    public function sendAppointmentConfirmed(array $appointment, array $client, array $pet, array $professional): bool
+    {
+        $assunto = '✅ Agendamento Confirmado - ' . ($pet['name'] ?? 'Seu pet');
+        
+        // Formata data e hora
+        $date = \DateTime::createFromFormat('Y-m-d', $appointment['appointment_date'] ?? date('Y-m-d'));
+        $time = \DateTime::createFromFormat('H:i:s', $appointment['appointment_time'] ?? '00:00:00');
+        if (!$time) {
+            $time = \DateTime::createFromFormat('H:i', $appointment['appointment_time'] ?? '00:00');
+        }
+        
+        $data = [
+            'client_name' => $client['name'] ?? 'Cliente',
+            'client_email' => $client['email'] ?? '',
+            'pet_name' => $pet['name'] ?? 'Pet',
+            'pet_species' => $pet['species'] ?? '',
+            'professional_name' => $professional['name'] ?? 'Profissional',
+            'appointment_date' => $date ? $date->format('d/m/Y') : date('d/m/Y'),
+            'appointment_time' => $time ? $time->format('H:i') : '00:00',
+            'appointment_date_full' => $date ? $date->format('d/m/Y') . ' às ' . ($time ? $time->format('H:i') : '00:00') : date('d/m/Y H:i'),
+            'duration_minutes' => $appointment['duration_minutes'] ?? 30,
+            'notes' => $appointment['notes'] ?? '',
+            'app_url' => $_ENV['APP_URL'] ?? 'http://localhost',
+            'support_email' => $this->supportEmail,
+            'app_name' => $_ENV['APP_NAME'] ?? 'Sistema de Clínica Veterinária'
+        ];
+        
+        $corpo = $this->renderTemplate('appointment_confirmed', $data);
+        
+        return $this->enviar($client['email'] ?? '', $assunto, $corpo, $client['name'] ?? 'Cliente');
+    }
+
+    /**
+     * Envia email quando agendamento é cancelado
+     *
+     * @param array $appointment Dados do agendamento
+     * @param array $client Dados do cliente
+     * @param array $pet Dados do pet
+     * @param array $professional Dados do profissional
+     * @param string|null $reason Motivo do cancelamento (opcional)
+     * @return bool
+     */
+    public function sendAppointmentCancelled(array $appointment, array $client, array $pet, array $professional, ?string $reason = null): bool
+    {
+        $assunto = '❌ Agendamento Cancelado - ' . ($pet['name'] ?? 'Seu pet');
+        
+        // Formata data e hora
+        $date = \DateTime::createFromFormat('Y-m-d', $appointment['appointment_date'] ?? date('Y-m-d'));
+        $time = \DateTime::createFromFormat('H:i:s', $appointment['appointment_time'] ?? '00:00:00');
+        if (!$time) {
+            $time = \DateTime::createFromFormat('H:i', $appointment['appointment_time'] ?? '00:00');
+        }
+        
+        $data = [
+            'client_name' => $client['name'] ?? 'Cliente',
+            'client_email' => $client['email'] ?? '',
+            'pet_name' => $pet['name'] ?? 'Pet',
+            'pet_species' => $pet['species'] ?? '',
+            'professional_name' => $professional['name'] ?? 'Profissional',
+            'appointment_date' => $date ? $date->format('d/m/Y') : date('d/m/Y'),
+            'appointment_time' => $time ? $time->format('H:i') : '00:00',
+            'appointment_date_full' => $date ? $date->format('d/m/Y') . ' às ' . ($time ? $time->format('H:i') : '00:00') : date('d/m/Y H:i'),
+            'reason' => $reason ?? 'Não informado',
+            'app_url' => $_ENV['APP_URL'] ?? 'http://localhost',
+            'support_email' => $this->supportEmail,
+            'app_name' => $_ENV['APP_NAME'] ?? 'Sistema de Clínica Veterinária'
+        ];
+        
+        $corpo = $this->renderTemplate('appointment_cancelled', $data);
+        
+        return $this->enviar($client['email'] ?? '', $assunto, $corpo, $client['name'] ?? 'Cliente');
+    }
+
+    /**
+     * Envia lembrete de agendamento (24h antes)
+     *
+     * @param array $appointment Dados do agendamento
+     * @param array $client Dados do cliente
+     * @param array $pet Dados do pet
+     * @param array $professional Dados do profissional
+     * @return bool
+     */
+    public function sendAppointmentReminder(array $appointment, array $client, array $pet, array $professional): bool
+    {
+        $assunto = '🔔 Lembrete: Agendamento amanhã - ' . ($pet['name'] ?? 'Seu pet');
+        
+        // Formata data e hora
+        $date = \DateTime::createFromFormat('Y-m-d', $appointment['appointment_date'] ?? date('Y-m-d'));
+        $time = \DateTime::createFromFormat('H:i:s', $appointment['appointment_time'] ?? '00:00:00');
+        if (!$time) {
+            $time = \DateTime::createFromFormat('H:i', $appointment['appointment_time'] ?? '00:00');
+        }
+        
+        $data = [
+            'client_name' => $client['name'] ?? 'Cliente',
+            'client_email' => $client['email'] ?? '',
+            'pet_name' => $pet['name'] ?? 'Pet',
+            'pet_species' => $pet['species'] ?? '',
+            'professional_name' => $professional['name'] ?? 'Profissional',
+            'appointment_date' => $date ? $date->format('d/m/Y') : date('d/m/Y'),
+            'appointment_time' => $time ? $time->format('H:i') : '00:00',
+            'appointment_date_full' => $date ? $date->format('d/m/Y') . ' às ' . ($time ? $time->format('H:i') : '00:00') : date('d/m/Y H:i'),
+            'duration_minutes' => $appointment['duration_minutes'] ?? 30,
+            'notes' => $appointment['notes'] ?? '',
+            'app_url' => $_ENV['APP_URL'] ?? 'http://localhost',
+            'support_email' => $this->supportEmail,
+            'app_name' => $_ENV['APP_NAME'] ?? 'Sistema de Clínica Veterinária'
+        ];
+        
+        $corpo = $this->renderTemplate('appointment_reminder', $data);
+        
+        return $this->enviar($client['email'] ?? '', $assunto, $corpo, $client['name'] ?? 'Cliente');
+    }
 }
 

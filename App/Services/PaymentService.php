@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Subscription;
 use App\Models\StripeEvent;
 use App\Services\StripeService;
+use App\Services\EmailService;
 use App\Services\Logger;
 
 /**
@@ -18,6 +19,7 @@ class PaymentService
     private Customer $customerModel;
     private Subscription $subscriptionModel;
     private StripeEvent $eventModel;
+    private EmailService $emailService;
 
     public function __construct(
         StripeService $stripeService,
@@ -29,6 +31,7 @@ class PaymentService
         $this->customerModel = $customerModel;
         $this->subscriptionModel = $subscriptionModel;
         $this->eventModel = $eventModel;
+        $this->emailService = new EmailService();
     }
 
     /**
@@ -384,6 +387,21 @@ class PaymentService
                         'customer_id' => $customer['id'],
                         'tenant_id' => $customer['tenant_id']
                     ]);
+
+                    // Envia email de nova assinatura criada
+                    try {
+                        $this->emailService->enviarNotificacaoAssinaturaCriada(
+                            $subscription->toArray(),
+                            $customer
+                        );
+                    } catch (\Exception $e) {
+                        // Log erro, mas não falha o processamento do checkout
+                        Logger::error('Erro ao enviar email de assinatura criada', [
+                            'error' => $e->getMessage(),
+                            'subscription_id' => $subscriptionId,
+                            'customer_id' => $customer['id']
+                        ]);
+                    }
                 } catch (\Exception $e) {
                     Logger::error("Erro ao salvar subscription no banco", [
                         'error' => $e->getMessage(),
@@ -501,6 +519,26 @@ class PaymentService
                 'status' => $stripeSubscription->status,
                 'event_type' => $eventType
             ]);
+
+            // Envia email quando assinatura é cancelada
+            if ($eventType === 'customer.subscription.deleted') {
+                try {
+                    $customer = $this->customerModel->findById($subscription['customer_id']);
+                    if ($customer) {
+                        $this->emailService->enviarNotificacaoAssinaturaCancelada(
+                            $stripeSubscription->toArray(),
+                            $customer
+                        );
+                    }
+                } catch (\Exception $e) {
+                    // Log erro, mas não falha o processamento do webhook
+                    Logger::error('Erro ao enviar email de assinatura cancelada', [
+                        'error' => $e->getMessage(),
+                        'subscription_id' => $subscription['id'],
+                        'customer_id' => $subscription['customer_id']
+                    ]);
+                }
+            }
         }
     }
 
@@ -594,10 +632,25 @@ class PaymentService
             }
         }
 
-        // Aqui você pode adicionar lógica adicional, como:
-        // - Enviar notificação ao cliente
-        // - Atualizar status da assinatura para past_due
-        // - Tentar cobrança novamente após X dias
+        // Envia email de notificação de pagamento falhado
+        try {
+            if ($invoice->customer) {
+                $customer = $this->customerModel->findByStripeId($invoice->customer);
+                if ($customer) {
+                    $this->emailService->enviarNotificacaoPagamentoFalhado(
+                        $invoice->toArray(),
+                        $customer
+                    );
+                }
+            }
+        } catch (\Exception $e) {
+            // Log erro, mas não falha o processamento do webhook
+            Logger::error('Erro ao enviar email de pagamento falhado', [
+                'error' => $e->getMessage(),
+                'invoice_id' => $invoice->id,
+                'customer_id' => $invoice->customer
+            ]);
+        }
     }
 
     /**

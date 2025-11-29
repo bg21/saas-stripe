@@ -5,6 +5,7 @@ namespace App\Services;
 use Monolog\Logger as MonologLogger;
 use Monolog\Handler\RotatingFileHandler;
 use Monolog\Formatter\LineFormatter;
+use App\Handlers\DatabaseLogHandler;
 use Config;
 
 /**
@@ -58,6 +59,26 @@ class Logger
             $handler->setFormatter($formatter);
 
             self::$instance->pushHandler($handler);
+            
+            // ✅ TRACING: Adiciona handler para salvar logs no banco de dados
+            // Apenas se LOG_DATABASE_ENABLED estiver habilitado
+            if (Config::get('LOG_DATABASE_ENABLED', 'true') === 'true') {
+                try {
+                    // Converte nível de int para Level enum (Monolog 3.x)
+                    $dbLogLevel = \Monolog\Level::fromValue($logLevel);
+                    $dbHandler = new DatabaseLogHandler(
+                        $dbLogLevel, // Mesmo nível do arquivo (Level enum)
+                        true, // Bubble
+                        10, // Buffer size (salva em lotes de 10)
+                        5   // Flush interval (segundos)
+                    );
+                    self::$instance->pushHandler($dbHandler);
+                } catch (\Exception $e) {
+                    // Se falhar ao criar handler de banco, continua apenas com arquivo
+                    // Não deve quebrar a aplicação se o banco estiver indisponível
+                    error_log("Erro ao inicializar DatabaseLogHandler: " . $e->getMessage());
+                }
+            }
         }
 
         return self::$instance;
@@ -67,40 +88,73 @@ class Logger
      * Log de informação
      * Sanitiza contexto automaticamente
      */
+    /**
+     * Log de informação
+     * Sanitiza contexto automaticamente
+     * ✅ TRACING: Inclui request_id automaticamente
+     */
     public static function info(string $message, array $context = []): void
     {
         $sanitizedContext = self::sanitizeContext($context);
-        self::getInstance()->info($message, $sanitizedContext);
+        $contextWithTrace = self::addRequestId($sanitizedContext);
+        self::getInstance()->info($message, $contextWithTrace);
     }
 
     /**
      * Log de erro
      * Sanitiza contexto automaticamente
+     * ✅ TRACING: Inclui request_id automaticamente
      */
     public static function error(string $message, array $context = []): void
     {
         $sanitizedContext = self::sanitizeContext($context);
-        self::getInstance()->error($message, $sanitizedContext);
+        $contextWithTrace = self::addRequestId($sanitizedContext);
+        self::getInstance()->error($message, $contextWithTrace);
     }
 
     /**
      * Log de debug
      * Sanitiza contexto automaticamente
+     * ✅ TRACING: Inclui request_id automaticamente
      */
     public static function debug(string $message, array $context = []): void
     {
         $sanitizedContext = self::sanitizeContext($context);
-        self::getInstance()->debug($message, $sanitizedContext);
+        $contextWithTrace = self::addRequestId($sanitizedContext);
+        self::getInstance()->debug($message, $contextWithTrace);
     }
 
     /**
      * Log de warning
      * Sanitiza contexto automaticamente
+     * ✅ TRACING: Inclui request_id automaticamente
      */
     public static function warning(string $message, array $context = []): void
     {
         $sanitizedContext = self::sanitizeContext($context);
-        self::getInstance()->warning($message, $sanitizedContext);
+        $contextWithTrace = self::addRequestId($sanitizedContext);
+        self::getInstance()->warning($message, $contextWithTrace);
+    }
+    
+    /**
+     * Adiciona request_id ao contexto se disponível
+     * 
+     * @param array $context Contexto original
+     * @return array Contexto com request_id
+     */
+    private static function addRequestId(array $context): array
+    {
+        // Obtém request_id do Flight (definido pelo TracingMiddleware)
+        $requestId = \Flight::get('request_id');
+        
+        if ($requestId !== null) {
+            // Adiciona request_id ao contexto (se ainda não estiver presente)
+            if (!isset($context['request_id'])) {
+                $context['request_id'] = $requestId;
+            }
+        }
+        
+        return $context;
     }
     
     /**

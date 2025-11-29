@@ -249,6 +249,12 @@
                                 <span>Tipos de Exames</span>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="/clinic-settings" class="nav-link <?php echo ($currentPage ?? '') === 'clinic-settings' ? 'active' : ''; ?>">
+                                <i class="bi bi-gear"></i>
+                                <span>Configurações da Clínica</span>
+                            </a>
+                        </li>
                         <?php endif; ?>
                     </ul>
                 </li>
@@ -283,6 +289,18 @@
                             <a href="/audit-logs" class="nav-link <?php echo ($currentPage ?? '') === 'audit-logs' ? 'active' : ''; ?>">
                                 <i class="bi bi-journal-text"></i>
                                 <span>Logs de Auditoria</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/traces" class="nav-link <?php echo ($currentPage ?? '') === 'traces' ? 'active' : ''; ?>">
+                                <i class="bi bi-diagram-3"></i>
+                                <span>Tracing de Requisições</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/performance-metrics" class="nav-link <?php echo ($currentPage ?? '') === 'performance-metrics' ? 'active' : ''; ?>">
+                                <i class="bi bi-speedometer"></i>
+                                <span>Métricas de Performance</span>
                             </a>
                         </li>
                     </ul>

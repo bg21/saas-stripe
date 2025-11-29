@@ -318,17 +318,43 @@ class Validator
             }
         }
         
-        // tenant_id: obrigatório, deve ser inteiro positivo
-        if (!isset($data['tenant_id'])) {
-            $errors['tenant_id'] = 'Obrigatório';
-        } elseif (!is_numeric($data['tenant_id'])) {
-            $errors['tenant_id'] = 'Deve ser um número';
+        // tenant_id OU tenant_slug: pelo menos um deve ser fornecido
+        // Prioridade: tenant_slug (se fornecido, usa ele; senão, usa tenant_id)
+        $hasTenantId = isset($data['tenant_id']);
+        $hasTenantSlug = isset($data['tenant_slug']);
+        
+        if (!$hasTenantId && !$hasTenantSlug) {
+            $errors['tenant_id'] = 'Obrigatório (ou forneça tenant_slug)';
+            $errors['tenant_slug'] = 'Obrigatório (ou forneça tenant_id)';
         } else {
-            $tenantId = (int)$data['tenant_id'];
-            if ($tenantId <= 0) {
-                $errors['tenant_id'] = 'Deve ser um número positivo';
-            } elseif ($tenantId > PHP_INT_MAX) {
-                $errors['tenant_id'] = 'ID muito grande';
+            // Valida tenant_slug se fornecido
+            if ($hasTenantSlug) {
+                if (!is_string($data['tenant_slug'])) {
+                    $errors['tenant_slug'] = 'Deve ser uma string';
+                } else {
+                    $slug = trim($data['tenant_slug']);
+                    if (empty($slug)) {
+                        $errors['tenant_slug'] = 'Não pode estar vazio';
+                    } elseif (strlen($slug) > 100) {
+                        $errors['tenant_slug'] = 'Muito longo (máximo 100 caracteres)';
+                    } elseif (!\App\Utils\SlugHelper::isValid($slug)) {
+                        $errors['tenant_slug'] = 'Formato inválido. Use apenas letras minúsculas, números e hífens';
+                    }
+                }
+            }
+            
+            // Valida tenant_id se fornecido (e slug não foi fornecido)
+            if ($hasTenantId && !$hasTenantSlug) {
+                if (!is_numeric($data['tenant_id'])) {
+                    $errors['tenant_id'] = 'Deve ser um número';
+                } else {
+                    $tenantId = (int)$data['tenant_id'];
+                    if ($tenantId <= 0) {
+                        $errors['tenant_id'] = 'Deve ser um número positivo';
+                    } elseif ($tenantId > PHP_INT_MAX) {
+                        $errors['tenant_id'] = 'ID muito grande';
+                    }
+                }
             }
         }
         
@@ -595,6 +621,84 @@ class Validator
         }
         
         return null; // Senha válida
+    }
+    
+    /**
+     * Valida dados para registro de tenant e primeiro usuário
+     * 
+     * @param array $data Dados a validar
+     * @return array Array de erros (vazio se válido)
+     */
+    public static function validateRegister(array $data): array
+    {
+        $errors = [];
+        
+        // clinic_name: obrigatório, nome da clínica
+        if (!isset($data['clinic_name'])) {
+            $errors['clinic_name'] = 'Obrigatório';
+        } elseif (!is_string($data['clinic_name'])) {
+            $errors['clinic_name'] = 'Deve ser uma string';
+        } else {
+            $clinicName = trim($data['clinic_name']);
+            if (empty($clinicName)) {
+                $errors['clinic_name'] = 'Obrigatório';
+            } elseif (strlen($clinicName) > 255) {
+                $errors['clinic_name'] = 'Muito longo (máximo 255 caracteres)';
+            } elseif (strlen($clinicName) < 3) {
+                $errors['clinic_name'] = 'Muito curto (mínimo 3 caracteres)';
+            }
+        }
+        
+        // clinic_slug: opcional, mas se fornecido deve ser válido
+        if (isset($data['clinic_slug'])) {
+            if (!is_string($data['clinic_slug'])) {
+                $errors['clinic_slug'] = 'Deve ser uma string';
+            } else {
+                $slug = trim($data['clinic_slug']);
+                if (!empty($slug) && !\App\Utils\SlugHelper::isValid($slug)) {
+                    $errors['clinic_slug'] = 'Formato inválido. Use apenas letras minúsculas, números e hífens';
+                }
+            }
+        }
+        
+        // email: obrigatório, deve ser email válido
+        if (!isset($data['email'])) {
+            $errors['email'] = 'Obrigatório';
+        } elseif (!is_string($data['email'])) {
+            $errors['email'] = 'Deve ser uma string';
+        } else {
+            $email = trim($data['email']);
+            if (empty($email)) {
+                $errors['email'] = 'Obrigatório';
+            } elseif (strlen($email) > 255) {
+                $errors['email'] = 'Muito longo (máximo 255 caracteres)';
+            } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors['email'] = 'Formato de email inválido';
+            }
+        }
+        
+        // password: obrigatório, deve ser forte
+        if (!isset($data['password'])) {
+            $errors['password'] = 'Obrigatório';
+        } elseif (!is_string($data['password'])) {
+            $errors['password'] = 'Deve ser uma string';
+        } else {
+            $passwordError = self::validatePasswordStrength($data['password']);
+            if ($passwordError) {
+                $errors['password'] = $passwordError;
+            }
+        }
+        
+        // name: opcional
+        if (isset($data['name'])) {
+            if (!is_string($data['name'])) {
+                $errors['name'] = 'Deve ser uma string';
+            } elseif (strlen($data['name']) > 255) {
+                $errors['name'] = 'Muito longo (máximo 255 caracteres)';
+            }
+        }
+        
+        return $errors;
     }
     
     /**

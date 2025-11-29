@@ -162,7 +162,7 @@ class SubscriptionItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'list_subscription_items', 'subscription_id' => $subscriptionId]);
                 return;
             }
 
@@ -171,7 +171,7 @@ class SubscriptionItemController
             $subscription = $subscriptionModel->findByStripeId($subscriptionId);
             
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Assinatura não encontrada'], 404);
+                ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'list_subscription_items', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -203,31 +203,24 @@ class SubscriptionItemController
                 ];
             }
 
-            Flight::json([
-                'success' => true,
+            ResponseHelper::sendSuccess([
                 'data' => $items,
                 'count' => count($items),
                 'has_more' => $collection->has_more
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            Logger::error("Erro ao listar subscription items", [
-                'error' => $e->getMessage(),
-                'subscription_id' => $subscriptionId
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar subscription items',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao listar subscription items',
+                ['action' => 'list_subscription_items', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            Logger::error("Erro ao listar subscription items", [
-                'error' => $e->getMessage(),
-                'subscription_id' => $subscriptionId,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao listar subscription items',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao listar subscription items',
+                'SUBSCRIPTION_ITEMS_LIST_ERROR',
+                ['action' => 'list_subscription_items', 'subscription_id' => $subscriptionId, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -241,7 +234,7 @@ class SubscriptionItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'get_subscription_item', 'subscription_item_id' => $id]);
                 return;
             }
 
@@ -252,44 +245,35 @@ class SubscriptionItemController
             $subscription = $subscriptionModel->findByStripeId($subscriptionItem->subscription);
             
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'get_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $subscriptionItem->id,
-                    'subscription' => $subscriptionItem->subscription,
-                    'price' => $subscriptionItem->price->id,
-                    'quantity' => $subscriptionItem->quantity,
-                    'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
-                    'metadata' => $subscriptionItem->metadata->toArray()
-                ]
+            ResponseHelper::sendSuccess([
+                'id' => $subscriptionItem->id,
+                'subscription' => $subscriptionItem->subscription,
+                'price' => $subscriptionItem->price->id,
+                'quantity' => $subscriptionItem->quantity,
+                'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
+                'metadata' => $subscriptionItem->metadata->toArray()
             ]);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'get_subscription_item', 'subscription_item_id' => $id]);
             } else {
-                Logger::error("Erro ao obter subscription item", [
-                    'error' => $e->getMessage(),
-                    'subscription_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao obter subscription item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao obter subscription item',
+                    ['action' => 'get_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao obter subscription item", [
-                'error' => $e->getMessage(),
-                'subscription_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao obter subscription item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter subscription item',
+                'SUBSCRIPTION_ITEM_GET_ERROR',
+                ['action' => 'get_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -308,7 +292,7 @@ class SubscriptionItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'update_subscription_item', 'subscription_item_id' => $id]);
                 return;
             }
 
@@ -319,7 +303,7 @@ class SubscriptionItemController
             $subscription = $subscriptionModel->findByStripeId($subscriptionItem->subscription);
             
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'update_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -329,7 +313,7 @@ class SubscriptionItemController
             // ✅ SEGURANÇA: Valida se JSON foi decodificado corretamente
             if ($data === null) {
                 if (json_last_error() !== JSON_ERROR_NONE) {
-                    Flight::json(['error' => 'JSON inválido no corpo da requisição: ' . json_last_error_msg()], 400);
+                    ResponseHelper::sendInvalidJsonError(['action' => 'update_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId]);
                     return;
                 }
                 $data = [];
@@ -337,40 +321,31 @@ class SubscriptionItemController
 
             $subscriptionItem = $this->stripeService->updateSubscriptionItem($id, $data);
 
-            Flight::json([
-                'success' => true,
-                'data' => [
-                    'id' => $subscriptionItem->id,
-                    'subscription' => $subscriptionItem->subscription,
-                    'price' => $subscriptionItem->price->id,
-                    'quantity' => $subscriptionItem->quantity,
-                    'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
-                    'metadata' => $subscriptionItem->metadata->toArray()
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $subscriptionItem->id,
+                'subscription' => $subscriptionItem->subscription,
+                'price' => $subscriptionItem->price->id,
+                'quantity' => $subscriptionItem->quantity,
+                'created' => date('Y-m-d H:i:s', $subscriptionItem->created),
+                'metadata' => $subscriptionItem->metadata->toArray()
+            ], 200, 'Subscription item atualizado com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'update_subscription_item', 'subscription_item_id' => $id]);
             } else {
-                Logger::error("Erro ao atualizar subscription item", [
-                    'error' => $e->getMessage(),
-                    'subscription_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao atualizar subscription item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao atualizar subscription item',
+                    ['action' => 'update_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao atualizar subscription item", [
-                'error' => $e->getMessage(),
-                'subscription_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao atualizar subscription item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao atualizar subscription item',
+                'SUBSCRIPTION_ITEM_UPDATE_ERROR',
+                ['action' => 'update_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -387,7 +362,7 @@ class SubscriptionItemController
             $tenantId = Flight::get('tenant_id');
             
             if ($tenantId === null) {
-                Flight::json(['error' => 'Não autenticado'], 401);
+                ResponseHelper::sendUnauthorizedError('Não autenticado', ['action' => 'delete_subscription_item', 'subscription_item_id' => $id]);
                 return;
             }
 
@@ -398,7 +373,7 @@ class SubscriptionItemController
             $subscription = $subscriptionModel->findByStripeId($subscriptionItem->subscription);
             
             if (!$subscription || $subscription['tenant_id'] != $tenantId) {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'delete_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 
@@ -410,33 +385,24 @@ class SubscriptionItemController
 
             $this->stripeService->deleteSubscriptionItem($id, $options);
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Subscription item removido com sucesso'
-            ]);
+            ResponseHelper::sendSuccess(null, 200, 'Subscription item removido com sucesso');
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             if ($e->getStripeCode() === 'resource_missing') {
-                Flight::json(['error' => 'Subscription item não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Subscription item', ['action' => 'delete_subscription_item', 'subscription_item_id' => $id]);
             } else {
-                Logger::error("Erro ao remover subscription item", [
-                    'error' => $e->getMessage(),
-                    'subscription_item_id' => $id
-                ]);
-                Flight::json([
-                    'error' => 'Erro ao remover subscription item',
-                    'message' => Config::isDevelopment() ? $e->getMessage() : null
-                ], 400);
+                ResponseHelper::sendStripeError(
+                    $e,
+                    'Erro ao remover subscription item',
+                    ['action' => 'delete_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+                );
             }
         } catch (\Exception $e) {
-            Logger::error("Erro ao remover subscription item", [
-                'error' => $e->getMessage(),
-                'subscription_item_id' => $id,
-                'tenant_id' => $tenantId ?? null
-            ]);
-            Flight::json([
-                'error' => 'Erro ao remover subscription item',
-                'message' => Config::isDevelopment() ? $e->getMessage() : null
-            ], 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao remover subscription item',
+                'SUBSCRIPTION_ITEM_DELETE_ERROR',
+                ['action' => 'delete_subscription_item', 'subscription_item_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 }

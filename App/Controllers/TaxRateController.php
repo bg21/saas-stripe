@@ -174,10 +174,14 @@ class TaxRateController
                 }
             }
 
-            ResponseHelper::sendSuccess([
-                'tax_rates' => $taxRates,
-                'count' => count($taxRates),
-                'has_more' => $collection->has_more
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $taxRates,
+                'meta' => [
+                    'count' => count($taxRates),
+                    'has_more' => $collection->has_more
+                ]
             ]);
         } catch (\Exception $e) {
             ResponseHelper::sendGenericError(
@@ -272,7 +276,7 @@ class TaxRateController
             
             if (isset($taxRate->metadata->tenant_id) && 
                 (string)$taxRate->metadata->tenant_id !== (string)$tenantId) {
-                Flight::json(['error' => 'Tax rate não encontrado'], 404);
+                ResponseHelper::sendNotFoundError('Tax rate', ['action' => 'update_tax_rate', 'tax_rate_id' => $id, 'tenant_id' => $tenantId]);
                 return;
             }
 

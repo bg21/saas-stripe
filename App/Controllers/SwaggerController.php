@@ -36,9 +36,13 @@ class SwaggerController
                 $specArray['info'] = [
                     'title' => 'SaaS Payments API',
                     'version' => '1.0.3',
-                    'description' => 'Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via Stripe',
+                    'description' => 'Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via Stripe. Inclui funcionalidades de clínica veterinária com agendamentos, profissionais, pets e exames.',
                     'contact' => [
-                        'name' => 'API Support'
+                        'name' => 'API Support',
+                        'email' => 'support@exemplo.com'
+                    ],
+                    'license' => [
+                        'name' => 'Proprietary'
                     ]
                 ];
 
@@ -93,7 +97,14 @@ class SwaggerController
             'info' => [
                 'title' => 'SaaS Payments API',
                 'version' => '1.0.3',
-                'description' => 'Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via Stripe',
+                'description' => 'Sistema base reutilizável para gerenciar pagamentos, assinaturas e clientes via Stripe. Inclui funcionalidades de clínica veterinária com agendamentos, profissionais, pets e exames.
+
+## Documentação Adicional
+
+- **Códigos de Erro:** Consulte `docs/CODIGOS_ERRO_API.md`
+- **Exemplos de Requisições:** Consulte `docs/EXEMPLOS_REQUISICOES_API.md`
+- **Postman Collection:** Importe `docs/postman_collection.json`
+- **Rotas Completas:** Consulte `docs/ROTAS_API.md`',
                 'contact' => [
                     'name' => 'API Support'
                 ]
@@ -165,10 +176,149 @@ class SwaggerController
             ],
             'tags' => [
                 ['name' => 'Health', 'description' => 'Health Check'],
+                ['name' => 'Autenticação', 'description' => 'Autenticação de usuários'],
                 ['name' => 'Clientes', 'description' => 'Gerenciamento de clientes'],
                 ['name' => 'Assinaturas', 'description' => 'Gerenciamento de assinaturas'],
                 ['name' => 'Checkout', 'description' => 'Sessões de checkout'],
-                ['name' => 'Webhooks', 'description' => 'Webhooks do Stripe']
+                ['name' => 'Webhooks', 'description' => 'Webhooks do Stripe'],
+                ['name' => 'Agendamentos', 'description' => 'Gerenciamento de agendamentos'],
+                ['name' => 'Profissionais', 'description' => 'Gerenciamento de profissionais'],
+                ['name' => 'Pets', 'description' => 'Gerenciamento de pets'],
+                ['name' => 'Exames', 'description' => 'Gerenciamento de exames'],
+                ['name' => 'Produtos', 'description' => 'Gerenciamento de produtos'],
+                ['name' => 'Preços', 'description' => 'Gerenciamento de preços'],
+                ['name' => 'Usuários', 'description' => 'Gerenciamento de usuários'],
+                ['name' => 'Permissões', 'description' => 'Gerenciamento de permissões']
+            ],
+            'components' => [
+                'securitySchemes' => [
+                    'bearerAuth' => [
+                        'type' => 'http',
+                        'scheme' => 'bearer',
+                        'bearerFormat' => 'JWT/Token',
+                        'description' => 'Autenticação via Bearer Token (API Key ou Session ID)'
+                    ]
+                ],
+                'schemas' => [
+                    'Error' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'error' => [
+                                'type' => 'string',
+                                'example' => 'Dados inválidos'
+                            ],
+                            'message' => [
+                                'type' => 'string',
+                                'example' => 'Por favor, verifique os dados informados'
+                            ],
+                            'code' => [
+                                'type' => 'string',
+                                'example' => 'VALIDATION_ERROR'
+                            ],
+                            'errors' => [
+                                'type' => 'object',
+                                'additionalProperties' => [
+                                    'type' => 'string'
+                                ],
+                                'example' => [
+                                    'email' => 'Email é obrigatório'
+                                ]
+                            ]
+                        ]
+                    ],
+                    'Success' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'success' => [
+                                'type' => 'boolean',
+                                'example' => true
+                            ],
+                            'data' => [
+                                'type' => 'object'
+                            ]
+                        ]
+                    ]
+                ],
+                'responses' => [
+                    'ValidationError' => [
+                        'description' => 'Erro de validação',
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/Error'
+                                ],
+                                'example' => [
+                                    'error' => 'Dados inválidos',
+                                    'message' => 'Por favor, verifique os dados informados',
+                                    'code' => 'VALIDATION_ERROR',
+                                    'errors' => [
+                                        'email' => 'Email é obrigatório'
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ],
+                    'Unauthorized' => [
+                        'description' => 'Não autenticado',
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/Error'
+                                ],
+                                'example' => [
+                                    'error' => 'Não autenticado',
+                                    'message' => 'Token de autenticação ausente ou inválido',
+                                    'code' => 'UNAUTHORIZED'
+                                ]
+                            ]
+                        ]
+                    ],
+                    'Forbidden' => [
+                        'description' => 'Sem permissão',
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/Error'
+                                ],
+                                'example' => [
+                                    'error' => 'Sem permissão',
+                                    'message' => 'Você não tem permissão para realizar esta ação',
+                                    'code' => 'FORBIDDEN'
+                                ]
+                            ]
+                        ]
+                    ],
+                    'NotFound' => [
+                        'description' => 'Recurso não encontrado',
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/Error'
+                                ],
+                                'example' => [
+                                    'error' => 'Recurso não encontrado',
+                                    'message' => 'Cliente não encontrado',
+                                    'code' => 'NOT_FOUND'
+                                ]
+                            ]
+                        ]
+                    ],
+                    'RateLimit' => [
+                        'description' => 'Limite de requisições excedido',
+                        'content' => [
+                            'application/json' => [
+                                'schema' => [
+                                    '$ref' => '#/components/schemas/Error'
+                                ],
+                                'example' => [
+                                    'error' => 'Limite excedido',
+                                    'message' => 'Muitas requisições. Tente novamente em alguns segundos',
+                                    'code' => 'RATE_LIMIT_EXCEEDED'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
             ]
         ];
     }

@@ -94,6 +94,9 @@ class AuditMiddleware
         $responseTime = $startTime ? (int) ((microtime(true) - $startTime) * 1000) : 0;
 
         // ✅ OTIMIZAÇÃO: Prepara dados para log assíncrono
+        // ✅ TRACING: Inclui request_id se disponível
+        $requestId = Flight::get('request_id');
+        
         $logData = [
             'tenant_id' => $requestData['tenant_id'],
             'user_id' => $requestData['user_id'],
@@ -105,6 +108,11 @@ class AuditMiddleware
             'response_status' => $statusCode,
             'response_time' => $responseTime,
         ];
+        
+        // Adiciona request_id se disponível (definido pelo TracingMiddleware)
+        if ($requestId !== null) {
+            $logData['request_id'] = $requestId;
+        }
         
         // ✅ OTIMIZAÇÃO: Registra de forma assíncrona após enviar resposta
         // Isso não bloqueia a resposta HTTP

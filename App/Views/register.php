@@ -53,6 +53,22 @@
 
                         <div id="alertContainer"></div>
 
+                        <!-- Seletor de tipo de registro -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Tipo de Registro *</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="user_type" id="owner" value="owner" checked>
+                                <label class="btn btn-outline-primary" for="owner">
+                                    <i class="bi bi-building"></i> Sou Dono da Clínica
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="user_type" id="employee" value="employee">
+                                <label class="btn btn-outline-primary" for="employee">
+                                    <i class="bi bi-person"></i> Sou Funcionário
+                                </label>
+                            </div>
+                        </div>
+
                         <form id="registerForm">
                             <div class="mb-3">
                                 <label class="form-label">Nome Completo *</label>
@@ -66,9 +82,9 @@
 
                             <div class="mb-3">
                                 <label class="form-label">Senha *</label>
-                                <input type="password" class="form-control" name="password" id="password" required minlength="6">
+                                <input type="password" class="form-control" name="password" id="password" required minlength="12">
                                 <div class="password-strength" id="passwordStrength"></div>
-                                <small class="text-muted">Mínimo 6 caracteres</small>
+                                <small class="text-muted">Mínimo 12 caracteres, com letras maiúsculas, minúsculas, números e caracteres especiais</small>
                             </div>
 
                             <div class="mb-3">
@@ -77,10 +93,28 @@
                                 <div id="passwordMatch" class="mt-1"></div>
                             </div>
 
-                            <div class="mb-3">
-                                <label class="form-label">Tenant ID *</label>
-                                <input type="number" class="form-control" name="tenant_id" required>
-                                <small class="text-muted">ID do tenant ao qual você pertence</small>
+                            <!-- Campos para DONO DA CLÍNICA -->
+                            <div id="ownerFields">
+                                <div class="mb-3">
+                                    <label class="form-label">Nome da Clínica *</label>
+                                    <input type="text" class="form-control" name="clinic_name" id="clinic_name" placeholder="ex: Cão que Mia">
+                                    <small class="text-muted">Nome da sua clínica veterinária</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Slug da Clínica</label>
+                                    <input type="text" class="form-control" name="clinic_slug" id="clinic_slug" pattern="[a-z0-9-]+" placeholder="ex: cao-que-mia">
+                                    <small class="text-muted">Opcional: será gerado automaticamente se não informado. Use apenas letras minúsculas, números e hífens</small>
+                                </div>
+                            </div>
+
+                            <!-- Campos para FUNCIONÁRIO -->
+                            <div id="employeeFields" style="display: none;">
+                                <div class="mb-3">
+                                    <label class="form-label">Slug da Clínica *</label>
+                                    <input type="text" class="form-control" name="tenant_slug" id="tenant_slug" pattern="[a-z0-9-]+" placeholder="ex: cao-que-mia">
+                                    <small class="text-muted">Informe o slug da clínica onde você trabalha (ex: cao-que-mia)</small>
+                                </div>
                             </div>
 
                             <div class="mb-3 form-check">
@@ -156,11 +190,71 @@
             }
         });
 
+        // Toggle entre dono e funcionário
+        document.querySelectorAll('input[name="user_type"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const isOwner = this.value === 'owner';
+                document.getElementById('ownerFields').style.display = isOwner ? 'block' : 'none';
+                document.getElementById('employeeFields').style.display = isOwner ? 'none' : 'block';
+                
+                // Atualiza campos obrigatórios
+                document.getElementById('clinic_name').required = isOwner;
+                document.getElementById('clinic_slug').required = false; // Sempre opcional para dono
+                document.getElementById('tenant_slug').required = !isOwner;
+                
+                // Limpa campos quando troca
+                if (isOwner) {
+                    document.getElementById('tenant_slug').value = '';
+                } else {
+                    document.getElementById('clinic_name').value = '';
+                    document.getElementById('clinic_slug').value = '';
+                }
+            });
+        });
+
+        // Validação de slug em tempo real (para ambos os campos)
+        function setupSlugValidation(inputId) {
+            const input = document.getElementById(inputId);
+            if (input) {
+                input.addEventListener('input', function() {
+                    const slug = this.value.toLowerCase().trim();
+                    const validSlug = slug.replace(/[^a-z0-9-]/g, '');
+                    if (slug !== validSlug) {
+                        this.value = validSlug;
+                    }
+                });
+            }
+        }
+        
+        setupSlugValidation('clinic_slug');
+        setupSlugValidation('tenant_slug');
+
+        // Geração automática de slug a partir do nome da clínica
+        document.getElementById('clinic_name').addEventListener('input', function() {
+            const clinicName = this.value;
+            const slugInput = document.getElementById('clinic_slug');
+            
+            // Só gera automaticamente se o campo slug estiver vazio
+            if (slugInput.value === '') {
+                const autoSlug = clinicName
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+                    .replace(/[^a-z0-9\s-]/g, '') // Remove caracteres especiais
+                    .replace(/\s+/g, '-') // Substitui espaços por hífens
+                    .replace(/-+/g, '-') // Remove hífens duplicados
+                    .replace(/^-|-$/g, ''); // Remove hífens no início/fim
+                
+                slugInput.value = autoSlug;
+            }
+        });
+
         // Form de registro
         document.getElementById('registerForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const formData = new FormData(e.target);
+            const userType = formData.get('user_type');
             const password = formData.get('password');
             const passwordConfirm = formData.get('password_confirm');
             
@@ -169,15 +263,66 @@
                 return;
             }
             
-            const data = {
+            let data = {
                 name: formData.get('name'),
                 email: formData.get('email'),
-                password: password,
-                tenant_id: parseInt(formData.get('tenant_id'))
+                password: password
             };
             
+            let endpoint = '';
+            let validationErrors = [];
+            
+            if (userType === 'owner') {
+                // Registro de DONO DA CLÍNICA
+                const clinicName = formData.get('clinic_name')?.trim();
+                const clinicSlug = formData.get('clinic_slug')?.trim().toLowerCase();
+                
+                if (!clinicName || clinicName.length < 3) {
+                    validationErrors.push('Nome da clínica deve ter pelo menos 3 caracteres');
+                }
+                
+                if (clinicSlug && !/^[a-z0-9-]+$/.test(clinicSlug)) {
+                    validationErrors.push('Slug da clínica deve conter apenas letras minúsculas, números e hífens');
+                }
+                
+                if (clinicSlug && clinicSlug.length < 3) {
+                    validationErrors.push('Slug da clínica deve ter pelo menos 3 caracteres');
+                }
+                
+                if (validationErrors.length > 0) {
+                    showAlert(validationErrors.join('. '), 'danger');
+                    return;
+                }
+                
+                data.clinic_name = clinicName;
+                if (clinicSlug) {
+                    data.clinic_slug = clinicSlug;
+                }
+                
+                endpoint = '/v1/auth/register';
+            } else {
+                // Registro de FUNCIONÁRIO
+                const tenantSlug = formData.get('tenant_slug')?.trim().toLowerCase();
+                
+                if (!tenantSlug) {
+                    validationErrors.push('Slug da clínica é obrigatório');
+                } else if (!/^[a-z0-9-]+$/.test(tenantSlug)) {
+                    validationErrors.push('Slug da clínica deve conter apenas letras minúsculas, números e hífens');
+                } else if (tenantSlug.length < 3) {
+                    validationErrors.push('Slug da clínica deve ter pelo menos 3 caracteres');
+                }
+                
+                if (validationErrors.length > 0) {
+                    showAlert(validationErrors.join('. '), 'danger');
+                    return;
+                }
+                
+                data.tenant_slug = tenantSlug;
+                endpoint = '/v1/auth/register-employee';
+            }
+            
             try {
-                const response = await fetch(API_URL + '/v1/users', {
+                const response = await fetch(API_URL + endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -188,12 +333,42 @@
                 const result = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(result.message || result.error || 'Erro ao criar conta');
+                    // Mensagens de erro mais específicas
+                    let errorMessage = result.message || result.error || 'Erro ao criar conta';
+                    
+                    if (response.status === 404) {
+                        errorMessage = 'Clínica não encontrada. Verifique se o slug está correto.';
+                    } else if (response.status === 409) {
+                        if (result.code === 'SLUG_ALREADY_EXISTS') {
+                            errorMessage = 'Este slug já está em uso. Escolha outro ou deixe em branco para gerar automaticamente.';
+                        } else {
+                            errorMessage = 'Este email já está cadastrado.';
+                        }
+                    } else if (result.errors) {
+                        // Mostra erros de validação
+                        const errorList = Object.values(result.errors).join(', ');
+                        errorMessage = errorList || errorMessage;
+                    }
+                    
+                    throw new Error(errorMessage);
                 }
                 
-                showAlert('Conta criada com sucesso! Redirecionando...', 'success');
+                const successMessage = userType === 'owner' 
+                    ? 'Clínica e conta criadas com sucesso! Você já está logado. Redirecionando...'
+                    : 'Conta criada com sucesso! Redirecionando para o login...';
+                
+                showAlert(successMessage, 'success');
+                
+                // Se for dono, já está logado (retorna session_id), então pode redirecionar para dashboard
+                // Se for funcionário, precisa fazer login
                 setTimeout(() => {
-                    window.location.href = '/login';
+                    if (userType === 'owner' && result.data && result.data.session_id) {
+                        // Salva session_id e redireciona para dashboard
+                        localStorage.setItem('session_id', result.data.session_id);
+                        window.location.href = '/dashboard';
+                    } else {
+                        window.location.href = '/login';
+                    }
                 }, 2000);
             } catch (error) {
                 showAlert(error.message, 'danger');

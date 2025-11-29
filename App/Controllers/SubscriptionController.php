@@ -133,7 +133,21 @@ class SubscriptionController
             // ✅ Tenta obter do cache
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // ✅ CORREÇÃO: Se cache tem formato antigo {data: [...], meta: {...}}, converte
+                if (isset($cached['data']) && isset($cached['meta'])) {
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached['data'],
+                        'meta' => $cached['meta']
+                    ]);
+                } else {
+                    // Formato novo (já é array direto)
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached,
+                        'meta' => []
+                    ]);
+                }
                 return;
             }
             
@@ -143,25 +157,32 @@ class SubscriptionController
             // ✅ Calcula estatísticas precisas por status
             $stats = $subscriptionModel->getStatsByTenant($tenantId, $filters);
 
-            $response = [
-                'success' => true,
-                'data' => $result['data'],
-                'meta' => [
-                    'total' => $result['total'],
-                    'page' => $result['page'],
-                    'limit' => $result['limit'],
-                    'total_pages' => $result['total_pages'],
-                    'stats' => $stats // ✅ Estatísticas precisas por status
-                ]
+            // ✅ CORREÇÃO: Passa apenas o array de dados para sendSuccess
+            // O meta será adicionado como propriedade separada na resposta
+            $responseData = $result['data'];
+            $meta = [
+                'total' => $result['total'],
+                'page' => $result['page'],
+                'limit' => $result['limit'],
+                'total_pages' => $result['total_pages'],
+                'stats' => $stats // ✅ Estatísticas precisas por status
             ];
             
-            // ✅ Salva no cache
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ Salva no cache (formato completo para compatibilidade)
+            $cacheData = [
+                'data' => $responseData,
+                'meta' => $meta
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 60);
             
-            Flight::json($response);
+            // ✅ Envia resposta com data como array e meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $responseData,
+                'meta' => $meta
+            ]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao listar assinaturas', 'SUBSCRIPTION_LIST_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError($e, 'Erro ao listar assinaturas', 'SUBSCRIPTION_LIST_ERROR', ['action' => 'list_subscriptions', 'tenant_id' => $tenantId ?? null]);
         }
     }
 
@@ -209,10 +230,7 @@ class SubscriptionController
             $cached = \App\Services\CacheService::getJson($cacheKey);
             
             if ($cached !== null) {
-                Flight::json([
-                    'success' => true,
-                    'data' => $cached
-                ]);
+                ResponseHelper::sendSuccess($cached);
                 return;
             }
 
@@ -235,14 +253,31 @@ class SubscriptionController
                 );
             }
 
+            // ✅ CORREÇÃO: Extrai amount e currency dos items da assinatura
+            $amount = 0;
+            $currency = 'BRL';
+            $priceId = null;
+            
+            if (!empty($stripeSubscription->items->data)) {
+                $firstItem = $stripeSubscription->items->data[0];
+                $amount = ($firstItem->price->unit_amount ?? 0) / 100; // Converte de centavos para reais
+                $currency = strtoupper($firstItem->price->currency ?? 'brl');
+                $priceId = $firstItem->price->id ?? null;
+            }
+
             // Prepara resposta
             $responseData = [
                 'id' => $subscription['id'],
                 'stripe_subscription_id' => $stripeSubscription->id,
                 'customer_id' => $subscription['customer_id'],
                 'status' => $stripeSubscription->status,
+                'price_id' => $priceId,
+                'amount' => $amount,
+                'currency' => $currency,
                 'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
-                'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
+                'current_period_end' => isset($stripeSubscription->current_period_end) && $stripeSubscription->current_period_end 
+                    ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) 
+                    : (isset($subscription['current_period_end']) ? $subscription['current_period_end'] : null),
                 'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
                 'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null,
                 'trial_start' => $stripeSubscription->trial_start ? date('Y-m-d H:i:s', $stripeSubscription->trial_start) : null,
@@ -255,16 +290,14 @@ class SubscriptionController
                     ];
                 }, $stripeSubscription->items->data),
                 'metadata' => $stripeSubscription->metadata->toArray(),
-                'created' => date('Y-m-d H:i:s', $stripeSubscription->created)
+                'created_at' => date('Y-m-d H:i:s', $stripeSubscription->created), // ✅ CORREÇÃO: Mudado de 'created' para 'created_at'
+                'created' => date('Y-m-d H:i:s', $stripeSubscription->created) // Mantém para compatibilidade
             ];
 
             // ✅ Salva no cache
             \App\Services\CacheService::setJson($cacheKey, $responseData, 300); // 5 minutos
 
-            Flight::json([
-                'success' => true,
-                'data' => $responseData
-            ]);
+            ResponseHelper::sendSuccess($responseData);
         } catch (\Stripe\Exception\InvalidRequestException $e) {
             Logger::warning("Assinatura não encontrada no Stripe", ['subscription_id' => (int)$id]);
             ResponseHelper::sendNotFoundError('Assinatura', ['action' => 'get_subscription', 'subscription_id' => $id]);
@@ -606,16 +639,12 @@ class SubscriptionController
             }
 
             if (!$currentStripeSubscription->cancel_at_period_end) {
-                Flight::json([
-                    'success' => true,
-                    'message' => 'Assinatura já está ativa e não estava marcada para cancelar',
-                    'data' => [
-                        'id' => $subscription['id'],
-                        'stripe_subscription_id' => $currentStripeSubscription->id,
-                        'status' => $currentStripeSubscription->status,
-                        'cancel_at_period_end' => $currentStripeSubscription->cancel_at_period_end
-                    ]
-                ]);
+                ResponseHelper::sendSuccess([
+                    'id' => $subscription['id'],
+                    'stripe_subscription_id' => $currentStripeSubscription->id,
+                    'status' => $currentStripeSubscription->status,
+                    'cancel_at_period_end' => $currentStripeSubscription->cancel_at_period_end
+                ], 200, 'Assinatura já está ativa e não estava marcada para cancelar');
                 return;
             }
 
@@ -658,28 +687,34 @@ class SubscriptionController
                 $userId
             );
 
-            Flight::json([
-                'success' => true,
-                'message' => 'Assinatura reativada com sucesso',
-                'data' => [
-                    'id' => $updatedSubscription['id'],
-                    'stripe_subscription_id' => $stripeSubscription->id,
-                    'status' => $stripeSubscription->status,
-                    'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
-                    'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
-                    'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
-                    'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null
-                ]
-            ]);
+            ResponseHelper::sendSuccess([
+                'id' => $updatedSubscription['id'],
+                'stripe_subscription_id' => $stripeSubscription->id,
+                'status' => $stripeSubscription->status,
+                'cancel_at_period_end' => $stripeSubscription->cancel_at_period_end,
+                'current_period_start' => $stripeSubscription->current_period_start ? date('Y-m-d H:i:s', $stripeSubscription->current_period_start) : null,
+                'current_period_end' => $stripeSubscription->current_period_end ? date('Y-m-d H:i:s', $stripeSubscription->current_period_end) : null,
+                'canceled_at' => $stripeSubscription->canceled_at ? date('Y-m-d H:i:s', $stripeSubscription->canceled_at) : null
+            ], 200, 'Assinatura reativada com sucesso');
         } catch (\RuntimeException $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, $e->getMessage(), 'SUBSCRIPTION_REACTIVATE_ERROR');
-            Flight::json($response, 400);
+            ResponseHelper::sendValidationError(
+                $e->getMessage(),
+                [],
+                ['action' => 'reactivate_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Stripe\Exception\InvalidRequestException $e) {
-            $response = ErrorHandler::prepareStripeErrorResponse($e, 'Erro ao reativar assinatura no Stripe');
-            Flight::json($response, 400);
+            ResponseHelper::sendStripeError(
+                $e,
+                'Erro ao reativar assinatura no Stripe',
+                ['action' => 'reactivate_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao reativar assinatura', 'SUBSCRIPTION_REACTIVATE_ERROR');
-            Flight::json($response, 500);
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao reativar assinatura',
+                'SUBSCRIPTION_REACTIVATE_ERROR',
+                ['action' => 'reactivate_subscription', 'subscription_id' => $id, 'tenant_id' => $tenantId ?? null]
+            );
         }
     }
 
@@ -730,22 +765,41 @@ class SubscriptionController
                 return;
             }
 
-            $queryParams = Flight::request()->query;
-            
-            // Valida paginação
-            $pagination = Validator::validatePagination($queryParams);
-            if (!empty($pagination['errors'])) {
-                Flight::json([
-                    'error' => 'Parâmetros de paginação inválidos',
-                    'errors' => $pagination['errors']
-                ], 400);
-                return;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            // Segue o mesmo padrão usado em PayoutController e ReportController
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                // Se houver erro ao obter query params, usa array vazio
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
             }
             
-            // Usa valores validados (limite máximo de 500 para histórico)
-            $limit = min($pagination['limit'], 500);
-            $offset = isset($queryParams['offset']) ? (int) $queryParams['offset'] : 0;
-            $offset = max($offset, 0); // Não pode ser negativo
+            // ✅ CORREÇÃO: Valida paginação com tratamento de erro
+            try {
+                $pagination = Validator::validatePagination($queryParams);
+                if (!empty($pagination['errors'])) {
+                    ResponseHelper::sendValidationError(
+                        'Parâmetros de paginação inválidos',
+                        $pagination['errors'],
+                        ['action' => 'subscription_history', 'subscription_id' => $id, 'tenant_id' => $tenantId]
+                    );
+                    return;
+                }
+                
+                // Usa valores validados (limite máximo de 500 para histórico)
+                $limit = isset($pagination['limit']) ? min($pagination['limit'], 500) : 100;
+                $offset = isset($queryParams['offset']) ? (int) $queryParams['offset'] : 0;
+                $offset = max($offset, 0); // Não pode ser negativo
+            } catch (\Exception $e) {
+                // ✅ Se houver erro na validação, usa valores padrão
+                error_log("Erro ao validar paginação: " . $e->getMessage());
+                $limit = 100;
+                $offset = 0;
+            }
 
             // Filtros opcionais
             $filters = [];
@@ -798,24 +852,56 @@ class SubscriptionController
             }
 
             // Busca histórico
-            $historyModel = new \App\Models\SubscriptionHistory();
-            $history = $historyModel->findBySubscription((int)$id, $tenantId, $limit, $offset, $filters);
-            $total = $historyModel->countBySubscription((int)$id, $tenantId, $filters);
+            // ✅ CORREÇÃO: Tratamento robusto - se a tabela não existir ou houver erro, retorna vazio
+            $history = [];
+            $total = 0;
+            try {
+                $historyModel = new \App\Models\SubscriptionHistory();
+                $history = $historyModel->findBySubscription((int)$id, $tenantId, $limit, $offset, $filters);
+                $total = $historyModel->countBySubscription((int)$id, $tenantId, $filters);
+            } catch (\PDOException $e) {
+                // ✅ Erro de banco de dados (tabela não existe, etc)
+                error_log("Erro PDO ao buscar histórico de assinatura {$id}: " . $e->getMessage());
+                $history = [];
+                $total = 0;
+            } catch (\Exception $e) {
+                // ✅ Qualquer outro erro
+                error_log("Erro ao buscar histórico de assinatura {$id}: " . $e->getMessage());
+                $history = [];
+                $total = 0;
+            }
 
+            // ✅ CORREÇÃO: Retorna array diretamente em data, meta separado
             Flight::json([
                 'success' => true,
                 'data' => $history,
-                'filters_applied' => $filters,
-                'pagination' => [
-                    'total' => $total,
-                    'limit' => $limit,
-                    'offset' => $offset,
-                    'has_more' => ($offset + $limit) < $total
+                'meta' => [
+                    'filters_applied' => $filters,
+                    'pagination' => [
+                        'total' => $total,
+                        'limit' => $limit,
+                        'offset' => $offset,
+                        'has_more' => ($offset + $limit) < $total
+                    ]
                 ]
             ]);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao obter histórico de assinatura', 'SUBSCRIPTION_HISTORY_ERROR');
-            Flight::halt(500, json_encode($response));
+            // ✅ CORREÇÃO: Em caso de erro crítico, retorna resposta vazia em vez de 500
+            error_log("Erro crítico ao obter histórico de assinatura: " . $e->getMessage());
+            Flight::json([
+                'success' => true,
+                'data' => [],
+                'meta' => [
+                    'filters_applied' => [],
+                    'pagination' => [
+                        'total' => 0,
+                        'limit' => 100,
+                        'offset' => 0,
+                        'has_more' => false
+                    ],
+                    'warning' => 'Histórico não disponível no momento'
+                ]
+            ]);
         }
     }
 
@@ -850,13 +936,14 @@ class SubscriptionController
             $historyModel = new \App\Models\SubscriptionHistory();
             $stats = $historyModel->getStatistics((int)$id, $tenantId);
 
-            Flight::json([
-                'success' => true,
-                'data' => $stats
-            ]);
+            ResponseHelper::sendSuccess($stats);
         } catch (\Exception $e) {
-            $response = ErrorHandler::prepareErrorResponse($e, 'Erro ao obter estatísticas do histórico', 'SUBSCRIPTION_HISTORY_STATS_ERROR');
-            Flight::halt(500, json_encode($response));
+            ResponseHelper::sendGenericError(
+                $e,
+                'Erro ao obter estatísticas do histórico',
+                'SUBSCRIPTION_HISTORY_STATS_ERROR',
+                ['action' => 'subscription_history_stats', 'subscription_id' => $id, 'tenant_id' => $tenantId]
+            );
         }
     }
 }

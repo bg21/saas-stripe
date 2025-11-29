@@ -2,7 +2,7 @@
 
 **Data da Análise:** 2025-01-22  
 **Versão do Sistema:** 1.0.4  
-**Status Geral:** 🟢 **92% Implementado**
+**Status Geral:** 🟢 **94% Implementado**
 
 ---
 
@@ -20,20 +20,23 @@ Este documento consolida todas as implementações que ainda precisam ser realiz
 
 ## 🔴 PRIORIDADE ALTA - Crítico para Produção
 
-### 1. ❌ Endpoints de Agendamento Faltantes
+### 1. ✅ Endpoints de Agendamento Faltantes
 
-**Status:** ❌ Não implementado  
+**Status:** ✅ Implementado  
 **Prioridade:** 🔴 ALTA  
 **Impacto:** Alto - Frontend já chama, backend não responde  
 **Esforço:** Baixo  
-**Tempo Estimado:** 1 dia
+**Tempo Estimado:** 1 dia  
+**Data de Conclusão:** 2025-11-29
 
-#### Problema
+#### Problema (RESOLVIDO)
 O frontend (`appointments.php`, `appointment-calendar.php`, `appointment-details.php`) já chama os seguintes endpoints, mas eles não existem no backend:
 
-- `POST /v1/appointments/:id/confirm` - Confirmar agendamento
-- `POST /v1/appointments/:id/complete` - Marcar como concluído
-- `GET /v1/appointments/available-slots` - Horários disponíveis
+- `POST /v1/appointments/:id/confirm` - Confirmar agendamento ✅
+- `POST /v1/appointments/:id/complete` - Marcar como concluído ✅
+- `GET /v1/appointments/available-slots` - Horários disponíveis ✅
+
+**Nota:** A implementação foi concluída e está mais avançada do que o especificado inicialmente. O método `availableSlots()` integra-se com o sistema de agenda de profissionais (`ProfessionalSchedule` e `ScheduleBlock`), calculando horários disponíveis baseado na agenda configurada, bloqueios e agendamentos existentes.
 
 #### Implementação Necessária
 
@@ -268,13 +271,14 @@ Verificar se o método `hasConflict()` existe e está funcionando corretamente.
 
 ---
 
-### 2. ❌ Sistema de Agenda de Profissionais
+### 2. ✅ Sistema de Agenda de Profissionais
 
-**Status:** ❌ Não implementado  
+**Status:** ✅ Implementado  
 **Prioridade:** 🔴 ALTA  
 **Impacto:** Alto - Essencial para agendamentos funcionarem corretamente  
 **Esforço:** Médio  
-**Tempo Estimado:** 2-3 dias
+**Tempo Estimado:** 2-3 dias  
+**Data de Conclusão:** 2025-11-29
 
 #### Problema
 Não existe sistema para gerenciar horários de trabalho dos profissionais e bloqueios de agenda. Isso é essencial para calcular horários disponíveis corretamente.
@@ -946,174 +950,219 @@ public function rotateKey(string $id): void
 
 ## 🟡 PRIORIDADE MÉDIA - Importante para Operação
 
-### 6. ❌ Métricas de Performance
+### 6. ✅ Métricas de Performance
 
-**Status:** ❌ Não implementado  
+**Status:** ✅ Implementado  
 **Prioridade:** 🟡 MÉDIA  
 **Impacto:** Médio - Otimização e monitoramento  
 **Esforço:** Médio  
-**Tempo Estimado:** 2-3 dias
+**Tempo Estimado:** 2-3 dias  
+**Data de Conclusão:** 2025-11-29
 
-#### Implementação Necessária
+#### Implementação Realizada
 
-**1. Criar Migration:**
+**1. ✅ Criada Migration `db/migrations/20251129201500_create_performance_metrics_table.php`:**
+- Tabela `performance_metrics` com campos: `id`, `endpoint`, `method`, `duration_ms`, `memory_mb`, `tenant_id`, `user_id`, `created_at`
+- Índices criados: `idx_endpoint`, `idx_created_at`, `idx_tenant_id`, `idx_endpoint_method`
 
-```sql
-CREATE TABLE performance_metrics (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    endpoint VARCHAR(255) NOT NULL,
-    method VARCHAR(10) NOT NULL,
-    duration_ms INT NOT NULL,
-    memory_mb DECIMAL(10,2) NOT NULL,
-    tenant_id INT UNSIGNED NULL,
-    user_id INT UNSIGNED NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_endpoint (endpoint),
-    INDEX idx_created_at (created_at),
-    INDEX idx_tenant_id (tenant_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
+**2. ✅ Criado Model `App/Models/PerformanceMetric.php`:**
+- Métodos para inserir métricas
+- Métodos para consultar estatísticas (média, total, endpoints lentos)
+- Filtro automático por tenant para segurança
 
-**2. Criar Middleware `App/Middleware/PerformanceMiddleware.php`:**
+**3. ✅ Criado Middleware `App/Middleware/PerformanceMiddleware.php`:**
+- Captura tempo de execução e uso de memória
+- Salva métricas automaticamente via `register_shutdown_function` (não bloqueia resposta)
+- Integrado no `public/index.php`
 
-```php
-<?php
+**4. ✅ Criado Controller `App/Controllers/PerformanceController.php`:**
+- Endpoint: `GET /v1/metrics/performance` - Retorna estatísticas gerais
+- Endpoint: `GET /v1/metrics/performance/slow` - Retorna endpoints lentos
+- Endpoint: `GET /v1/metrics/performance/endpoints` - Retorna estatísticas por endpoint
+- Filtro automático por tenant
 
-namespace App\Middleware;
+**5. ✅ Criada View `App/Views/performance-metrics.php`:**
+- Dashboard para visualizar métricas de performance
+- Cards com estatísticas gerais (tempo médio, memória média, total de requisições, endpoints lentos)
+- Gráficos e tabelas de endpoints mais lentos
+- Rota: `GET /performance-metrics`
 
-use App\Models\PerformanceMetric;
-use Flight;
+**6. ✅ Adicionada permissão `view_performance_metrics`:**
+- Permissão criada no sistema
+- Verificação de permissão no `PerformanceController`
 
-class PerformanceMiddleware
-{
-    private PerformanceMetric $metricModel;
-    private float $startTime;
-    private int $startMemory;
-    
-    public function __construct()
-    {
-        $this->metricModel = new PerformanceMetric();
-    }
-    
-    public function before(): void
-    {
-        $this->startTime = microtime(true);
-        $this->startMemory = memory_get_usage();
-    }
-    
-    public function after(): void
-    {
-        $duration = (microtime(true) - $this->startTime) * 1000; // ms
-        $memory = (memory_get_usage() - $this->startMemory) / 1024 / 1024; // MB
-        
-        $endpoint = Flight::request()->url;
-        $method = Flight::request()->method;
-        $tenantId = Flight::get('tenant_id');
-        $userId = Flight::get('user_id');
-        
-        $this->metricModel->insert([
-            'endpoint' => $endpoint,
-            'method' => $method,
-            'duration_ms' => (int)$duration,
-            'memory_mb' => round($memory, 2),
-            'tenant_id' => $tenantId,
-            'user_id' => $userId
-        ]);
-    }
-}
-```
+**7. ✅ Implementado sistema de alertas:**
+- Comando CLI `php scripts/check_slow_endpoints.php` para identificar endpoints lentos
+- Configuração de threshold (padrão: 1000ms)
 
-**3. Criar Controller para consultar métricas:**
+**8. ✅ Implementada limpeza automática:**
+- Comando CLI `php scripts/cleanup_old_metrics.php` para remover métricas antigas
+- Configuração de retenção (padrão: 30 dias)
 
-```php
-// App/Controllers/PerformanceController.php
-// Endpoint: GET /v1/metrics/performance
-```
+**Arquivos criados/modificados:**
+- `db/migrations/20251129201500_create_performance_metrics_table.php` (novo)
+- `App/Models/PerformanceMetric.php` (novo)
+- `App/Middleware/PerformanceMiddleware.php` (novo)
+- `App/Controllers/PerformanceController.php` (novo)
+- `App/Views/performance-metrics.php` (novo)
+- `scripts/check_slow_endpoints.php` (novo)
+- `scripts/cleanup_old_metrics.php` (novo)
+- `public/index.php` (modificado - integração do middleware e rotas)
 
 ---
 
-### 7. ❌ Tracing de Requisições
+### 7. ✅ Tracing de Requisições
 
-**Status:** ❌ Não implementado  
+**Status:** ✅ Implementado  
 **Prioridade:** 🟡 MÉDIA  
 **Impacto:** Médio - Facilita debugging  
 **Esforço:** Médio  
-**Tempo Estimado:** 1-2 dias
+**Tempo Estimado:** 1-2 dias  
+**Data de Conclusão:** 2025-11-29
 
-#### Implementação Necessária
+#### Implementação Realizada
 
-**1. Criar Middleware `App/Middleware/TracingMiddleware.php`:**
+**1. ✅ Criado Middleware `App/Middleware/TracingMiddleware.php`:**
+- Gera `request_id` único (32 caracteres hexadecimais) para cada requisição
+- Suporta propagação de tracing (aceita `X-Request-ID` no header)
+- Adiciona `X-Request-ID` no header da resposta
+- Armazena `request_id` no Flight para uso em toda a aplicação
 
-```php
-<?php
+**2. ✅ Atualizado `App/Services/Logger.php`:**
+- Adiciona `request_id` automaticamente em todos os logs (info, error, debug, warning)
+- Obtém `request_id` do Flight (definido pelo TracingMiddleware)
+- Integrado com Monolog e handler customizado para salvar logs no banco
 
-namespace App\Middleware;
+**3. ✅ Criado Handler `App/Handlers/DatabaseLogHandler.php`:**
+- Handler customizado do Monolog para salvar logs na tabela `application_logs`
+- Inclui `request_id` automaticamente em todos os logs salvos no banco
 
-use App\Services\Logger;
-use Flight;
+**4. ✅ Criada Migration `db/migrations/20251129202116_create_application_logs_table.php`:**
+- Tabela `application_logs` para armazenar logs do Monolog
+- Campos: `id`, `request_id`, `level`, `message`, `context`, `tenant_id`, `user_id`, `created_at`
+- Índices: `idx_request_id`, `idx_created_at`, `idx_tenant_id`, `idx_level`
 
-class TracingMiddleware
-{
-    public function before(): void
-    {
-        $requestId = bin2hex(random_bytes(16));
-        Flight::set('request_id', $requestId);
-        
-        // Adiciona header na resposta
-        header('X-Request-ID: ' . $requestId);
-    }
-}
-```
+**5. ✅ Criado Model `App/Models/ApplicationLog.php`:**
+- Métodos para buscar logs por `request_id`
+- Métodos para buscar logs por intervalo de tempo
+- Filtro automático por tenant para segurança
 
-**2. Atualizar `App/Services/Logger.php`:**
+**6. ✅ Criado Controller `App/Controllers/TraceController.php`:**
+- Endpoint: `GET /v1/traces/:request_id` - Busca trace completo por Request ID
+- Endpoint: `GET /v1/traces/search` - Busca traces por intervalo de tempo
+- Gera resumo estatístico (total de logs, tempo médio, endpoints, métodos, status codes)
+- Gera timeline de requisições
+- Filtro automático por tenant para segurança
 
-Adicionar `request_id` automaticamente em todos os logs.
+**7. ✅ Criada View `App/Views/traces.php`:**
+- Dashboard para visualizar traces de requisições
+- Busca por Request ID (32 caracteres hexadecimais)
+- Busca por intervalo de tempo (data/hora inicial e final)
+- Exibição de resumo estatístico
+- Timeline visual de requisições
+- Lista de logs (audit logs + application logs)
+- Rota: `GET /traces`
 
-**3. Criar Controller para buscar logs por request_id:**
+**8. ✅ Migration `db/migrations/20251129200206_add_request_id_to_audit_logs.php`:**
+- Adiciona coluna `request_id VARCHAR(32) NULL` na tabela `audit_logs`
+- Cria índices para busca rápida (`idx_request_id`, `idx_tenant_request_id`)
 
-```php
-// App/Controllers/TraceController.php
-// Endpoint: GET /v1/traces/:request_id
-```
+**9. ✅ Atualizado `App/Middleware/AuditMiddleware.php`:**
+- Salva `request_id` nos logs de auditoria
+
+**10. ✅ Integrado no `public/index.php`:**
+- TracingMiddleware executado antes de outros middlewares
+- Rota `GET /v1/traces/@request_id` registrada
+- Rota `GET /v1/traces/search` registrada
+- Rota `GET /traces` para view registrada
+- Rotas `/traces` e `/performance-metrics` adicionadas à lista de rotas públicas (correção de autenticação)
+
+**Arquivos criados/modificados:**
+- `App/Middleware/TracingMiddleware.php` (novo)
+- `App/Controllers/TraceController.php` (novo)
+- `App/Views/traces.php` (novo)
+- `App/Handlers/DatabaseLogHandler.php` (novo)
+- `App/Models/ApplicationLog.php` (novo)
+- `App/Services/Logger.php` (modificado - integração com DatabaseLogHandler)
+- `App/Models/AuditLog.php` (modificado - método `findByRequestId()`)
+- `App/Middleware/AuditMiddleware.php` (modificado - salva `request_id`)
+- `db/migrations/20251129200206_add_request_id_to_audit_logs.php` (novo)
+- `db/migrations/20251129202116_create_application_logs_table.php` (novo)
+- `public/index.php` (modificado - integração do middleware, rotas e correção de autenticação)
 
 ---
 
-### 8. ❌ Configurações da Clínica
+### 8. ✅ Configurações da Clínica
 
-**Status:** ❌ Não implementado  
+**Status:** ✅ Implementado  
 **Prioridade:** 🟡 MÉDIA  
 **Impacto:** Médio - Personalização  
 **Esforço:** Baixo  
-**Tempo Estimado:** 1 dia
+**Tempo Estimado:** 1 dia  
+**Data de Conclusão:** 2025-11-29
 
-#### Implementação Necessária
+#### Implementação Realizada
 
-**Opção 1: Usar JSON em `tenants` (mais simples)**
+**1. ✅ Criada Migration `db/migrations/20251129203600_add_clinic_basic_info_fields.php`:**
+- Adiciona campos de informações básicas da clínica na tabela `clinic_configurations`:
+  - `clinic_name` (VARCHAR 255) - Nome da clínica
+  - `clinic_phone` (VARCHAR 20) - Telefone da clínica
+  - `clinic_email` (VARCHAR 255) - Email da clínica
+  - `clinic_address` (VARCHAR 255) - Endereço completo
+  - `clinic_city` (VARCHAR 100) - Cidade
+  - `clinic_state` (VARCHAR 50) - Estado
+  - `clinic_zip_code` (VARCHAR 10) - CEP
+  - `clinic_logo` (VARCHAR 255) - Caminho do arquivo do logo
+  - `clinic_description` (TEXT) - Descrição da clínica
+  - `clinic_website` (VARCHAR 255) - Website da clínica
 
-Adicionar coluna `clinic_configuration` JSON na tabela `tenants`.
+**2. ✅ Atualizado Model `App/Models/ClinicConfiguration.php`:**
+- Validação completa para todos os novos campos
+- Validação de email, telefone, CEP, website
+- Métodos para salvar e buscar configurações
 
-**Opção 2: Criar tabela dedicada**
+**3. ✅ Atualizado Controller `App/Controllers/ClinicController.php`:**
+- Método `updateConfiguration()` - Atualiza todas as configurações (horários, duração, informações básicas)
+- Método `uploadLogo()` - Faz upload do logo da clínica
+  - Validação de tipo de arquivo (JPG, PNG, GIF, WEBP)
+  - Validação de tamanho (máximo 5MB)
+  - Salva em `storage/clinic-logos/{tenant_id}/`
+  - Remove logo anterior ao fazer upload de novo
 
-```sql
-CREATE TABLE clinic_configurations (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    tenant_id INT UNSIGNED NOT NULL UNIQUE,
-    working_hours JSON,
-    default_appointment_duration INT DEFAULT 30,
-    cancellation_rules JSON,
-    notification_settings JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-```
+**4. ✅ Criada/Atualizada View `App/Views/clinic-settings.php`:**
+- Seção "Informações Básicas da Clínica" com campos:
+  - Nome, Telefone, Email, Website
+  - Endereço, Cidade, Estado, CEP
+  - Descrição
+  - Upload de Logo com preview
+- Máscaras JavaScript para telefone e CEP
+- Preview do logo após upload
+- Validação frontend antes de enviar
+
+**5. ✅ Atualizado `public/index.php`:**
+- Rota `POST /v1/clinic/logo` registrada
+- Servir arquivos estáticos da pasta `storage/` (para logos)
+- Suporte a cache de arquivos estáticos (1 mês)
+
+**6. ✅ Adicionado ao menu:**
+- Item "Configurações da Clínica" no menu lateral (seção "Clínica")
 
 **Endpoints:**
 
 ```php
-GET /v1/clinic/configuration
-PUT /v1/clinic/configuration
+GET /v1/clinic/configuration          # Buscar configurações
+PUT /v1/clinic/configuration          # Atualizar configurações
+POST /v1/clinic/logo                  # Upload do logo
+GET /clinic-settings                  # View de configurações
 ```
+
+**Arquivos criados/modificados:**
+- `db/migrations/20251129203600_add_clinic_basic_info_fields.php` (novo)
+- `App/Models/ClinicConfiguration.php` (modificado - validações)
+- `App/Controllers/ClinicController.php` (modificado - uploadLogo)
+- `App/Views/clinic-settings.php` (modificado - seção de informações básicas)
+- `App/Views/layouts/base.php` (modificado - item no menu)
+- `public/index.php` (modificado - rota de upload e servir arquivos estáticos)
 
 ---
 
@@ -1156,14 +1205,14 @@ PUT /v1/clinic/configuration
 
 | # | Implementação | Prioridade | Tempo | Status |
 |---|---------------|------------|-------|--------|
-| 1 | Endpoints de Agendamento | 🔴 Alta | 1 dia | ❌ |
-| 2 | Sistema de Agenda | 🔴 Alta | 2-3 dias | ❌ |
+| 1 | Endpoints de Agendamento | 🔴 Alta | 1 dia | ✅ |
+| 2 | Sistema de Agenda | 🔴 Alta | 2-3 dias | ✅ |
 | 3 | Notificações Email | 🔴 Alta | 2-3 dias | ⚠️ |
 | 4 | IP Whitelist | 🔴 Alta | 1 dia | ❌ |
 | 5 | Rotação API Keys | 🔴 Alta | 2 dias | ❌ |
-| 6 | Métricas Performance | 🟡 Média | 2-3 dias | ❌ |
-| 7 | Tracing | 🟡 Média | 1-2 dias | ❌ |
-| 8 | Config Clínica | 🟡 Média | 1 dia | ❌ |
+| 6 | Métricas Performance | 🟡 Média | 2-3 dias | ✅ |
+| 7 | Tracing | 🟡 Média | 1-2 dias | ✅ |
+| 8 | Config Clínica | 🟡 Média | 1 dia | ✅ |
 | 9 | 2FA | 🟢 Baixa | 3-4 dias | ❌ |
 | 10 | Criptografia | 🟢 Baixa | 4-5 dias | ❌ |
 
@@ -1175,16 +1224,16 @@ PUT /v1/clinic/configuration
 ## 🎯 PLANO DE AÇÃO RECOMENDADO
 
 ### Semana 1: Crítico (8-10 dias)
-1. Endpoints de Agendamento (1 dia)
-2. Sistema de Agenda (2-3 dias)
+1. Endpoints de Agendamento (1 dia) ✅
+2. Sistema de Agenda (2-3 dias) ✅
 3. Notificações Email (2-3 dias)
 4. IP Whitelist (1 dia)
 5. Rotação API Keys (2 dias)
 
 ### Semana 2: Importante (4-6 dias)
-6. Métricas Performance (2-3 dias)
-7. Tracing (1-2 dias)
-8. Config Clínica (1 dia)
+6. Métricas Performance (2-3 dias) ✅
+7. Tracing (1-2 dias) ✅
+8. Config Clínica (1 dia) ✅
 
 ### Futuro: Opcional (7-9 dias)
 9. 2FA (3-4 dias)
@@ -1192,5 +1241,19 @@ PUT /v1/clinic/configuration
 
 ---
 
-**Última Atualização:** 2025-01-22
+**Última Atualização:** 2025-11-29
+
+---
+
+## 🔧 CORREÇÕES REALIZADAS
+
+### Correção: Rotas `/traces` e `/performance-metrics` no Middleware de Autenticação
+
+**Data:** 2025-11-29  
+**Problema:** As rotas `/traces` e `/performance-metrics` estavam sendo interceptadas pelo middleware de autenticação global antes de chegar às rotas de view, retornando erro JSON em vez de renderizar a página HTML.
+
+**Solução:** Adicionadas `/traces` e `/performance-metrics` à lista de rotas públicas no middleware de autenticação (`public/index.php` linha 254). Essas rotas agora fazem sua própria verificação de autenticação usando `getAuthenticatedUserData()` e redirecionam para `/login` se necessário.
+
+**Arquivo modificado:**
+- `public/index.php` (linha 254 - adicionadas rotas à lista de rotas públicas)
 

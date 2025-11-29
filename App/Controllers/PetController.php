@@ -299,6 +299,26 @@ class PetController
             
             $data = Flight::request()->data->getData();
             
+            // Validações de relacionamentos
+            $errors = [];
+            
+            // Se client_id for fornecido, valida se existe e pertence ao tenant
+            if (isset($data['client_id'])) {
+                $client = $this->clientModel->findByTenantAndId($tenantId, (int)$data['client_id']);
+                if (!$client) {
+                    $errors['client_id'] = 'Cliente não encontrado';
+                }
+            }
+            
+            if (!empty($errors)) {
+                ResponseHelper::sendValidationError(
+                    'Por favor, verifique os dados informados',
+                    $errors,
+                    ['action' => 'update_pet', 'pet_id' => $id, 'tenant_id' => $tenantId]
+                );
+                return;
+            }
+            
             $updateData = [];
             if (isset($data['name'])) $updateData['name'] = $data['name'];
             if (isset($data['species'])) $updateData['species'] = $data['species'];
@@ -309,6 +329,7 @@ class PetController
             if (isset($data['color'])) $updateData['color'] = $data['color'];
             if (isset($data['notes'])) $updateData['notes'] = $data['notes'];
             if (isset($data['status'])) $updateData['status'] = $data['status'];
+            if (isset($data['client_id'])) $updateData['client_id'] = (int)$data['client_id'];
             
             if (empty($updateData)) {
                 ResponseHelper::sendValidationError(['message' => 'Nenhum campo para atualizar']);

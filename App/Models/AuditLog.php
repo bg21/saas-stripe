@@ -276,6 +276,38 @@ class AuditLog extends BaseModel
     }
 
     /**
+     * Busca logs por request_id (tracing)
+     * 
+     * @param string $requestId Request ID único
+     * @param int|null $tenantId ID do tenant (opcional, para validação de segurança)
+     * @return array Lista de logs relacionados ao request_id
+     */
+    public function findByRequestId(string $requestId, ?int $tenantId = null): array
+    {
+        $conditions = ['request_id = :request_id'];
+        $params = ['request_id' => $requestId];
+        
+        // Se tenant_id fornecido, adiciona filtro de segurança
+        if ($tenantId !== null) {
+            $conditions[] = 'tenant_id = :tenant_id';
+            $params['tenant_id'] = $tenantId;
+        }
+        
+        $sql = "SELECT * FROM {$this->table} 
+                WHERE " . implode(' AND ', $conditions) . "
+                ORDER BY created_at ASC";
+        
+        $stmt = $this->db->prepare($sql);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(":{$key}", $value);
+        }
+        
+        $stmt->execute();
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Remove logs antigos (retenção configurável)
      * 
      * @param int $daysToKeep Dias para manter logs

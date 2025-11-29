@@ -43,7 +43,16 @@ class ChargeController
             // Verifica permissão (só verifica se for autenticação de usuário)
             PermissionHelper::require('view_charges');
             
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -91,15 +100,10 @@ class ChargeController
             // Lista charges
             $charges = $this->stripeService->listCharges($options);
 
-            // Prepara resposta
-            $response = [
-                'object' => 'list',
-                'data' => [],
-                'has_more' => $charges->has_more
-            ];
-
+            // ✅ CORREÇÃO: Prepara array de charges diretamente
+            $chargesData = [];
             foreach ($charges->data as $charge) {
-                $response['data'][] = [
+                $chargesData[] = [
                     'id' => $charge->id,
                     'object' => $charge->object,
                     'amount' => $charge->amount,
@@ -120,7 +124,14 @@ class ChargeController
                 ];
             }
 
-            ResponseHelper::sendSuccess($response);
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            Flight::json([
+                'success' => true,
+                'data' => $chargesData,
+                'meta' => [
+                    'has_more' => $charges->has_more
+                ]
+            ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             ResponseHelper::sendStripeError(
                 $e,

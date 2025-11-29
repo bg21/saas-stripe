@@ -154,7 +154,16 @@ class ProductController
                 return;
             }
 
-            $queryParams = Flight::request()->query;
+            // ✅ CORREÇÃO: Flight::request()->query retorna Collection, precisa converter para array
+            try {
+                $queryParams = Flight::request()->query->getData();
+                if (!is_array($queryParams)) {
+                    $queryParams = [];
+                }
+            } catch (\Exception $e) {
+                error_log("Erro ao obter query params: " . $e->getMessage());
+                $queryParams = [];
+            }
             
             $options = [];
             
@@ -194,7 +203,21 @@ class ProductController
             // ✅ Tenta obter do cache (TTL: 60 segundos)
             $cached = \App\Services\CacheService::getJson($cacheKey);
             if ($cached !== null) {
-                Flight::json($cached);
+                // ✅ CORREÇÃO: Se cache tem formato antigo {data: [...], meta: {...}}, converte
+                if (isset($cached['data']) && isset($cached['meta'])) {
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached['data'],
+                        'meta' => $cached['meta']
+                    ]);
+                } else {
+                    // Formato novo (já é array direto)
+                    Flight::json([
+                        'success' => true,
+                        'data' => $cached,
+                        'meta' => []
+                    ]);
+                }
                 return;
             }
             
@@ -286,17 +309,25 @@ class ProductController
                 }
             }
             
-            $response = [
-                'success' => true,
-                'data' => $formattedProducts,
+            // ✅ CORREÇÃO: Retorna array diretamente, meta separado
+            $meta = [
                 'has_more' => $products->has_more,
                 'count' => count($formattedProducts)
             ];
             
-            // ✅ Salva no cache
-            \App\Services\CacheService::setJson($cacheKey, $response, 60);
+            // ✅ Salva no cache (formato completo para compatibilidade)
+            $cacheData = [
+                'data' => $formattedProducts,
+                'meta' => $meta
+            ];
+            \App\Services\CacheService::setJson($cacheKey, $cacheData, 60);
             
-            Flight::json($response);
+            // ✅ Retorna array diretamente em data
+            Flight::json([
+                'success' => true,
+                'data' => $formattedProducts,
+                'meta' => $meta
+            ]);
         } catch (\Stripe\Exception\ApiErrorException $e) {
             ResponseHelper::sendStripeError(
                 $e,
