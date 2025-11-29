@@ -198,6 +198,61 @@
                     </ul>
                 </li>
                 <li class="nav-section">
+                    <span class="nav-section-title">Clínica</span>
+                    <ul class="nav-menu">
+                        <li class="nav-item">
+                            <a href="/appointments" class="nav-link <?php echo ($currentPage ?? '') === 'appointments' ? 'active' : ''; ?>">
+                                <i class="bi bi-calendar-check"></i>
+                                <span>Agendamentos</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/exams" class="nav-link <?php echo ($currentPage ?? '') === 'exams' ? 'active' : ''; ?>">
+                                <i class="bi bi-clipboard-pulse"></i>
+                                <span>Exames</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/professionals" class="nav-link <?php echo ($currentPage ?? '') === 'professionals' ? 'active' : ''; ?>">
+                                <i class="bi bi-person-badge"></i>
+                                <span>Profissionais</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/pets" class="nav-link <?php echo ($currentPage ?? '') === 'pets' ? 'active' : ''; ?>">
+                                <i class="bi bi-heart-pulse"></i>
+                                <span>Pets</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/clinic-clients" class="nav-link <?php echo ($currentPage ?? '') === 'clinic-clients' ? 'active' : ''; ?>">
+                                <i class="bi bi-people-fill"></i>
+                                <span>Clientes da Clínica</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/schedule" class="nav-link <?php echo ($currentPage ?? '') === 'schedule' ? 'active' : ''; ?>">
+                                <i class="bi bi-calendar-week"></i>
+                                <span>Agenda</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="/specialties" class="nav-link <?php echo ($currentPage ?? '') === 'specialties' ? 'active' : ''; ?>">
+                                <i class="bi bi-bookmark-star"></i>
+                                <span>Especialidades</span>
+                            </a>
+                        </li>
+                        <?php if (($user['role'] ?? '') === 'admin'): ?>
+                        <li class="nav-item">
+                            <a href="/exam-types" class="nav-link <?php echo ($currentPage ?? '') === 'exam-types' ? 'active' : ''; ?>">
+                                <i class="bi bi-list-check"></i>
+                                <span>Tipos de Exames</span>
+                            </a>
+                        </li>
+                        <?php endif; ?>
+                    </ul>
+                </li>
+                <li class="nav-section">
                     <span class="nav-section-title">Relatórios</span>
                     <ul class="nav-menu">
                         <li class="nav-item">

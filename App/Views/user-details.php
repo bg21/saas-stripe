@@ -247,23 +247,27 @@ function loadUserForEdit() {
     document.getElementById('editUserRole').value = userData.role || '';
 }
 
-// ✅ MELHORIA: Carrega script de validações
-const validationScript = document.createElement('script');
-validationScript.src = '/app/validations.js';
-document.head.appendChild(validationScript);
+// ✅ CORREÇÃO: validations.js já é carregado em layouts/base.php, não precisa carregar novamente
+// Aplica validações quando o script estiver pronto
+function applyValidationsWhenReady() {
+    if (typeof validateName === 'function' && typeof validateEmail === 'function') {
+        const nameField = document.getElementById('editUserName');
+        const emailField = document.getElementById('editUserEmail');
+        
+        if (nameField) {
+            applyFieldValidation(nameField, (value) => validateName(value, true));
+        }
+        if (emailField) {
+            applyFieldValidation(emailField, validateEmail);
+        }
+    } else {
+        // Tenta novamente após um pequeno delay se as funções ainda não estiverem disponíveis
+        setTimeout(applyValidationsWhenReady, 100);
+    }
+}
 
-// ✅ MELHORIA: Aplica validações em tempo real nos campos de edição
-validationScript.onload = function() {
-    const nameField = document.getElementById('editUserName');
-    const emailField = document.getElementById('editUserEmail');
-    
-    if (nameField) {
-        applyFieldValidation(nameField, (value) => validateName(value, true));
-    }
-    if (emailField) {
-        applyFieldValidation(emailField, validateEmail);
-    }
-};
+// Aplica validações quando o script estiver pronto
+applyValidationsWhenReady();
 
 // Submissão do formulário de edição
 document.getElementById('editUserForm').addEventListener('submit', function(e) {

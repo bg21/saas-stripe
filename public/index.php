@@ -199,7 +199,14 @@ $app->before('start', function() use ($app) {
         '/product-details', '/price-details', '/user-details', '/invoice-details', '/coupon-details', // ✅ CORREÇÃO: Adicionadas rotas de detalhes
         '/invoices', '/refunds', '/coupons', '/promotion-codes', '/settings',
         '/transactions', '/transaction-details', '/disputes', '/charges', '/payouts',
-        '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal'
+        '/invoice-items', '/tax-rates', '/payment-methods', '/billing-portal',
+        // Rotas da Clínica
+        '/appointments', '/appointment-details', '/appointment-form', '/appointment-calendar',
+        '/exams', '/exam-details', '/exam-types',
+        '/professionals', '/professional-details',
+        '/pets', '/pet-details',
+        '/clinic-clients', '/clinic-client-details', '/clinic-settings',
+        '/schedule', '/specialties'
     ];
     $requestUri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
     
@@ -589,6 +596,19 @@ $reportController = new \App\Controllers\ReportController($stripeService);
 $auditLogController = new \App\Controllers\AuditLogController();
 $healthCheckController = new \App\Controllers\HealthCheckController();
 $swaggerController = new \App\Controllers\SwaggerController();
+$professionalController = new \App\Controllers\ProfessionalController();
+$specialtyController = new \App\Controllers\SpecialtyController();
+$appointmentController = new \App\Controllers\AppointmentController();
+$petController = new \App\Controllers\PetController();
+$clientController = new \App\Controllers\ClientController();
+$examTypeController = new \App\Controllers\ExamTypeController(new \App\Models\ExamType());
+$examController = new \App\Controllers\ExamController(
+    new \App\Models\Exam(),
+    new \App\Models\Pet(),
+    new \App\Models\Client(),
+    new \App\Models\Professional(),
+    new \App\Models\ExamType()
+);
 
 // Rota raiz - informações da API
 $app->route('GET /', function() use ($app) {
@@ -1058,6 +1078,174 @@ $app->route('GET /cancel', function() use ($app) {
     \App\Utils\View::render('cancel', ['apiUrl' => $apiUrl]);
 });
 
+// ========== ROTAS DA CLÍNICA ==========
+
+// Rota de agendamentos
+$app->route('GET /appointments', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointments', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Agendamentos', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de detalhes do agendamento
+$app->route('GET /appointment-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointment-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Agendamento', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de formulário de agendamento
+$app->route('GET /appointment-form', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointment-form', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Novo Agendamento', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de calendário de agendamentos
+$app->route('GET /appointment-calendar', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('appointment-calendar', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Calendário de Agendamentos', 'currentPage' => 'appointments'
+    ], true);
+});
+
+// Rota de exames
+$app->route('GET /exams', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('exams', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Exames', 'currentPage' => 'exams'
+    ], true);
+});
+
+// Rota de detalhes do exame
+$app->route('GET /exam-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('exam-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Exame', 'currentPage' => 'exams'
+    ], true);
+});
+
+// Rota de tipos de exames (apenas admin)
+$app->route('GET /exam-types', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    
+    if (!$user || ($user['role'] ?? '') !== 'admin') {
+        $app->json(['error' => 'Acesso negado'], 403);
+        return;
+    }
+    
+    \App\Utils\View::render('exam-types', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Tipos de Exames', 'currentPage' => 'exam-types'
+    ], true);
+});
+
+// Rota de profissionais
+$app->route('GET /professionals', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('professionals', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Profissionais', 'currentPage' => 'professionals'
+    ], true);
+});
+
+// Rota de detalhes do profissional
+$app->route('GET /professional-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('professional-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Profissional', 'currentPage' => 'professionals'
+    ], true);
+});
+
+// Rota de pets
+$app->route('GET /pets', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('pets', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Pets', 'currentPage' => 'pets'
+    ], true);
+});
+
+// Rota de detalhes do pet
+$app->route('GET /pet-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('pet-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Pet', 'currentPage' => 'pets'
+    ], true);
+});
+
+// Rota de clientes da clínica
+$app->route('GET /clinic-clients', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-clients', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Clientes da Clínica', 'currentPage' => 'clinic-clients'
+    ], true);
+});
+
+// Rota de detalhes do cliente da clínica
+$app->route('GET /clinic-client-details', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-client-details', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Detalhes do Cliente', 'currentPage' => 'clinic-clients'
+    ], true);
+});
+
+// Rota de configurações da clínica
+$app->route('GET /clinic-settings', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('clinic-settings', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Configurações da Clínica', 'currentPage' => 'clinic-settings'
+    ], true);
+});
+
+// Rota de agenda
+$app->route('GET /schedule', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('schedule', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Agenda', 'currentPage' => 'schedule'
+    ], true);
+});
+
+// Rota de especialidades
+$app->route('GET /specialties', function() use ($app) {
+    [$user, $tenant, $sessionId] = getAuthenticatedUserData();
+    $apiUrl = getBaseUrl();
+    \App\Utils\View::render('specialties', [
+        'apiUrl' => $apiUrl, 'user' => $user, 'tenant' => $tenant,
+        'title' => 'Especialidades', 'currentPage' => 'specialties'
+    ], true);
+});
+
 // Rota de detalhes do cliente
 $app->route('GET /customer-details', function() use ($app) {
     [$user, $tenant, $sessionId] = getAuthenticatedUserData();
@@ -1316,6 +1504,60 @@ $app->route('GET /v1/users/@id/permissions', [$permissionController, 'listUserPe
 $app->route('POST /v1/users/@id/permissions', [$permissionController, 'grant']);
 $app->route('DELETE /v1/users/@id/permissions/@permission', [$permissionController, 'revoke']);
 
+// Rotas de Profissionais
+// IMPORTANTE: Rotas mais específicas devem vir ANTES das genéricas
+$app->route('GET /v1/professionals/@id/schedule', [$professionalController, 'schedule']);
+$app->route('GET /v1/professionals', [$professionalController, 'list']);
+$app->route('POST /v1/professionals', [$professionalController, 'create']);
+$app->route('GET /v1/professionals/@id', [$professionalController, 'get']);
+$app->route('PUT /v1/professionals/@id', [$professionalController, 'update']);
+$app->route('DELETE /v1/professionals/@id', [$professionalController, 'delete']);
+
+// Rotas de Especialidades
+$app->route('GET /v1/specialties', [$specialtyController, 'list']);
+$app->route('POST /v1/specialties', [$specialtyController, 'create']);
+$app->route('GET /v1/specialties/@id', [$specialtyController, 'get']);
+$app->route('PUT /v1/specialties/@id', [$specialtyController, 'update']);
+$app->route('DELETE /v1/specialties/@id', [$specialtyController, 'delete']);
+
+// Rotas de Agendamentos
+$app->route('GET /v1/appointments', [$appointmentController, 'list']);
+$app->route('POST /v1/appointments', [$appointmentController, 'create']);
+$app->route('GET /v1/appointments/@id', [$appointmentController, 'get']);
+$app->route('PUT /v1/appointments/@id', [$appointmentController, 'update']);
+$app->route('DELETE /v1/appointments/@id', [$appointmentController, 'delete']);
+$app->route('GET /v1/appointments/@id/history', [$appointmentController, 'history']);
+
+// Rotas de Clientes
+$app->route('GET /v1/clients', [$clientController, 'list']);
+$app->route('POST /v1/clients', [$clientController, 'create']);
+$app->route('GET /v1/clients/@id', [$clientController, 'get']);
+$app->route('PUT /v1/clients/@id', [$clientController, 'update']);
+$app->route('DELETE /v1/clients/@id', [$clientController, 'delete']);
+$app->route('GET /v1/clients/@id/pets', [$clientController, 'listPets']);
+
+// Rotas de Pets
+$app->route('GET /v1/pets', [$petController, 'list']);
+$app->route('POST /v1/pets', [$petController, 'create']);
+$app->route('GET /v1/pets/@id', [$petController, 'get']);
+$app->route('PUT /v1/pets/@id', [$petController, 'update']);
+$app->route('DELETE /v1/pets/@id', [$petController, 'delete']);
+$app->route('GET /v1/pets/@id/appointments', [$petController, 'listAppointments']);
+
+// Rotas de Tipos de Exames
+$app->route('GET /v1/exam-types', [$examTypeController, 'list']);
+$app->route('POST /v1/exam-types', [$examTypeController, 'create']);
+$app->route('GET /v1/exam-types/@id', [$examTypeController, 'get']);
+$app->route('PUT /v1/exam-types/@id', [$examTypeController, 'update']);
+$app->route('DELETE /v1/exam-types/@id', [$examTypeController, 'delete']);
+
+// Rotas de Exames
+$app->route('GET /v1/exams', [$examController, 'list']);
+$app->route('POST /v1/exams', [$examController, 'create']);
+$app->route('GET /v1/exams/@id', [$examController, 'get']);
+$app->route('PUT /v1/exams/@id', [$examController, 'update']);
+$app->route('DELETE /v1/exams/@id', [$examController, 'delete']);
+
 // Tratamento de erros
 $app->map('notFound', function() use ($app, $auditMiddleware) {
     $auditMiddleware->logResponse(404);
@@ -1331,7 +1573,19 @@ $app->map('error', function(\Throwable $ex) use ($app, $auditMiddleware) {
     
     $auditMiddleware->logResponse(500);
     
+    // Em desenvolvimento, mostra mais detalhes do erro
     $response = \App\Utils\ErrorHandler::prepareErrorResponse($ex, 'Erro interno do servidor', 'INTERNAL_SERVER_ERROR');
+    
+    // Adiciona detalhes em desenvolvimento
+    if (Config::isDevelopment()) {
+        $response['debug'] = [
+            'message' => $ex->getMessage(),
+            'file' => $ex->getFile(),
+            'line' => $ex->getLine(),
+            'trace' => array_slice($ex->getTrace(), 0, 5) // Primeiros 5 níveis do trace
+        ];
+    }
+    
     $app->json($response, 500);
 });
 

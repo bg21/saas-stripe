@@ -18,33 +18,47 @@ class UserPermission extends BaseModel
      */
     public function hasPermission(int $userId, string $permission): bool
     {
-        // Primeiro verifica role do usuário
-        $userModel = new User();
-        $user = $userModel->findById($userId);
-        
-        if (!$user) {
+        try {
+            // Primeiro verifica role do usuário
+            $userModel = new User();
+            $user = $userModel->findById($userId);
+            
+            if (!$user) {
+                \App\Services\Logger::warning("Usuário não encontrado ao verificar permissão", [
+                    'user_id' => $userId,
+                    'permission' => $permission
+                ]);
+                return false;
+            }
+
+            // Admins têm todas as permissões
+            if ($user['role'] === 'admin') {
+                return true;
+            }
+
+            // Verifica permissão específica
+            $stmt = $this->db->prepare(
+                "SELECT granted FROM {$this->table} 
+                 WHERE user_id = :user_id AND permission = :permission"
+            );
+            $stmt->execute(['user_id' => $userId, 'permission' => $permission]);
+            $result = $stmt->fetch();
+
+            // Se não tem permissão específica, verifica role padrão
+            if (!$result) {
+                return $this->checkRolePermission($user['role'], $permission);
+            }
+
+            return $result['granted'] === 1 || $result['granted'] === true;
+        } catch (\Exception $e) {
+            \App\Services\Logger::error("Erro ao verificar permissão do usuário", [
+                'user_id' => $userId,
+                'permission' => $permission,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return false;
         }
-
-        // Admins têm todas as permissões
-        if ($user['role'] === 'admin') {
-            return true;
-        }
-
-        // Verifica permissão específica
-        $stmt = $this->db->prepare(
-            "SELECT granted FROM {$this->table} 
-             WHERE user_id = :user_id AND permission = :permission"
-        );
-        $stmt->execute(['user_id' => $userId, 'permission' => $permission]);
-        $result = $stmt->fetch();
-
-        // Se não tem permissão específica, verifica role padrão
-        if (!$result) {
-            return $this->checkRolePermission($user['role'], $permission);
-        }
-
-        return $result['granted'] === 1 || $result['granted'] === true;
     }
 
     /**
@@ -66,7 +80,18 @@ class UserPermission extends BaseModel
                 'view_balance_transactions',
                 'view_charges', 'manage_charges',
                 'view_reports',
-                'view_payouts', 'manage_payouts'
+                'view_payouts', 'manage_payouts',
+                // Permissões da Clínica Veterinária
+                'view_professionals', 'create_professionals', 'update_professionals', 'delete_professionals',
+                'view_clients', 'create_clients', 'update_clients', 'delete_clients',
+                'view_pets', 'create_pets', 'update_pets', 'delete_pets',
+                'view_appointments', 'create_appointments', 'update_appointments', 'delete_appointments',
+                'confirm_appointments', 'cancel_appointments',
+                'view_exams', 'create_exams', 'update_exams', 'delete_exams',
+                'view_exam_types', 'create_exam_types', 'update_exam_types', 'delete_exam_types',
+                'view_specialties', 'create_specialties', 'update_specialties', 'delete_specialties',
+                'view_schedules', 'manage_schedules',
+                'manage_clinic_settings'
             ],
             'editor' => [
                 'view_subscriptions', 'create_subscriptions', 'update_subscriptions',
@@ -74,11 +99,30 @@ class UserPermission extends BaseModel
                 'view_disputes',
                 'view_balance_transactions',
                 'view_charges',
-                'view_reports'
+                'view_reports',
+                // Permissões da Clínica Veterinária
+                'view_professionals',
+                'view_clients', 'create_clients', 'update_clients',
+                'view_pets', 'create_pets', 'update_pets',
+                'view_appointments', 'create_appointments', 'update_appointments',
+                'confirm_appointments', 'cancel_appointments',
+                'view_exams', 'create_exams', 'update_exams',
+                'view_exam_types',
+                'view_specialties',
+                'view_schedules', 'manage_schedules'
             ],
             'viewer' => [
                 'view_subscriptions', 'view_customers',
-                'view_charges'
+                'view_charges',
+                // Permissões da Clínica Veterinária
+                'view_professionals',
+                'view_clients',
+                'view_pets',
+                'view_appointments', 'create_appointments',
+                'confirm_appointments',
+                'view_exams',
+                'view_exam_types',
+                'view_specialties'
             ]
         ];
     }

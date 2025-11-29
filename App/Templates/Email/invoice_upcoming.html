@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fatura Próxima</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa; padding: 40px 20px;">
+        <tr>
+            <td style="text-align: center;">
+                <table role="presentation" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+                    
+                    <!-- Header com gradiente azul -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); padding: 50px 30px; text-align: center; position: relative;">
+                            <div style="width: 80px; height: 80px; background-color: rgba(255,255,255,0.2); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 40px;">
+                                📋
+                            </div>
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Fatura Próxima</h1>
+                            <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 400;">Confirme seu método de pagamento</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Conteúdo Principal -->
+                    <tr>
+                        <td style="padding: 50px 40px;">
+                            
+                            <!-- Saudação -->
+                            <p style="margin: 0 0 30px 0; color: #2c3e50; font-size: 18px; line-height: 1.6; font-weight: 500;">
+                                Olá <strong style="color: #3498db;"><?php echo htmlspecialchars($customer_name ?? 'Cliente'); ?></strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 30px 0; color: #5a6c7d; font-size: 16px; line-height: 1.8;">
+                                Esta é uma notificação de que uma nova fatura será gerada em breve. Certifique-se de que seu método de pagamento está atualizado e com saldo suficiente.
+                            </p>
+                            
+                            <!-- Card de Fatura -->
+                            <div style="background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%); border: 2px solid #3498db; border-radius: 12px; padding: 30px; margin: 30px 0; box-shadow: 0 4px 15px rgba(52, 152, 219, 0.2);">
+                                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                                    <div style="width: 50px; height: 50px; background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-right: 20px; flex-shrink: 0; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3);">
+                                        <span style="color: white; font-size: 24px;">💳</span>
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; color: #0c5460; font-size: 18px; font-weight: 700;">Detalhes da Fatura</h3>
+                                    </div>
+                                </div>
+                                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #0c5460; font-size: 15px; border-bottom: 1px solid rgba(12, 84, 96, 0.2);">
+                                            <strong>Valor:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #0c5460; font-size: 18px; text-align: right; font-weight: 700; border-bottom: 1px solid rgba(12, 84, 96, 0.2);">
+                                            R$ <?php echo htmlspecialchars($amount_due ?? '0,00'); ?>
+                                        </td>
+                                    </tr>
+                                    <?php if (!empty($due_date)): ?>
+                                    <tr>
+                                        <td style="padding: 12px 0; color: #0c5460; font-size: 15px;">
+                                            <strong>Data de vencimento:</strong>
+                                        </td>
+                                        <td style="padding: 12px 0; color: #0c5460; font-size: 15px; text-align: right; font-weight: 600;">
+                                            <?php echo htmlspecialchars($due_date); ?>
+                                        </td>
+                                    </tr>
+                                    <?php endif; ?>
+                                </table>
+                            </div>
+                            
+                            <!-- Informação Importante -->
+                            <div style="background-color: #f8f9fa; border-radius: 12px; padding: 25px; margin: 30px 0;">
+                                <h3 style="margin: 0 0 20px 0; color: #2c3e50; font-size: 18px; font-weight: 600; display: flex; align-items: center;">
+                                    <span style="margin-right: 10px; font-size: 24px;">✅</span>
+                                    O que você precisa fazer?
+                                </h3>
+                                <p style="margin: 0; color: #5a6c7d; font-size: 15px; line-height: 1.8;">
+                                    Certifique-se de que seu método de pagamento está atualizado e com saldo suficiente. A cobrança será processada automaticamente na data de vencimento.
+                                </p>
+                            </div>
+                            
+                            <!-- Botão CTA -->
+                            <div style="text-align: center; margin: 40px 0;">
+                                <a href="<?php echo htmlspecialchars($app_url ?? 'http://localhost'); ?>/billing" 
+                                   style="display: inline-block; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: #ffffff; padding: 18px 50px; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 17px; box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4); letter-spacing: 0.3px;">
+                                    🔍 Verificar Método de Pagamento
+                                </a>
+                            </div>
+                            
+                            <!-- Nota Informativa -->
+                            <div style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); border-left: 4px solid #3498db; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                                <p style="margin: 0; color: #2c3e50; font-size: 14px; line-height: 1.6;">
+                                    <strong>💡 Lembrete:</strong> Se você já atualizou seu método de pagamento, não precisa fazer nada. Tudo acontecerá automaticamente.
+                                </p>
+                            </div>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #2c3e50; padding: 30px 40px; text-align: center;">
+                            <p style="margin: 0 0 10px 0; color: #ecf0f1; font-size: 14px; line-height: 1.6;">
+                                <strong style="color: #ffffff;"><?php echo htmlspecialchars($app_name ?? 'Sistema de Pagamentos'); ?></strong>
+                            </p>
+                            <p style="margin: 0; color: #bdc3c7; font-size: 12px; line-height: 1.6;">
+                                Esta é uma mensagem automática. Para suporte, entre em contato:<br>
+                                <a href="mailto:<?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?>" style="color: #3498db; text-decoration: none;"><?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?></a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

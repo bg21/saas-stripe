@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assinatura Cancelada</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa; padding: 40px 20px;">
+        <tr>
+            <td style="text-align: center;">
+                <table role="presentation" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+                    
+                    <!-- Header com gradiente cinza -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%); padding: 50px 30px; text-align: center; position: relative;">
+                            <div style="width: 80px; height: 80px; background-color: rgba(255,255,255,0.2); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 40px;">
+                                📋
+                            </div>
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Assinatura Cancelada</h1>
+                            <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 400;">Confirmamos o cancelamento</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Conteúdo Principal -->
+                    <tr>
+                        <td style="padding: 50px 40px;">
+                            
+                            <!-- Saudação -->
+                            <p style="margin: 0 0 30px 0; color: #2c3e50; font-size: 18px; line-height: 1.6; font-weight: 500;">
+                                Olá <strong style="color: #6c757d;"><?php echo htmlspecialchars($customer_name ?? 'Cliente'); ?></strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 30px 0; color: #5a6c7d; font-size: 16px; line-height: 1.8;">
+                                Confirmamos o cancelamento da sua assinatura. Foi um prazer tê-lo como cliente e esperamos vê-lo novamente em breve!
+                            </p>
+                            
+                            <!-- Card de Informações -->
+                            <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px solid #dee2e6; border-radius: 12px; padding: 25px; margin: 30px 0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                                <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                                    <div style="width: 40px; height: 40px; background-color: #6c757d; border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0;">
+                                        <span style="color: white; font-size: 20px;">📝</span>
+                                    </div>
+                                    <div>
+                                        <h3 style="margin: 0; color: #495057; font-size: 16px; font-weight: 600;">Detalhes do Cancelamento</h3>
+                                    </div>
+                                </div>
+                                <table role="presentation" style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 8px 0; color: #495057; font-size: 14px;">
+                                            <strong>Assinatura:</strong>
+                                        </td>
+                                        <td style="padding: 8px 0; color: #495057; font-size: 14px; text-align: right; font-weight: 600;">
+                                            <?php echo htmlspecialchars($subscription_id ?? 'N/A'); ?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px 0; color: #495057; font-size: 14px;">
+                                            <strong>Cancelada em:</strong>
+                                        </td>
+                                        <td style="padding: 8px 0; color: #495057; font-size: 14px; text-align: right;">
+                                            <?php echo htmlspecialchars($canceled_at ?? date('d/m/Y H:i')); ?>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            
+                            <!-- Informação Importante -->
+                            <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border-left: 4px solid #ffc107; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                                <p style="margin: 0; color: #856404; font-size: 14px; line-height: 1.6;">
+                                    <strong>⏰ Importante:</strong> Sua assinatura permanecerá ativa até o final do período já pago. Após essa data, você perderá o acesso aos recursos premium.
+                                </p>
+                            </div>
+                            
+                            <!-- Mensagem de Reativação -->
+                            <div style="background-color: #f8f9fa; border-radius: 12px; padding: 25px; margin: 30px 0; text-align: center;">
+                                <p style="margin: 0 0 20px 0; color: #2c3e50; font-size: 16px; font-weight: 500;">
+                                    Mudou de ideia?
+                                </p>
+                                <p style="margin: 0 0 25px 0; color: #5a6c7d; font-size: 14px; line-height: 1.6;">
+                                    Você pode reativar sua assinatura a qualquer momento através do painel.
+                                </p>
+                                <a href="<?php echo htmlspecialchars($app_url ?? 'http://localhost'); ?>/billing" 
+                                   style="display: inline-block; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: #ffffff; padding: 14px 35px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);">
+                                    🔄 Reativar Assinatura
+                                </a>
+                            </div>
+                            
+                            <!-- Mensagem Final -->
+                            <div style="text-align: center; margin: 30px 0; padding: 20px; background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); border-radius: 8px;">
+                                <p style="margin: 0; color: #2c3e50; font-size: 15px; line-height: 1.6; font-style: italic;">
+                                    "Foi um prazer tê-lo como cliente. Esperamos vê-lo novamente em breve!" 💙
+                                </p>
+                            </div>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #2c3e50; padding: 30px 40px; text-align: center;">
+                            <p style="margin: 0 0 10px 0; color: #ecf0f1; font-size: 14px; line-height: 1.6;">
+                                <strong style="color: #ffffff;"><?php echo htmlspecialchars($app_name ?? 'Sistema de Pagamentos'); ?></strong>
+                            </p>
+                            <p style="margin: 0; color: #bdc3c7; font-size: 12px; line-height: 1.6;">
+                                Esta é uma mensagem automática. Para suporte, entre em contato:<br>
+                                <a href="mailto:<?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?>" style="color: #3498db; text-decoration: none;"><?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?></a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

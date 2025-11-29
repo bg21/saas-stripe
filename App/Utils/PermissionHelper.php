@@ -58,37 +58,62 @@ class PermissionHelper
      */
     public static function require(string $permission): void
     {
-        // Se não é autenticação de usuário, não verifica permissões
-        if (!self::shouldCheckPermissions()) {
-            Logger::debug("Permissões não verificadas (API Key ou Master Key)", [
-                'permission' => $permission,
-                'is_user_auth' => Flight::get('is_user_auth'),
-                'is_master' => Flight::get('is_master')
-            ]);
-            return;
-        }
+        try {
+            // Se não é autenticação de usuário, não verifica permissões
+            if (!self::shouldCheckPermissions()) {
+                Logger::debug("Permissões não verificadas (API Key ou Master Key)", [
+                    'permission' => $permission,
+                    'is_user_auth' => Flight::get('is_user_auth'),
+                    'is_master' => Flight::get('is_master')
+                ]);
+                return;
+            }
 
-        // Verifica permissão usando o middleware
-        $middleware = new PermissionMiddleware();
-        $hasPermission = $middleware->check($permission);
-        
-        // Se não tem permissão, bloqueia a requisição
-        if (!$hasPermission) {
-            $userId = Flight::get('user_id');
+            // Verifica se é admin (admins têm todas as permissões)
             $userRole = Flight::get('user_role');
+            if ($userRole === 'admin') {
+                Logger::debug("Permissão concedida automaticamente para admin", [
+                    'permission' => $permission,
+                    'user_role' => $userRole
+                ]);
+                return;
+            }
+
+            // Verifica permissão usando o middleware
+            $middleware = new PermissionMiddleware();
+            $hasPermission = $middleware->check($permission);
             
-            Logger::warning("Acesso negado por falta de permissão", [
-                'user_id' => $userId,
-                'user_role' => $userRole,
+            // Se não tem permissão, bloqueia a requisição
+            if (!$hasPermission) {
+                $userId = Flight::get('user_id');
+                $userRole = Flight::get('user_role');
+                
+                Logger::warning("Acesso negado por falta de permissão", [
+                    'user_id' => $userId,
+                    'user_role' => $userRole,
+                    'permission' => $permission,
+                    'request_uri' => Flight::request()->url ?? 'N/A'
+                ]);
+                
+                Flight::halt(403, json_encode([
+                    'error' => 'Acesso negado',
+                    'message' => "Você não tem permissão para realizar esta ação: {$permission}"
+                ]));
+                return;
+            }
+        } catch (\Exception $e) {
+            Logger::error("Erro ao verificar permissão no PermissionHelper", [
                 'permission' => $permission,
-                'request_uri' => Flight::request()->url ?? 'N/A'
+                'user_id' => Flight::get('user_id'),
+                'user_role' => Flight::get('user_role'),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            
-            Flight::halt(403, json_encode([
-                'error' => 'Acesso negado',
-                'message' => "Você não tem permissão para realizar esta ação: {$permission}"
+            // Em caso de erro, bloqueia por segurança
+            Flight::halt(500, json_encode([
+                'error' => 'Erro interno do servidor',
+                'message' => 'Erro ao verificar permissões'
             ]));
-            return;
         }
     }
 

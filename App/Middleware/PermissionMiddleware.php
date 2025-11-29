@@ -28,25 +28,35 @@ class PermissionMiddleware
      */
     public function check(string $permission): bool
     {
-        $userId = Flight::get('user_id');
+        try {
+            $userId = Flight::get('user_id');
 
-        if (!$userId) {
-            Logger::warning("Tentativa de verificar permissão sem usuário autenticado", [
-                'permission' => $permission
+            if (!$userId) {
+                Logger::warning("Tentativa de verificar permissão sem usuário autenticado", [
+                    'permission' => $permission
+                ]);
+                return false;
+            }
+
+            $hasPermission = $this->permissionModel->hasPermission($userId, $permission);
+
+            if (!$hasPermission) {
+                Logger::info("Acesso negado por falta de permissão", [
+                    'user_id' => $userId,
+                    'permission' => $permission
+                ]);
+            }
+
+            return $hasPermission;
+        } catch (\Exception $e) {
+            Logger::error("Erro ao verificar permissão", [
+                'permission' => $permission,
+                'user_id' => Flight::get('user_id'),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             return false;
         }
-
-        $hasPermission = $this->permissionModel->hasPermission($userId, $permission);
-
-        if (!$hasPermission) {
-            Logger::info("Acesso negado por falta de permissão", [
-                'user_id' => $userId,
-                'permission' => $permission
-            ]);
-        }
-
-        return $hasPermission;
     }
 
     /**

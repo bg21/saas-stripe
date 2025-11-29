@@ -60,6 +60,16 @@ class UserController
             // Busca usuários do tenant
             $users = $this->userModel->findByTenant($tenantId);
             
+            // Filtro de busca (nome ou email)
+            if (isset($queryParams['search']) && !empty($queryParams['search'])) {
+                $search = strtolower(trim($queryParams['search']));
+                $users = array_filter($users, function($user) use ($search) {
+                    $name = strtolower($user['name'] ?? '');
+                    $email = strtolower($user['email'] ?? '');
+                    return strpos($name, $search) !== false || strpos($email, $search) !== false;
+                });
+            }
+            
             // Filtros opcionais
             if (isset($queryParams['role']) && !empty($queryParams['role'])) {
                 $users = array_filter($users, function($user) use ($queryParams) {
@@ -69,9 +79,22 @@ class UserController
             
             if (isset($queryParams['status']) && !empty($queryParams['status'])) {
                 $users = array_filter($users, function($user) use ($queryParams) {
-                    return $user['status'] === $queryParams['status'];
+                    return ($user['status'] ?? 'active') === $queryParams['status'];
                 });
             }
+            
+            // Ordenação
+            $sortBy = $queryParams['sort'] ?? 'created_at';
+            usort($users, function($a, $b) use ($sortBy) {
+                $aVal = $a[$sortBy] ?? '';
+                $bVal = $b[$sortBy] ?? '';
+                
+                if ($sortBy === 'created_at') {
+                    return strtotime($bVal) - strtotime($aVal); // Mais recente primeiro
+                }
+                
+                return strcmp($aVal, $bVal);
+            });
             
             // Remove senha do retorno
             $users = array_map(function($user) {

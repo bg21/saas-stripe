@@ -197,7 +197,8 @@ abstract class BaseModel
         }
 
         $stmt->execute();
-        return $stmt->fetchAll();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $result ?: [];
     }
 
     /**
@@ -246,6 +247,9 @@ abstract class BaseModel
                     $params[$paramKey] = $value;
                 }
             }
+        }
+        
+        if (!empty($where)) {
             $sql .= " WHERE " . implode(' AND ', $where);
         }
 
@@ -302,7 +306,8 @@ abstract class BaseModel
         }
 
         $stmt->execute();
-        return $stmt->fetchAll();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $result ?: [];
     }
     
     /**
@@ -414,7 +419,7 @@ abstract class BaseModel
         }
 
         $stmt->execute();
-        $results = $stmt->fetchAll();
+        $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
         $total = !empty($results) ? (int)$results[0]['_total'] : 0;
         
@@ -693,7 +698,8 @@ abstract class BaseModel
         }
         
         $stmt->execute();
-        return $stmt->fetchAll();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $result ?: [];
     }
     
     /**
@@ -806,7 +812,8 @@ abstract class BaseModel
         }
         
         $stmt->execute();
-        return $stmt->fetchAll();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $result ?: [];
     }
 
     /**

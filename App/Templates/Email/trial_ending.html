@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trial Terminando</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa;">
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f7fa; padding: 40px 20px;">
+        <tr>
+            <td style="text-align: center;">
+                <table role="presentation" style="width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.15);">
+                    
+                    <!-- Header com gradiente amarelo/laranja -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); padding: 50px 30px; text-align: center; position: relative;">
+                            <div style="width: 90px; height: 90px; background-color: rgba(255,255,255,0.25); border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; font-size: 45px; box-shadow: 0 8px 20px rgba(0,0,0,0.15);">
+                                ⏰
+                            </div>
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">Trial Terminando</h1>
+                            <p style="margin: 15px 0 0 0; color: rgba(255,255,255,0.95); font-size: 18px; font-weight: 400;">Seu período de teste está chegando ao fim</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Conteúdo Principal -->
+                    <tr>
+                        <td style="padding: 50px 40px;">
+                            
+                            <!-- Saudação -->
+                            <p style="margin: 0 0 30px 0; color: #2c3e50; font-size: 18px; line-height: 1.6; font-weight: 500;">
+                                Olá <strong style="color: #ff9800;"><?php echo htmlspecialchars($customer_name ?? 'Cliente'); ?></strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 30px 0; color: #5a6c7d; font-size: 16px; line-height: 1.8;">
+                                Seu período de trial está terminando em breve! Para continuar aproveitando todos os recursos após o término do trial, você precisará adicionar um método de pagamento.
+                            </p>
+                            
+                            <!-- Card de Contagem Regressiva -->
+                            <div style="background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%); border: 2px solid #ffc107; border-radius: 12px; padding: 30px; margin: 30px 0; box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3); text-align: center;">
+                                <div style="font-size: 48px; margin-bottom: 15px;">⏳</div>
+                                <?php if (isset($days_remaining) && $days_remaining > 0): ?>
+                                <div style="font-size: 42px; font-weight: 700; color: #856404; margin-bottom: 10px;">
+                                    <?php echo $days_remaining; ?>
+                                </div>
+                                <p style="margin: 0; color: #856404; font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">
+                                    <?php echo $days_remaining == 1 ? 'Dia Restante' : 'Dias Restantes'; ?>
+                                </p>
+                                <?php endif; ?>
+                                <?php if (!empty($trial_end)): ?>
+                                <p style="margin: 15px 0 0 0; color: #856404; font-size: 14px;">
+                                    Trial termina em: <strong><?php echo htmlspecialchars($trial_end); ?></strong>
+                                </p>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <!-- O que acontece -->
+                            <div style="background-color: #f8f9fa; border-radius: 12px; padding: 25px; margin: 30px 0;">
+                                <h3 style="margin: 0 0 20px 0; color: #2c3e50; font-size: 18px; font-weight: 600; display: flex; align-items: center;">
+                                    <span style="margin-right: 10px; font-size: 24px;">📅</span>
+                                    O que acontece quando o trial terminar?
+                                </h3>
+                                <div style="display: flex; align-items: start; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e9ecef;">
+                                    <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0;">
+                                        <span style="color: white; font-size: 16px; font-weight: bold;">✓</span>
+                                    </div>
+                                    <p style="margin: 0; color: #5a6c7d; font-size: 15px; line-height: 1.6;">
+                                        Sua assinatura será automaticamente convertida em uma assinatura paga
+                                    </p>
+                                </div>
+                                <div style="display: flex; align-items: start; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e9ecef;">
+                                    <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0;">
+                                        <span style="color: white; font-size: 16px; font-weight: bold;">✓</span>
+                                    </div>
+                                    <p style="margin: 0; color: #5a6c7d; font-size: 15px; line-height: 1.6;">
+                                        Você continuará tendo acesso a todos os recursos
+                                    </p>
+                                </div>
+                                <div style="display: flex; align-items: start;">
+                                    <div style="width: 32px; height: 32px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; flex-shrink: 0;">
+                                        <span style="color: white; font-size: 16px; font-weight: bold;">✓</span>
+                                    </div>
+                                    <p style="margin: 0; color: #5a6c7d; font-size: 15px; line-height: 1.6;">
+                                        A primeira cobrança será processada automaticamente
+                                    </p>
+                                </div>
+                            </div>
+                            
+                            <!-- Botão CTA -->
+                            <div style="text-align: center; margin: 40px 0;">
+                                <a href="<?php echo htmlspecialchars($app_url ?? 'http://localhost'); ?>/billing" 
+                                   style="display: inline-block; background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); color: #ffffff; padding: 18px 50px; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 17px; box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4); letter-spacing: 0.3px;">
+                                    💳 Adicionar Método de Pagamento
+                                </a>
+                            </div>
+                            
+                            <!-- Nota Informativa -->
+                            <div style="background: linear-gradient(135deg, #e8f4f8 0%, #d1ecf1 100%); border-left: 4px solid #3498db; border-radius: 8px; padding: 20px; margin: 30px 0;">
+                                <p style="margin: 0; color: #2c3e50; font-size: 14px; line-height: 1.6;">
+                                    <strong>💡 Lembrete:</strong> Se você já adicionou um método de pagamento, não precisa fazer nada. Tudo acontecerá automaticamente quando o trial terminar.
+                                </p>
+                            </div>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #2c3e50; padding: 30px 40px; text-align: center;">
+                            <p style="margin: 0 0 10px 0; color: #ecf0f1; font-size: 14px; line-height: 1.6;">
+                                <strong style="color: #ffffff;"><?php echo htmlspecialchars($app_name ?? 'Sistema de Pagamentos'); ?></strong>
+                            </p>
+                            <p style="margin: 0; color: #bdc3c7; font-size: 12px; line-height: 1.6;">
+                                Esta é uma mensagem automática. Para suporte, entre em contato:<br>
+                                <a href="mailto:<?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?>" style="color: #3498db; text-decoration: none;"><?php echo htmlspecialchars($support_email ?? 'suporte@orcamentum.com'); ?></a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

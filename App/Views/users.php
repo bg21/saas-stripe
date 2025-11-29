@@ -13,6 +13,49 @@
 
     <div id="alertContainer"></div>
 
+    <!-- Filtros -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Buscar</label>
+                    <input type="text" class="form-control" id="searchInput" placeholder="Email, nome...">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Role</label>
+                    <select class="form-select" id="roleFilter">
+                        <option value="">Todos</option>
+                        <option value="admin">Admin</option>
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="statusFilter">
+                        <option value="">Todos</option>
+                        <option value="active">Ativos</option>
+                        <option value="inactive">Inativos</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Ordenar por</label>
+                    <select class="form-select" id="sortFilter">
+                        <option value="created_at">Data de Criação</option>
+                        <option value="email">Email</option>
+                        <option value="name">Nome</option>
+                        <option value="role">Role</option>
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button class="btn btn-outline-secondary w-100" onclick="loadUsers(true)">
+                        <i class="bi bi-search"></i> Filtrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Lista de Usuários -->
     <div class="card">
         <div class="card-body">
@@ -106,33 +149,63 @@
 <script>
 let users = [];
 
+let searchTimeout = null;
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Carrega dados após um pequeno delay para não bloquear a renderização
-    setTimeout(() => {
-        loadUsers();
-    }, 100);
+    // Carrega dados imediatamente
+    loadUsers();
     
-    // ✅ MELHORIA: Carrega script de validações
-    const validationScript = document.createElement('script');
-    validationScript.src = '/app/validations.js';
-    document.head.appendChild(validationScript);
+    // Debounce na busca
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                loadUsers(true);
+            }, 500);
+        });
+    }
     
-    // ✅ MELHORIA: Aplica validações em tempo real nos campos
-    validationScript.onload = function() {
-        const nameField = document.getElementById('createUserName');
-        const emailField = document.getElementById('createUserEmail');
-        const passwordField = document.getElementById('createUserPassword');
-        
-        if (nameField) {
-            applyFieldValidation(nameField, (value) => validateName(value, true));
+    // Filtros que disparam busca ao mudar
+    const roleFilter = document.getElementById('roleFilter');
+    const statusFilter = document.getElementById('statusFilter');
+    const sortFilter = document.getElementById('sortFilter');
+    
+    if (roleFilter) {
+        roleFilter.addEventListener('change', () => loadUsers(true));
+    }
+    if (statusFilter) {
+        statusFilter.addEventListener('change', () => loadUsers(true));
+    }
+    if (sortFilter) {
+        sortFilter.addEventListener('change', () => loadUsers(true));
+    }
+    
+    // ✅ CORREÇÃO: validations.js já é carregado em layouts/base.php, não precisa carregar novamente
+    // Aguarda o script estar disponível antes de aplicar validações
+    function applyValidationsWhenReady() {
+        if (typeof validateName === 'function' && typeof validateEmail === 'function' && typeof validatePasswordStrength === 'function') {
+            const nameField = document.getElementById('createUserName');
+            const emailField = document.getElementById('createUserEmail');
+            const passwordField = document.getElementById('createUserPassword');
+            
+            if (nameField) {
+                applyFieldValidation(nameField, (value) => validateName(value, true));
+            }
+            if (emailField) {
+                applyFieldValidation(emailField, validateEmail);
+            }
+            if (passwordField) {
+                applyFieldValidation(passwordField, validatePasswordStrength);
+            }
+        } else {
+            // Tenta novamente após um pequeno delay se as funções ainda não estiverem disponíveis
+            setTimeout(applyValidationsWhenReady, 100);
         }
-        if (emailField) {
-            applyFieldValidation(emailField, validateEmail);
-        }
-        if (passwordField) {
-            applyFieldValidation(passwordField, validatePasswordStrength);
-        }
-    };
+    }
+    
+    // Aplica validações quando o script estiver pronto
+    applyValidationsWhenReady();
     
     // Form criar usuário
     document.getElementById('createUserForm').addEventListener('submit', async (e) => {
@@ -195,16 +268,49 @@ async function loadUsers(skipCache = false) {
             cache.clear('/v1/users');
         }
         
+        // Constrói query string com filtros
+        const params = new URLSearchParams();
+        
+        const search = document.getElementById('searchInput')?.value.trim();
+        if (search) {
+            params.append('search', search);
+        }
+        
+        const roleFilter = document.getElementById('roleFilter')?.value;
+        if (roleFilter) {
+            params.append('role', roleFilter);
+        }
+        
+        const statusFilter = document.getElementById('statusFilter')?.value;
+        if (statusFilter) {
+            params.append('status', statusFilter);
+        }
+        
+        const sortFilter = document.getElementById('sortFilter')?.value;
+        if (sortFilter) {
+            params.append('sort', sortFilter);
+        }
+        
         // ✅ CORREÇÃO: Permite pular cache ao recarregar após criar usuário
-        const response = await apiRequest('/v1/users', {
-            skipCache: skipCache
+        const queryString = params.toString();
+        const url = queryString ? `/v1/users?${queryString}` : '/v1/users';
+        const response = await apiRequest(url, {
+            skipCache: skipCache,
+            cacheTTL: 10000 // Cache de 10 segundos
         });
         
         // ✅ CORREÇÃO: Debug - verifica estrutura da resposta
         console.log('Resposta da API:', response);
         
-        // ✅ CORREÇÃO: Padroniza tratamento de resposta - sempre usa response.data
-        users = Array.isArray(response.data) ? response.data : [];
+        // ✅ CORREÇÃO: A API retorna {users: [...], count: ...}, então precisa acessar response.data.users
+        if (response.data && response.data.users && Array.isArray(response.data.users)) {
+            users = response.data.users;
+        } else if (Array.isArray(response.data)) {
+            // Fallback: se response.data for diretamente um array
+            users = response.data;
+        } else {
+            users = [];
+        }
         
         console.log('Usuários carregados:', users.length);
         
